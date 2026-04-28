@@ -1,6 +1,7 @@
-node_modules
 .next
+node_modules
+.output
+*.local
+.env
+.env.*
 .next.bak-*
-out
-.vercel
-.DS_Store
