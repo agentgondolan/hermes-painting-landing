@@ -8,12 +8,8 @@ export type PreviewStatus =
   | "final-preview-ready"
   | "error"
 
-export interface FrameSizeOption {
-  id: string
-  label: string
-  width: number
-  height: number
-}
+import type { FrameSizeOption } from '@/lib/image-processing'
+export type { FrameSizeOption }
 
 export interface PreviewState {
   status: PreviewStatus
