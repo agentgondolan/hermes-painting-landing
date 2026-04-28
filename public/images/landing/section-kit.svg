@@ -1,0 +1,11 @@
+<svg width="1400" height="980" viewBox="0 0 1400 980" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1400" height="980" fill="#F5EFE6"/>
+  <rect x="88" y="88" width="1224" height="804" rx="40" fill="#FBF7F1" stroke="#D9BFA0" stroke-width="2"/>
+  <rect x="132" y="132" width="588" height="520" rx="28" fill="#F0E5D7"/>
+  <rect x="780" y="154" width="172" height="172" rx="26" fill="#E0B27A"/>
+  <rect x="988" y="154" width="172" height="172" rx="26" fill="#C78458"/>
+  <rect x="1196" y="154" width="72" height="360" rx="24" fill="#2A2623"/>
+  <rect x="780" y="384" width="380" height="130" rx="26" fill="#A56950"/>
+  <rect x="780" y="564" width="488" height="210" rx="26" fill="#EFE4D4"/>
+  <text x="1024" y="686" text-anchor="middle" font-family="Arial, sans-serif" font-size="44" letter-spacing="4" fill="#493B33">PREMIUM KIT LAYOUT</text>
+</svg>

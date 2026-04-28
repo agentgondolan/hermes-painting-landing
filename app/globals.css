@@ -1,0 +1,155 @@
+@import "tailwindcss";
+
+:root {
+  --page: #f6f1e8;
+  --surface: #f8f4ec;
+  --ink: #111111;
+  --accent: #d7a15f;
+  --accent-soft: #ead8bf;
+  --content-max: 1280px;
+  --radius-xl: 32px;
+  --radius-lg: 24px;
+  --shadow-card: 0 24px 80px rgba(17, 17, 17, 0.12);
+}
+
+@theme inline {
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-playfair);
+  --text-display-xl: clamp(3.8rem, 7vw, 7.5rem);
+  --text-display-sm: clamp(2rem, 3vw, 3.8rem);
+  --text-body-lg: clamp(1.02rem, 1rem + 0.32vw, 1.35rem);
+  --text-body-md: 1rem;
+  --text-body-sm: 0.92rem;
+  --text-caption: 0.78rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 1.5rem;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-sans), sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+img {
+  display: block;
+}
+
+.hero-product-turntable {
+  transform-style: preserve-3d;
+  animation: hero-product-idle 8.5s ease-in-out infinite;
+  will-change: transform;
+}
+
+.hero-sheen {
+  animation: hero-sheen-pass 7.8s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes hero-product-idle {
+  0%,
+  100% {
+    transform: translateX(-50%) translateY(0px) rotateX(-4deg) rotateY(-10deg);
+  }
+  50% {
+    transform: translateX(-50%) translateY(-4px) rotateX(-5.4deg) rotateY(-5deg);
+  }
+}
+
+@keyframes hero-sheen-pass {
+  0%,
+  20% {
+    transform: translateX(0%);
+    opacity: 0;
+  }
+  34% {
+    opacity: 0.72;
+  }
+  54% {
+    transform: translateX(320%);
+    opacity: 0.38;
+  }
+  100% {
+    transform: translateX(320%);
+    opacity: 0;
+  }
+}
+
+[data-story-media-frame],
+[data-hero-panel],
+[data-hero-product-scene],
+[data-hero-copy],
+[data-climax-copy],
+[data-climax-media],
+[data-journey-step],
+[data-journey-visual] {
+  transform-origin: center;
+  will-change: transform, opacity;
+}
+
+.journey-sticky {
+  position: sticky;
+}
+
+[data-motion-mode='reduced'] [data-story-media-frame],
+[data-motion-mode='reduced'] [data-hero-panel],
+[data-motion-mode='reduced'] [data-hero-product-scene],
+[data-motion-mode='reduced'] [data-hero-copy],
+[data-motion-mode='reduced'] [data-climax-copy],
+[data-motion-mode='reduced'] [data-climax-media],
+[data-motion-mode='reduced'] [data-journey-step],
+[data-motion-mode='reduced'] [data-journey-visual] {
+  will-change: auto;
+}
+
+::selection {
+  background: rgba(215, 161, 95, 0.35);
+}
+
+@media (max-width: 640px) {
+  html {
+    scroll-padding-top: 1rem;
+  }
+
+  body {
+    overflow-x: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .hero-product-turntable,
+  .hero-sheen {
+    animation: none !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,6 @@
+node_modules
+.next
+.next.bak-*
+out
+.vercel
+.DS_Store

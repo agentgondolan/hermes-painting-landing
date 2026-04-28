@@ -1,0 +1,113 @@
+<svg width="1600" height="1200" viewBox="0 0 1600 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="wall" x1="800" y1="40" x2="800" y2="760" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FBF6EE"/>
+      <stop offset="0.52" stop-color="#EBDDCA"/>
+      <stop offset="1" stop-color="#D9C3A5"/>
+    </linearGradient>
+    <linearGradient id="floor" x1="800" y1="760" x2="800" y2="1200" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B88B57"/>
+      <stop offset="0.45" stop-color="#8E613D"/>
+      <stop offset="1" stop-color="#6E472B"/>
+    </linearGradient>
+    <linearGradient id="wood" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#D7A26C"/>
+      <stop offset="0.3" stop-color="#A76E42"/>
+      <stop offset="0.7" stop-color="#7E502F"/>
+      <stop offset="1" stop-color="#5C381F"/>
+    </linearGradient>
+    <linearGradient id="canvasFront" x1="613" y1="258" x2="997" y2="882" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8F1E6"/>
+      <stop offset="1" stop-color="#DCC6A9"/>
+    </linearGradient>
+    <linearGradient id="canvasWrap" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#E7D7C2"/>
+      <stop offset="1" stop-color="#B19578"/>
+    </linearGradient>
+    <linearGradient id="art" x1="612" y1="258" x2="989" y2="857" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#DDB18A"/>
+      <stop offset="0.26" stop-color="#C98963"/>
+      <stop offset="0.58" stop-color="#9E6C54"/>
+      <stop offset="1" stop-color="#5F403B"/>
+    </linearGradient>
+    <radialGradient id="spotlight" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(872 250) rotate(90) scale(514 629)">
+      <stop stop-color="white" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="white" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="shadow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(808 923) rotate(90) scale(86 270)">
+      <stop stop-color="#422513" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#422513" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur40" x="272" y="773" width="1073" height="311" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="40"/>
+    </filter>
+    <filter id="cardShadow" x="436" y="124" width="710" height="891" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="28" stdDeviation="34" flood-color="#482D17" flood-opacity="0.26"/>
+    </filter>
+    <filter id="softShadow" x="312" y="155" width="970" height="889" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#4A2D17" flood-opacity="0.2"/>
+    </filter>
+    <filter id="grain" x="0" y="0" width="1600" height="1200" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.95" numOctaves="2" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.06"/>
+      </feComponentTransfer>
+    </filter>
+    <clipPath id="artClip">
+      <rect x="617" y="263" width="374" height="592" rx="6"/>
+    </clipPath>
+  </defs>
+
+  <rect width="1600" height="1200" fill="#E9D7C2"/>
+  <rect width="1600" height="780" fill="url(#wall)"/>
+  <rect y="760" width="1600" height="440" fill="url(#floor)"/>
+  <rect width="1600" height="1200" fill="url(#spotlight)"/>
+  <path d="M0 766C242 729 400 715 699 714C1008 714 1232 736 1600 814V1200H0V766Z" fill="#A67449" fill-opacity="0.18"/>
+
+  <g filter="url(#blur40)" opacity="0.84">
+    <ellipse cx="809" cy="928" rx="231" ry="49" fill="#5A331A" fill-opacity="0.55"/>
+    <ellipse cx="810" cy="917" rx="392" ry="54" fill="url(#shadow)"/>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <rect x="767" y="210" width="35" height="611" rx="18" fill="url(#wood)"/>
+    <rect x="552" y="278" width="34" height="652" rx="17" transform="rotate(20 552 278)" fill="url(#wood)"/>
+    <rect x="1014" y="290" width="34" height="652" rx="17" transform="rotate(-20 1014 290)" fill="url(#wood)"/>
+    <rect x="601" y="650" width="390" height="24" rx="12" fill="url(#wood)"/>
+    <rect x="741" y="547" width="18" height="184" rx="9" fill="url(#wood)"/>
+    <rect x="746" y="632" width="126" height="22" rx="11" fill="url(#wood)"/>
+    <rect x="698" y="895" width="28" height="162" rx="14" transform="rotate(14 698 895)" fill="url(#wood)"/>
+    <rect x="892" y="901" width="28" height="162" rx="14" transform="rotate(-14 892 901)" fill="url(#wood)"/>
+    <rect x="699" y="1022" width="222" height="34" rx="17" fill="url(#wood)"/>
+  </g>
+
+  <g filter="url(#cardShadow)">
+    <path d="M578 228H1017V882H578V228Z" fill="url(#canvasWrap)"/>
+    <path d="M565 243H578V872H565C554.507 872 546 863.493 546 853V262C546 251.507 554.507 243 565 243Z" fill="#B69878"/>
+    <path d="M1017 228L1054 249V861L1017 882V228Z" fill="#A18365"/>
+    <path d="M578 228L1017 228L1054 249H613L578 228Z" fill="#E7D4BC"/>
+    <rect x="613" y="258" width="384" height="604" rx="8" fill="url(#canvasFront)"/>
+    <rect x="617" y="263" width="374" height="592" rx="6" fill="url(#art)"/>
+    <g clip-path="url(#artClip)">
+      <rect x="617" y="263" width="374" height="592" fill="url(#art)"/>
+      <ellipse cx="797" cy="401" rx="116" ry="124" fill="#E9BE98"/>
+      <path d="M713 489C713 433.219 758.219 388 814 388H818C873.781 388 919 433.219 919 489V676H713V489Z" fill="#8B5A46"/>
+      <path d="M694 386C716 330 765 286 830 286C878 286 918 310 945 353C913 347 877 356 848 382C814 413 790 463 779 526C740 500 711 451 694 386Z" fill="#6A463F" fill-opacity="0.58"/>
+      <path d="M629 700C677 641 760 612 812 606C900 597 969 639 998 724V857H617V787C620 758 624 730 629 700Z" fill="#7F594B" fill-opacity="0.52"/>
+      <path d="M638 731C702 666 824 646 915 686C955 704 983 733 998 766V857H617V802C621 774 628 750 638 731Z" fill="#B1745F" fill-opacity="0.3"/>
+      <path d="M639 264H990V352C949 330 906 319 862 319C746 319 671 387 639 489V264Z" fill="white" fill-opacity="0.1"/>
+    </g>
+    <rect x="613" y="258" width="384" height="604" rx="8" fill="url(#spotlight)" fill-opacity="0.08"/>
+    <path d="M650 286H689V835H650C641.716 835 635 828.284 635 820V301C635 292.716 641.716 286 650 286Z" fill="white" fill-opacity="0.18"/>
+    <path d="M950 287H973C981.284 287 988 293.716 988 302V819C988 827.284 981.284 834 973 834H950V287Z" fill="#A98A6B" fill-opacity="0.26"/>
+  </g>
+
+  <g opacity="0.42">
+    <path d="M548 273C652 252 729 244 797 244C867 244 953 252 1050 272" stroke="#6E482B" stroke-width="1.6"/>
+    <path d="M613 668H997" stroke="#795036" stroke-opacity="0.28"/>
+    <path d="M613 720H997" stroke="#795036" stroke-opacity="0.16"/>
+  </g>
+
+  <rect width="1600" height="1200" filter="url(#grain)" opacity="0.5"/>
+</svg>

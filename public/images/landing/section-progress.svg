@@ -1,0 +1,9 @@
+<svg width="1400" height="980" viewBox="0 0 1400 980" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1400" height="980" fill="#181818"/>
+  <rect x="112" y="140" width="1176" height="700" rx="38" fill="#231F1D"/>
+  <rect x="170" y="214" width="246" height="552" rx="22" fill="#F2E4D0"/>
+  <rect x="456" y="214" width="246" height="552" rx="22" fill="#D2AA80"/>
+  <rect x="742" y="214" width="246" height="552" rx="22" fill="#B5765A"/>
+  <rect x="1028" y="214" width="202" height="552" rx="22" fill="#6B473D"/>
+  <text x="700" y="896" text-anchor="middle" font-family="Arial, sans-serif" font-size="42" letter-spacing="6" fill="#F4EBDD">PAINTING PROGRESSION</text>
+</svg>
