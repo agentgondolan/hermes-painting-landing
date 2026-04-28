@@ -3,14 +3,26 @@
 import { Canvas, useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { getOrientedFrameDimensions, type FrameOrientation, type FrameSizeId } from '@/lib/image-processing'
+import {
+  getOrientedFrameDimensions,
+  DEFAULT_FRAME_SIZE_ID,
+  type FrameOrientation,
+  type FrameSizeId,
+} from '@/lib/image-processing'
 
+// Legacy props (from scroll-based hero) + new single-screen props
 type ProductSceneCanvasProps = {
-  reducedMotion: boolean
-  rotationY: number
+  // Legacy
+  reducedMotion?: boolean
+  rotationY?: number
+  frameSizeId?: FrameSizeId
+  orientation?: FrameOrientation
   artworkTextureUrl?: string | null
-  frameSizeId: FrameSizeId
-  orientation: FrameOrientation
+  // New single-screen props
+  imageSrc?: string | null
+  previewKind?: "none" | "temporary" | "final"
+  selectedSize?: { id: string; label: string; widthCm: number; heightCm: number } | null
+  isProcessing?: boolean
 }
 
 type CanvasDimensions = {
@@ -541,7 +553,7 @@ function StageFloor() {
   )
 }
 
-function ProductRig({ reducedMotion, rotationY, artworkTextureUrl, frameSizeId, orientation }: ProductSceneCanvasProps) {
+function ProductRig({ reducedMotion = false, rotationY = 0, artworkTextureUrl, frameSizeId = DEFAULT_FRAME_SIZE_ID, orientation = "vertical" }: ProductSceneCanvasProps) {
   const group = useRef<THREE.Group>(null)
   const dimensions = useCanvasDimensions(frameSizeId, orientation)
   const baseTiltX = reducedMotion ? -0.035 : -0.06
