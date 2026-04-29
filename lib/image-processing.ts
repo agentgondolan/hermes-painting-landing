@@ -221,62 +221,56 @@ function getExifOrientation(arrayBuffer: ArrayBuffer): number | null {
  * This handles BOTH JPEGs with EXIF orientation tags AND JPEGs without.
  */
 export async function getExifCorrectedPreviewUrl(file: File): Promise<string> {
-  console.log('[EXIF] getExifCorrectedPreviewUrl called, file:', file.name, file.type)
-  const url = await loadExifAdjustedImageToBlobUrl(file)
-  console.log('[EXIF] getExifCorrectedPreviewUrl returned URL:', url.slice(0, 40))
-  return url
+  return loadExifAdjustedImageToBlobUrl(file)
 }
 
 async function loadExifAdjustedImageToBlobUrl(file: File): Promise<string> {
-  // Load the raw image to get its pixel data (EXIF NOT AUTOMATICALLY APPLIED in browser)
-  const rawImage = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const rawUrl = URL.createObjectURL(file)
-    const img = new Image()
-    img.onload = () => { URL.revokeObjectURL(rawUrl); resolve(img) }
-    img.onerror = () => { URL.revokeObjectURL(rawUrl); reject(new Error('Could not decode image.')) }
-    img.src = rawUrl
-  })
-
-  console.log('[EXIF] rawImage naturalWidth:', rawImage.naturalWidth, 'naturalHeight:', rawImage.naturalHeight)
-
-  // Check EXIF orientation
+  // Read EXIF orientation from raw file bytes
   let orientation: number | null = null
   try {
     const arrayBuffer = await file.arrayBuffer()
     orientation = getExifOrientation(arrayBuffer)
-  } catch (e) {
-    console.error('[EXIF] Error reading EXIF:', e)
+  } catch {
     return URL.createObjectURL(file)
   }
 
-  console.log('[EXIF] orientation tag:', orientation)
-
-  // If no rotation needed, return raw file URL directly
+  // No EXIF rotation needed — return raw file
   if (!orientation || orientation === 1) {
-    console.log('[EXIF] No rotation needed')
     return URL.createObjectURL(file)
   }
 
   const transform = EXIF_TRANSFORMS[orientation] || EXIF_TRANSFORMS[1]
   if (!transform.rotation && !transform.flipH) {
-    console.log('[EXIF] No rotation transform')
     return URL.createObjectURL(file)
   }
 
-  console.log('[EXIF] Applying transform - rotation:', transform.rotation, 'flipH:', transform.flipH)
+  // Use createImageBitmap with imageOrientation: 'none' to get RAW pixels
+  // This prevents the browser from auto-applying EXIF rotation before we draw,
+  // which causes double-rotation issues when combined with manual canvas rotation.
+  let imageBitmap: ImageBitmap
+  try {
+    imageBitmap = await createImageBitmap(file, { imageOrientation: 'none' })
+  } catch {
+    // Fallback: use Image() — may auto-rotate on some browsers
+    return new Promise<string>((resolve) => {
+      const tmpUrl = URL.createObjectURL(file)
+      const img = new Image()
+      img.onload = () => { URL.revokeObjectURL(tmpUrl); resolve(tmpUrl) }
+      img.onerror = () => { URL.revokeObjectURL(tmpUrl); resolve(tmpUrl) }
+      img.src = tmpUrl
+    })
+  }
 
-  // Create EXIF-corrected image on canvas
+  const w = imageBitmap.width
+  const h = imageBitmap.height
+
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')
   if (!ctx) {
-    console.error('[EXIF] Could not get canvas context')
     return URL.createObjectURL(file)
   }
 
-  const w = rawImage.naturalWidth
-  const h = rawImage.naturalHeight
-
-  // Determine canvas dimensions after rotation
+  // Set canvas dimensions after rotation
   if (transform.rotation % 180 !== 0) {
     canvas.width = h
     canvas.height = w
@@ -285,8 +279,6 @@ async function loadExifAdjustedImageToBlobUrl(file: File): Promise<string> {
     canvas.height = h
   }
 
-  console.log('[EXIF] canvas dimensions:', canvas.width, 'x', canvas.height)
-
   // Apply rotation/flip
   ctx.save()
   ctx.translate(canvas.width / 2, canvas.height / 2)
@@ -294,20 +286,15 @@ async function loadExifAdjustedImageToBlobUrl(file: File): Promise<string> {
   if (transform.flipH) {
     ctx.scale(-1, 1)
   }
-  ctx.drawImage(rawImage, -w / 2, -h / 2)
+  ctx.drawImage(imageBitmap, -w / 2, -h / 2)
   ctx.restore()
 
-  // Return blob URL of the corrected canvas
+  // Return blob URL of the corrected canvas (no EXIF tag included)
   return new Promise<string>((resolve) => {
     canvas.toBlob((blob) => {
-      if (!blob) {
-        console.error('[EXIF] canvas.toBlob returned null')
-        resolve(URL.createObjectURL(file))
-        return
-      }
-      console.log('[EXIF] blob created, size:', blob.size)
+      if (!blob) { resolve(URL.createObjectURL(file)); return }
       resolve(URL.createObjectURL(blob))
-    }, file.type)
+    }, file.type === 'image/png' ? 'image/png' : file.type === 'image/webp' ? 'image/webp' : 'image/jpeg')
   })
 }
 
