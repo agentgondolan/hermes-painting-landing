@@ -280,18 +280,21 @@ async function loadExifAdjustedImage(file: File): Promise<HTMLImageElement> {
   ctx.drawImage(image, -w / 2, -h / 2)
   ctx.restore()
 
-  const blob = await new Promise<Blob>((res) => canvas.toBlob((b) => res(b!), file.type))
-  const result = new Image()
-  await new Promise<void>((res) => { result.onload = () => res() })
-  const blobUrl = URL.createObjectURL(blob)
-  result.src = blobUrl
-  result.onload = () => URL.revokeObjectURL(blobUrl)
-
-  return new Promise<HTMLImageElement>((resolve) => {
-    result.onload = () => { URL.revokeObjectURL(blobUrl); resolve(result) }
-    result.onerror = () => { URL.revokeObjectURL(blobUrl); resolve(image) }
-    result.src = blobUrl
+  const blobUrl = await new Promise<string>((resolve, reject) => {
+    canvas.toBlob((b) => {
+      if (!b) { reject(new Error('toBlob failed')); return }
+      resolve(URL.createObjectURL(b))
+    }, file.type)
   })
+
+  const result = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => { URL.revokeObjectURL(blobUrl); resolve(img) }
+    img.onerror = () => { URL.revokeObjectURL(blobUrl); reject(new Error('Failed to load adjusted image')) }
+    img.src = blobUrl
+  })
+
+  return result
 }
 
 // --- end EXIF orientation handling ---
