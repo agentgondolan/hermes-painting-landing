@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { useReducer, useCallback, useRef, useEffect } from "react"
 import {
@@ -10,7 +10,7 @@ import {
   type PreviewState,
   type FrameSizeOption,
 } from "./preview-state"
-import { mockImageProcessor } from "@/lib/image-processing"
+import { mockImageProcessor, getExifCorrectedPreviewUrl } from "@/lib/image-processing"
 import { ACCEPTED_MIME_TYPES, DEFAULT_SIZE_ID, UX_COPY } from "./constants"
 
 export function usePreviewFlow() {
@@ -26,21 +26,17 @@ export function usePreviewFlow() {
 
     const sessionToken = crypto.randomUUID()
 
-    const startTime = Date.now()
+    dispatch({ type: "SELECT_IMAGE", file, sessionToken })
 
-    dispatch({type: "SELECT_IMAGE", file, sessionToken})
-
-    // Create temp preview URL from EXIF-corrected image
-    import('@/lib/image-processing').then(({ getExifCorrectedPreviewUrl }) => {
-      getExifCorrectedPreviewUrl(file).then((previewUrl) => {
-        dispatch({ type: "TEMP_PREVIEW_READY", url: previewUrl, sessionToken })
-        dispatch({ type: "START_PROCESSING", sessionToken })
-      }).catch(() => {
-        // Fallback: use raw file URL
-        const url = URL.createObjectURL(file)
-        dispatch({ type: "TEMP_PREVIEW_READY", url, sessionToken })
-        dispatch({ type: "START_PROCESSING", sessionToken })
-      })
+    // Generate EXIF-corrected temp preview
+    getExifCorrectedPreviewUrl(file).then((previewUrl) => {
+      dispatch({ type: "TEMP_PREVIEW_READY", url: previewUrl, sessionToken })
+      dispatch({ type: "START_PROCESSING", sessionToken })
+    }).catch(() => {
+      // Fallback: raw file URL
+      const url = URL.createObjectURL(file)
+      dispatch({ type: "TEMP_PREVIEW_READY", url, sessionToken })
+      dispatch({ type: "START_PROCESSING", sessionToken })
     })
 
     // Run mock processor (simulates server-side transform)

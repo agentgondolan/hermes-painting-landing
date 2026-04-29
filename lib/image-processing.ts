@@ -154,28 +154,11 @@ function formatCropStatus(sizeId: FrameSizeId, orientation: FrameOrientation, cr
   return `Cropped to ${option.label} in ${direction} orientation — centered and ${cropSummary}.`
 }
 
-function loadImageFromFile(file: File) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const sourceUrl = URL.createObjectURL(file)
-    const image = new Image()
-
-    image.onload = () => {
-      URL.revokeObjectURL(sourceUrl)
-      resolve(image)
-    }
-
-    image.onerror = () => {
-      URL.revokeObjectURL(sourceUrl)
-      reject(new Error('The uploaded image could not be decoded.'))
-    }
-
-    image.src = sourceUrl
-  })
-}
-
 // --- EXIF orientation handling ---
 
-const EXIF_ORIENTATIONS: Record<number, { rotation: number; flipH: boolean }> = {
+// EXIF orientation tag (274) values and their transforms
+// 1=normal, 3=180°, 6=90° CW (photo appears narrow/long when held sideways), 8=90° CCW (photo appears narrow/long when held sideways)
+const EXIF_TRANSFORMS: Record<number, { rotation: number; flipH: boolean }> = {
   1: { rotation: 0, flipH: false },
   2: { rotation: 0, flipH: true },
   3: { rotation: 180, flipH: false },
@@ -188,14 +171,14 @@ const EXIF_ORIENTATIONS: Record<number, { rotation: number; flipH: boolean }> = 
 
 function getExifOrientation(arrayBuffer: ArrayBuffer): number | null {
   const view = new DataView(arrayBuffer)
-
   if (view.getUint16(0) !== 0xffd8) {
     return null
   }
 
   let offset = 2
   while (offset < view.byteLength - 1) {
-    if ((view.getUint8(offset) & 0xff) !== 0xff || view.getUint8(offset + 1) !== 0xe1) {
+    // Check for APP1 marker (0xFFE1)
+    if (view.getUint8(offset) !== 0xff || view.getUint8(offset + 1) !== 0xe1) {
       offset += 2
       continue
     }
@@ -204,14 +187,18 @@ function getExifOrientation(arrayBuffer: ArrayBuffer): number | null {
     const exifMarker = view.getUint32(offset + 4)
     const tiffOffset = offset + 10
 
-    if (exifMarker === 0x45786966 && tiffOffset + 8 < view.byteLength) {
+    if (exifMarker === 0x45786966 && tiffOffset + 8 <= view.byteLength) {
       const le = view.getUint16(tiffOffset) === 0x4949
       const ifdOffset = view.getUint32(tiffOffset + 4, le)
-      const ifdPtr = tiffOffset + ifdOffset
-
-      if (ifdPtr + 2 > view.byteLength) {
-        return null
+      // Handle both little-endian and big-endian offset base
+      let ifdPtr: number
+      if (le) {
+        ifdPtr = tiffOffset + ifdOffset
+      } else {
+        ifdPtr = tiffOffset + ifdOffset
       }
+
+      if (ifdPtr + 2 > view.byteLength) return null
 
       const numEntries = view.getUint16(ifdPtr, le)
       for (let i = 0; i < numEntries; i++) {
@@ -228,41 +215,57 @@ function getExifOrientation(arrayBuffer: ArrayBuffer): number | null {
   return null
 }
 
+/**
+ * Returns a blob URL for an EXIF-corrected version of the file.
+ * If no EXIF orientation is found, returns a blob URL of the corrected image.
+ * This handles BOTH JPEGs with EXIF orientation tags AND JPEGs without.
+ */
 export async function getExifCorrectedPreviewUrl(file: File): Promise<string> {
-  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const url = URL.createObjectURL(file)
+  const url = await loadExifAdjustedImageToBlobUrl(file)
+  return url
+}
+
+async function loadExifAdjustedImageToBlobUrl(file: File): Promise<string> {
+  // Load the raw image to get its pixel data (EXIF NOT AUTOMATICALLY APPLIED in browser)
+  const rawImage = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const rawUrl = URL.createObjectURL(file)
     const img = new Image()
-    img.onload = () => { URL.revokeObjectURL(url); resolve(img) }
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not decode image.')) }
-    img.src = url
+    img.onload = () => { URL.revokeObjectURL(rawUrl); resolve(img) }
+    img.onerror = () => { URL.revokeObjectURL(rawUrl); reject(new Error('Could not decode image.')) }
+    img.src = rawUrl
   })
 
+  // Check EXIF orientation
   let orientation: number | null = null
   try {
     const arrayBuffer = await file.arrayBuffer()
     orientation = getExifOrientation(arrayBuffer)
   } catch {
+    // If we can't read EXIF, use the raw image
     return URL.createObjectURL(file)
   }
 
+  // If no rotation needed, return raw file URL directly
   if (!orientation || orientation === 1) {
     return URL.createObjectURL(file)
   }
 
-  const transform = EXIF_ORIENTATIONS[orientation] || EXIF_ORIENTATIONS[1]
+  const transform = EXIF_TRANSFORMS[orientation] || EXIF_TRANSFORMS[1]
   if (!transform.rotation && !transform.flipH) {
     return URL.createObjectURL(file)
   }
 
+  // Create EXIF-corrected image on canvas
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')
   if (!ctx) {
     return URL.createObjectURL(file)
   }
 
-  const w = image.naturalWidth
-  const h = image.naturalHeight
+  const w = rawImage.naturalWidth
+  const h = rawImage.naturalHeight
 
+  // Determine canvas dimensions after rotation
   if (transform.rotation % 180 !== 0) {
     canvas.width = h
     canvas.height = w
@@ -271,30 +274,32 @@ export async function getExifCorrectedPreviewUrl(file: File): Promise<string> {
     canvas.height = h
   }
 
+  // Apply rotation/flip
   ctx.save()
   ctx.translate(canvas.width / 2, canvas.height / 2)
   ctx.rotate((transform.rotation * Math.PI) / 180)
   if (transform.flipH) {
     ctx.scale(-1, 1)
   }
-  ctx.drawImage(image, -w / 2, -h / 2)
+  ctx.drawImage(rawImage, -w / 2, -h / 2)
   ctx.restore()
 
+  // Return blob URL of the corrected canvas
   return new Promise<string>((resolve) => {
-    canvas.toBlob((b) => {
-      if (!b) { resolve(URL.createObjectURL(file)); return }
-      resolve(URL.createObjectURL(b))
+    canvas.toBlob((blob) => {
+      if (!blob) { resolve(URL.createObjectURL(file)); return }
+      resolve(URL.createObjectURL(blob))
     }, file.type)
   })
 }
 
 async function loadExifAdjustedImage(file: File): Promise<HTMLImageElement> {
-  const url = await getExifCorrectedPreviewUrl(file)
+  const correctedUrl = await loadExifAdjustedImageToBlobUrl(file)
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image()
     img.onload = () => resolve(img)
     img.onerror = () => reject(new Error('Could not load adjusted image'))
-    img.src = url
+    img.src = correctedUrl
   })
 }
 
