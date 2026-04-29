@@ -20,6 +20,7 @@ export function SingleScreenPreviewShell() {
         <div className="mx-auto max-w-md">
           <GuidedControls
             guidedModel={guidedModel}
+            selectedSize={state.selectedSize}
             onSelectImage={actions.selectImage}
             onRetry={actions.retry}
             onReset={actions.reset}

@@ -26,14 +26,22 @@ export function usePreviewFlow() {
 
     const sessionToken = crypto.randomUUID()
 
-    dispatch({ type: "SELECT_IMAGE", file })
+    const startTime = Date.now()
 
-    // Create temp preview URL immediately
-    const url = URL.createObjectURL(file)
-    dispatch({ type: "TEMP_PREVIEW_READY", url, sessionToken })
+    dispatch({type: "SELECT_IMAGE", file, sessionToken})
 
-    // Start async processing
-    dispatch({ type: "START_PROCESSING", sessionToken })
+    // Create temp preview URL from EXIF-corrected image
+    import('@/lib/image-processing').then(({ getExifCorrectedPreviewUrl }) => {
+      getExifCorrectedPreviewUrl(file).then((previewUrl) => {
+        dispatch({ type: "TEMP_PREVIEW_READY", url: previewUrl, sessionToken })
+        dispatch({ type: "START_PROCESSING", sessionToken })
+      }).catch(() => {
+        // Fallback: use raw file URL
+        const url = URL.createObjectURL(file)
+        dispatch({ type: "TEMP_PREVIEW_READY", url, sessionToken })
+        dispatch({ type: "START_PROCESSING", sessionToken })
+      })
+    })
 
     // Run mock processor (simulates server-side transform)
     mockImageProcessor(file).then(

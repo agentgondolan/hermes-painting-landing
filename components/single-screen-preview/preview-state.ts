@@ -22,7 +22,7 @@ export interface PreviewState {
 }
 
 export type PreviewEvent =
-  | { type: "SELECT_IMAGE"; file: File }
+  | { type: "SELECT_IMAGE"; file: File; sessionToken: string }
   | { type: "TEMP_PREVIEW_READY"; url: string; sessionToken: string }
   | { type: "START_PROCESSING"; sessionToken: string }
   | { type: "PROCESSING_SUCCESS"; url: string; sessionToken: string }
@@ -51,7 +51,7 @@ export function previewReducer(
         ...state,
         status: "image-selected",
         selectedFile: event.file,
-        sessionToken: crypto.randomUUID(),
+        sessionToken: event.sessionToken,
         temporaryUrl: null,
         finalUrl: null,
         error: null,

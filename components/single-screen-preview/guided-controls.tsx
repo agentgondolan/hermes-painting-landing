@@ -8,6 +8,7 @@ import { UX_COPY, ACCEPTED_MIME_TYPES } from "./constants"
 
 interface GuidedControlsProps {
   guidedModel: GuidedControlModel
+  selectedSize: FrameSizeOption | null
   onSelectImage: (file: File) => void
   onRetry: () => void
   onReset: () => void
@@ -16,6 +17,7 @@ interface GuidedControlsProps {
 
 export function GuidedControls({
   guidedModel,
+  selectedSize,
   onSelectImage,
   onRetry,
   onReset,
@@ -82,7 +84,11 @@ export function GuidedControls({
             <button
               key={opt.id}
               onClick={() => onSetSize(opt)}
-              className="rounded-full border border-white/20 px-4 py-2 text-xs text-white/70 transition hover:bg-white/10"
+              className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                selectedSize?.id === opt.id
+                  ? "bg-white/20 border-white/40 text-white"
+                  : "border-white/20 text-white/70 hover:bg-white/10 hover:text-white"
+              }`}
             >
               {opt.label}
             </button>

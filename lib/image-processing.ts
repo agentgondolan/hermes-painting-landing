@@ -228,7 +228,7 @@ function getExifOrientation(arrayBuffer: ArrayBuffer): number | null {
   return null
 }
 
-async function loadExifAdjustedImage(file: File): Promise<HTMLImageElement> {
+export async function getExifCorrectedPreviewUrl(file: File): Promise<string> {
   const image = await new Promise<HTMLImageElement>((resolve, reject) => {
     const url = URL.createObjectURL(file)
     const img = new Image()
@@ -242,22 +242,22 @@ async function loadExifAdjustedImage(file: File): Promise<HTMLImageElement> {
     const arrayBuffer = await file.arrayBuffer()
     orientation = getExifOrientation(arrayBuffer)
   } catch {
-    return image
+    return URL.createObjectURL(file)
   }
 
   if (!orientation || orientation === 1) {
-    return image
+    return URL.createObjectURL(file)
   }
 
   const transform = EXIF_ORIENTATIONS[orientation] || EXIF_ORIENTATIONS[1]
   if (!transform.rotation && !transform.flipH) {
-    return image
+    return URL.createObjectURL(file)
   }
 
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')
   if (!ctx) {
-    return image
+    return URL.createObjectURL(file)
   }
 
   const w = image.naturalWidth
@@ -280,21 +280,22 @@ async function loadExifAdjustedImage(file: File): Promise<HTMLImageElement> {
   ctx.drawImage(image, -w / 2, -h / 2)
   ctx.restore()
 
-  const blobUrl = await new Promise<string>((resolve, reject) => {
+  return new Promise<string>((resolve) => {
     canvas.toBlob((b) => {
-      if (!b) { reject(new Error('toBlob failed')); return }
+      if (!b) { resolve(URL.createObjectURL(file)); return }
       resolve(URL.createObjectURL(b))
     }, file.type)
   })
+}
 
-  const result = await new Promise<HTMLImageElement>((resolve, reject) => {
+async function loadExifAdjustedImage(file: File): Promise<HTMLImageElement> {
+  const url = await getExifCorrectedPreviewUrl(file)
+  return new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image()
-    img.onload = () => { URL.revokeObjectURL(blobUrl); resolve(img) }
-    img.onerror = () => { URL.revokeObjectURL(blobUrl); reject(new Error('Failed to load adjusted image')) }
-    img.src = blobUrl
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error('Could not load adjusted image'))
+    img.src = url
   })
-
-  return result
 }
 
 // --- end EXIF orientation handling ---

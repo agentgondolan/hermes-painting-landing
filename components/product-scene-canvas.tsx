@@ -1,6 +1,7 @@
 'use client'
 
 import { Canvas, useFrame } from '@react-three/fiber'
+import { OrbitControls, useAspect } from '@react-three/drei'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import {
@@ -34,8 +35,8 @@ type CanvasDimensions = {
 function StudioLighting() {
   return (
     <>
-      <color attach="background" args={['#ffffff']} />
-      <fog attach="fog" args={['#ffffff', 13, 28]} />
+      <color attach="background" args={['#0e0b09']} />
+      <fog attach="fog" args={['#0e0b09', 13, 28]} />
       <ambientLight intensity={1.1} color="#ffffff" />
       <hemisphereLight intensity={0.82} color="#ffffff" groundColor="#d7d7d7" />
       <directionalLight
@@ -303,17 +304,25 @@ function CanvasObject({
   const canvasTexture = useArtworkTexture(artworkTextureUrl)
   const hasArtwork = Boolean(artworkTextureUrl)
 
+  const canvasW = dimensions.width
+  const canvasH = dimensions.height
+
+  const imgAspect = canvasTexture?.image instanceof HTMLImageElement || canvasTexture?.image instanceof HTMLCanvasElement
+    ? canvasTexture!.image.width / (canvasTexture!.image.height || 1)
+    : 1
+  const frameAspect = canvasH > 0 ? canvasW / canvasH : 1
+  const fits = frameAspect > imgAspect ? [canvasW - 0.08, (canvasW - 0.08) / imgAspect] : [(canvasH - 0.08) * imgAspect, canvasH - 0.08]
+
   const frontMaterial = useMemo(() => {
     const material = new THREE.MeshStandardMaterial({
-      color: hasArtwork ? '#ffffff' : '#fbfaf6',
-      map: canvasTexture,
-      roughness: hasArtwork ? 0.9 : 0.97,
+      color: '#fbfaf6',
+      roughness: 0.97,
       metalness: 0,
       side: THREE.DoubleSide,
     })
     material.shadowSide = THREE.DoubleSide
     return material
-  }, [canvasTexture, hasArtwork])
+  }, [])
 
   const wrapMaterial = useMemo(() => {
     const material = new THREE.MeshStandardMaterial({
@@ -394,6 +403,12 @@ function CanvasObject({
       <mesh castShadow receiveShadow position={[0, 0, frontZ]}>
         <planeGeometry args={[width, height]} />
         <primitive attach="material" object={frontMaterial} />
+        {hasArtwork && canvasTexture && (
+          <mesh position={[0, 0, frontZ + 0.004]} rotation={[Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[fits[0], fits[1]]} />
+            <meshStandardMaterial map={canvasTexture} />
+          </mesh>
+        )}
       </mesh>
 
       <mesh position={[0, 0, frontZ + 0.001]} receiveShadow>
@@ -562,17 +577,18 @@ function ProductRig({ reducedMotion = false, rotationY = 0, artworkTextureUrl, f
   const easelScale = 1.08
   const widthLift = (dimensions.width - 2.08) * 0.055
 
-  useFrame((state, delta) => {
+  useFrame((_, delta) => {
     if (!group.current) {
       return
     }
 
-    const time = state.clock.getElapsedTime()
+    const time = _.clock.getElapsedTime()
     const idleX = reducedMotion ? baseTiltX : baseTiltX + Math.cos(time * 0.36) * 0.004
+    const autoRotate = reducedMotion ? 0 : time * 0.15
     const idleY = reducedMotion ? 0 : Math.sin(time * 0.28) * 0.012
 
     group.current.rotation.x = THREE.MathUtils.lerp(group.current.rotation.x, idleX, 1 - Math.exp(-delta * 2.6))
-    group.current.rotation.y = THREE.MathUtils.lerp(group.current.rotation.y, rotationY + idleY, 1 - Math.exp(-delta * 3))
+    group.current.rotation.y = THREE.MathUtils.lerp(group.current.rotation.y, autoRotate + rotationY + idleY, 1 - Math.exp(-delta * 3))
     group.current.position.y = basePositionY - widthLift
     group.current.position.z = basePositionZ
   })
@@ -591,6 +607,21 @@ function ProductRig({ reducedMotion = false, rotationY = 0, artworkTextureUrl, f
 }
 
 export function ProductSceneCanvas(props: ProductSceneCanvasProps) {
+  // Bridge the new single-screen props to the legacy component
+  const artworkTextureUrl = props.artworkTextureUrl ?? props.imageSrc ?? null
+
+  // Map selectedSize to frameSizeId + orientation
+  const selectedSize = props.selectedSize ?? null
+  const hasSelectedSize = selectedSize != null
+  const frameSizeId = hasSelectedSize
+    ? (selectedSize.id as FrameSizeId ?? DEFAULT_FRAME_SIZE_ID)
+    : (props.frameSizeId ?? DEFAULT_FRAME_SIZE_ID)
+
+  // Determine orientation from selectedSize dimensions
+  const orientation = hasSelectedSize
+    ? selectedSize.widthCm >= selectedSize.heightCm ? 'horizontal' : 'vertical'
+    : (props.orientation ?? 'vertical')
+
   return (
     <Canvas
       shadows
@@ -599,7 +630,27 @@ export function ProductSceneCanvas(props: ProductSceneCanvasProps) {
       camera={{ position: [4.55, 1.95, 12.1], fov: 29, near: 0.1, far: 40 }}
     >
       <StudioLighting />
-      <ProductRig {...props} />
+      <ProductRig
+        {...props}
+        artworkTextureUrl={artworkTextureUrl}
+        frameSizeId={frameSizeId}
+        orientation={orientation}
+        reducedMotion={props.reducedMotion ?? false}
+        rotationY={props.rotationY ?? 0}
+      />
+      <OrbitControls
+        enablePan={false}
+        enableZoom
+        minZoom={5}
+        maxZoom={20}
+        minPolarAngle={Math.PI * 0.2}
+        maxPolarAngle={Math.PI * 0.8}
+        enableRotate
+        enableDamping
+        dampingFactor={0.08}
+        autoRotate
+        autoRotateSpeed={1.5}
+      />
     </Canvas>
   )
 }
