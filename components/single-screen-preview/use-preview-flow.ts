@@ -6,87 +6,158 @@ import {
   initialPreviewState,
   deriveSceneModel,
   deriveGuidedModel,
-  type PreviewEvent,
-  type PreviewState,
   type FrameSizeOption,
 } from "./preview-state"
-import { mockImageProcessor, getExifCorrectedPreviewUrl } from "@/lib/image-processing"
+import {
+  mockImageProcessor,
+  getExifCorrectedPreviewUrl,
+} from "@/lib/image-processing"
 import { ACCEPTED_MIME_TYPES, DEFAULT_SIZE_ID, UX_COPY } from "./constants"
 
 export function usePreviewFlow() {
   const [state, dispatch] = useReducer(previewReducer, initialPreviewState)
   const stateRef = useRef(state)
+  const processingRequestRef = useRef<string | null>(null)
   stateRef.current = state
 
-  const handleSelectImage = useCallback((file: File) => {
-    if (!ACCEPTED_MIME_TYPES.includes(file.type as (typeof ACCEPTED_MIME_TYPES)[number])) {
-      dispatch({ type: "RESET" })
-      return
+  const revokePreviewUrls = useCallback((temporaryUrl: string | null, finalUrl: string | null) => {
+    if (temporaryUrl) {
+      URL.revokeObjectURL(temporaryUrl)
     }
 
-    const sessionToken = crypto.randomUUID()
+    if (finalUrl && finalUrl !== temporaryUrl) {
+      URL.revokeObjectURL(finalUrl)
+    }
+  }, [])
 
-    dispatch({ type: "SELECT_IMAGE", file, sessionToken })
-
-    // Generate EXIF-corrected temp preview
-    getExifCorrectedPreviewUrl(file).then((previewUrl) => {
-      dispatch({ type: "TEMP_PREVIEW_READY", url: previewUrl, sessionToken })
+  const processSelectedFile = useCallback(
+    (file: File, sessionToken: string, preferredSizeId?: FrameSizeOption["id"]) => {
+      const requestId = crypto.randomUUID()
+      processingRequestRef.current = requestId
       dispatch({ type: "START_PROCESSING", sessionToken })
-    }).catch(() => {
-      // Fallback: raw file URL
-      const url = URL.createObjectURL(file)
-      dispatch({ type: "TEMP_PREVIEW_READY", url, sessionToken })
-      dispatch({ type: "START_PROCESSING", sessionToken })
-    })
 
-    // Run mock processor (simulates server-side transform)
-    mockImageProcessor(file).then(
-      (result) => {
-        if (stateRef.current.sessionToken === sessionToken) {
+      mockImageProcessor(file, { preferredSizeId }).then(
+        (result) => {
+          if (
+            processingRequestRef.current !== requestId ||
+            stateRef.current.sessionToken !== sessionToken
+          ) {
+            result.cleanup?.()
+            return
+          }
+
+          const previousFinalUrl = stateRef.current.finalUrl
+          const currentTemporaryUrl = stateRef.current.temporaryUrl
+
           dispatch({
             type: "PROCESSING_SUCCESS",
             url: result.resultUrl,
             sessionToken,
           })
-        } else {
-          result.cleanup?.()
-        }
-      },
-      (err) => {
-        if (stateRef.current.sessionToken === sessionToken) {
-          dispatch({
-            type: "PROCESSING_FAILURE",
-            error: err?.message ?? UX_COPY.errorBadFile,
-            sessionToken,
-          })
-        }
-      },
-    )
-  }, [])
+
+          if (
+            previousFinalUrl &&
+            previousFinalUrl !== currentTemporaryUrl &&
+            previousFinalUrl !== result.resultUrl
+          ) {
+            URL.revokeObjectURL(previousFinalUrl)
+          }
+        },
+        (err) => {
+          if (
+            processingRequestRef.current === requestId &&
+            stateRef.current.sessionToken === sessionToken
+          ) {
+            dispatch({
+              type: "PROCESSING_FAILURE",
+              error: err?.message ?? UX_COPY.errorBadFile,
+              sessionToken,
+            })
+          }
+        },
+      )
+    },
+    [],
+  )
+
+  const handleSelectImage = useCallback(
+    (file: File) => {
+      if (!ACCEPTED_MIME_TYPES.includes(file.type as (typeof ACCEPTED_MIME_TYPES)[number])) {
+        dispatch({ type: "RESET" })
+        return
+      }
+
+      const previousState = stateRef.current
+      revokePreviewUrls(previousState.temporaryUrl, previousState.finalUrl)
+
+      const sessionToken = crypto.randomUUID()
+      const preferredSizeId = previousState.selectedSize?.id ?? DEFAULT_SIZE_ID
+
+      dispatch({ type: "SELECT_IMAGE", file, sessionToken })
+
+      getExifCorrectedPreviewUrl(file)
+        .then((previewUrl) => {
+          if (stateRef.current.sessionToken !== sessionToken) {
+            URL.revokeObjectURL(previewUrl)
+            return
+          }
+
+          dispatch({ type: "TEMP_PREVIEW_READY", url: previewUrl, sessionToken })
+          processSelectedFile(file, sessionToken, preferredSizeId)
+        })
+        .catch(() => {
+          const previewUrl = URL.createObjectURL(file)
+
+          if (stateRef.current.sessionToken !== sessionToken) {
+            URL.revokeObjectURL(previewUrl)
+            return
+          }
+
+          dispatch({ type: "TEMP_PREVIEW_READY", url: previewUrl, sessionToken })
+          processSelectedFile(file, sessionToken, preferredSizeId)
+        })
+    },
+    [processSelectedFile, revokePreviewUrls],
+  )
 
   const handleRetry = useCallback(() => {
-    dispatch({ type: "RETRY" })
-  }, [])
+    const currentState = stateRef.current
+    if (!currentState.selectedFile || !currentState.sessionToken) {
+      dispatch({ type: "RETRY" })
+      return
+    }
+
+    processSelectedFile(
+      currentState.selectedFile,
+      currentState.sessionToken,
+      currentState.selectedSize?.id ?? DEFAULT_SIZE_ID,
+    )
+  }, [processSelectedFile])
 
   const handleReset = useCallback(() => {
-    if (state.temporaryUrl) URL.revokeObjectURL(state.temporaryUrl)
-    if (state.finalUrl && state.finalUrl !== state.temporaryUrl)
-      URL.revokeObjectURL(state.finalUrl)
+    revokePreviewUrls(state.temporaryUrl, state.finalUrl)
     dispatch({ type: "RESET" })
-  }, [state])
+  }, [revokePreviewUrls, state.finalUrl, state.temporaryUrl])
 
-  const handleSetSize = useCallback((size: FrameSizeOption) => {
-    dispatch({ type: "SET_SIZE", size })
-  }, [])
+  const handleSetSize = useCallback(
+    (size: FrameSizeOption) => {
+      dispatch({ type: "SET_SIZE", size })
 
-  // Cleanup on unmount
+      const currentState = stateRef.current
+      if (!currentState.selectedFile || !currentState.sessionToken) {
+        return
+      }
+
+      processSelectedFile(currentState.selectedFile, currentState.sessionToken, size.id)
+    },
+    [processSelectedFile],
+  )
+
   useEffect(() => {
     return () => {
-      if (state.temporaryUrl) URL.revokeObjectURL(state.temporaryUrl)
-      if (state.finalUrl && state.finalUrl !== state.temporaryUrl)
-        URL.revokeObjectURL(state.finalUrl)
+      revokePreviewUrls(stateRef.current.temporaryUrl, stateRef.current.finalUrl)
     }
-  }, [state.temporaryUrl, state.finalUrl])
+  }, [revokePreviewUrls])
 
   return {
     state,

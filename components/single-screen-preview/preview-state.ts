@@ -8,7 +8,11 @@ export type PreviewStatus =
   | "final-preview-ready"
   | "error"
 
-import type { FrameSizeOption } from '@/lib/image-processing'
+import {
+  DEFAULT_FRAME_SIZE_ID,
+  getFrameSizeOption,
+  type FrameSizeOption,
+} from '@/lib/image-processing'
 export type { FrameSizeOption }
 
 export interface PreviewState {
@@ -37,7 +41,7 @@ export const initialPreviewState: PreviewState = {
   temporaryUrl: null,
   finalUrl: null,
   selectedFile: null,
-  selectedSize: null,
+  selectedSize: getFrameSizeOption(DEFAULT_FRAME_SIZE_ID),
   error: null,
 }
 
