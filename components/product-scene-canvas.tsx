@@ -404,9 +404,14 @@ function CanvasObject({
         <planeGeometry args={[width, height]} />
         <primitive attach="material" object={frontMaterial} />
         {hasArtwork && canvasTexture && (
-          <mesh position={[0, 0, frontZ + 0.004]} rotation={[Math.PI / 2, 0, 0]}>
+          <mesh position={[0, 0, 0.012]} renderOrder={2}>
             <planeGeometry args={[fits[0], fits[1]]} />
-            <meshStandardMaterial map={canvasTexture} />
+            <meshStandardMaterial
+              map={canvasTexture}
+              polygonOffset
+              polygonOffsetFactor={-4}
+              polygonOffsetUnits={-4}
+            />
           </mesh>
         )}
       </mesh>
