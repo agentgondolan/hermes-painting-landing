@@ -173,6 +173,129 @@ function loadImageFromFile(file: File) {
   })
 }
 
+// --- EXIF orientation handling ---
+
+const EXIF_ORIENTATIONS: Record<number, { rotation: number; flipH: boolean }> = {
+  1: { rotation: 0, flipH: false },
+  2: { rotation: 0, flipH: true },
+  3: { rotation: 180, flipH: false },
+  4: { rotation: 180, flipH: true },
+  5: { rotation: 90, flipH: true },
+  6: { rotation: -90, flipH: false },
+  7: { rotation: -90, flipH: true },
+  8: { rotation: 90, flipH: false },
+}
+
+function getExifOrientation(arrayBuffer: ArrayBuffer): number | null {
+  const view = new DataView(arrayBuffer)
+
+  if (view.getUint16(0) !== 0xffd8) {
+    return null
+  }
+
+  let offset = 2
+  while (offset < view.byteLength - 1) {
+    if ((view.getUint8(offset) & 0xff) !== 0xff || view.getUint8(offset + 1) !== 0xe1) {
+      offset += 2
+      continue
+    }
+
+    const app1Length = view.getUint16(offset + 2)
+    const exifMarker = view.getUint32(offset + 4)
+    const tiffOffset = offset + 10
+
+    if (exifMarker === 0x45786966 && tiffOffset + 8 < view.byteLength) {
+      const le = view.getUint16(tiffOffset) === 0x4949
+      const ifdOffset = view.getUint32(tiffOffset + 4, le)
+      const ifdPtr = tiffOffset + ifdOffset
+
+      if (ifdPtr + 2 > view.byteLength) {
+        return null
+      }
+
+      const numEntries = view.getUint16(ifdPtr, le)
+      for (let i = 0; i < numEntries; i++) {
+        const entryPtr = ifdPtr + 2 + i * 12
+        if (entryPtr + 12 > view.byteLength) break
+        const tag = view.getUint16(entryPtr, le)
+        if (tag === 274) {
+          return view.getUint16(entryPtr + 8, le)
+        }
+      }
+    }
+    offset += 2 + app1Length
+  }
+  return null
+}
+
+async function loadExifAdjustedImage(file: File): Promise<HTMLImageElement> {
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img) }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not decode image.')) }
+    img.src = url
+  })
+
+  let orientation: number | null = null
+  try {
+    const arrayBuffer = await file.arrayBuffer()
+    orientation = getExifOrientation(arrayBuffer)
+  } catch {
+    return image
+  }
+
+  if (!orientation || orientation === 1) {
+    return image
+  }
+
+  const transform = EXIF_ORIENTATIONS[orientation] || EXIF_ORIENTATIONS[1]
+  if (!transform.rotation && !transform.flipH) {
+    return image
+  }
+
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    return image
+  }
+
+  const w = image.naturalWidth
+  const h = image.naturalHeight
+
+  if (transform.rotation % 180 !== 0) {
+    canvas.width = h
+    canvas.height = w
+  } else {
+    canvas.width = w
+    canvas.height = h
+  }
+
+  ctx.save()
+  ctx.translate(canvas.width / 2, canvas.height / 2)
+  ctx.rotate((transform.rotation * Math.PI) / 180)
+  if (transform.flipH) {
+    ctx.scale(-1, 1)
+  }
+  ctx.drawImage(image, -w / 2, -h / 2)
+  ctx.restore()
+
+  const blob = await new Promise<Blob>((res) => canvas.toBlob((b) => res(b!), file.type))
+  const result = new Image()
+  await new Promise<void>((res) => { result.onload = () => res() })
+  const blobUrl = URL.createObjectURL(blob)
+  result.src = blobUrl
+  result.onload = () => URL.revokeObjectURL(blobUrl)
+
+  return new Promise<HTMLImageElement>((resolve) => {
+    result.onload = () => { URL.revokeObjectURL(blobUrl); resolve(result) }
+    result.onerror = () => { URL.revokeObjectURL(blobUrl); resolve(image) }
+    result.src = blobUrl
+  })
+}
+
+// --- end EXIF orientation handling ---
+
 function canvasToBlob(canvas: HTMLCanvasElement, type: string) {
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -189,7 +312,7 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string) {
 export const mockImageProcessor: ImageProcessor = async (file, options) => {
   await new Promise((resolve) => window.setTimeout(resolve, MOCK_DELAY_MS))
 
-  const image = await loadImageFromFile(file)
+  const image = await loadExifAdjustedImage(file)
   const orientation = getOrientationFromDimensions(image.naturalWidth, image.naturalHeight)
   const sourceRatio = image.naturalWidth / image.naturalHeight
   const sizeId = options?.preferredSizeId ?? getClosestFrameSizeId(sourceRatio, orientation)
