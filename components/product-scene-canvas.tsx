@@ -245,14 +245,17 @@ function configureTexture(texture: THREE.Texture) {
 function createMirroredStripTexture(
   source: HTMLImageElement | HTMLCanvasElement,
   side: keyof EdgeTextures,
-  normalizedThickness: number,
-  mirror: boolean = true,
+  startNormalized: number,
+  segmentNormalized: number,
 ) {
   const sourceWidth = source.width || 1
   const sourceHeight = source.height || 1
   const isVertical = side === 'left' || side === 'right'
-  const clampedThickness = Math.max(0.001, Math.min(0.5, normalizedThickness))
-  const stripSize = Math.max(1, Math.round((isVertical ? sourceWidth : sourceHeight) * clampedThickness))
+  const axisSize = isVertical ? sourceWidth : sourceHeight
+  const clampedStart = Math.max(0, Math.min(0.49, startNormalized))
+  const clampedSegment = Math.max(0.001, Math.min(0.5, segmentNormalized))
+  const startPx = Math.max(0, Math.round(axisSize * clampedStart))
+  const stripSize = Math.max(1, Math.min(axisSize - startPx, Math.round(axisSize * clampedSegment)))
   const stripCanvas = document.createElement('canvas')
 
   stripCanvas.width = isVertical ? 160 : sourceWidth
@@ -263,22 +266,12 @@ function createMirroredStripTexture(
     return null
   }
 
-  context.save()
-
   if (side === 'left') {
-    if (mirror) {
-      context.translate(stripCanvas.width, 0)
-      context.scale(-1, 1)
-    }
-    context.drawImage(source, 0, 0, stripSize, sourceHeight, 0, 0, stripCanvas.width, stripCanvas.height)
+    context.drawImage(source, startPx, 0, stripSize, sourceHeight, 0, 0, stripCanvas.width, stripCanvas.height)
   } else if (side === 'right') {
-    if (mirror) {
-      context.translate(stripCanvas.width, 0)
-      context.scale(-1, 1)
-    }
     context.drawImage(
       source,
-      sourceWidth - stripSize,
+      sourceWidth - startPx - stripSize,
       0,
       stripSize,
       sourceHeight,
@@ -288,20 +281,12 @@ function createMirroredStripTexture(
       stripCanvas.height,
     )
   } else if (side === 'top') {
-    if (mirror) {
-      context.translate(0, stripCanvas.height)
-      context.scale(1, -1)
-    }
-    context.drawImage(source, 0, 0, sourceWidth, stripSize, 0, 0, stripCanvas.width, stripCanvas.height)
+    context.drawImage(source, 0, startPx, sourceWidth, stripSize, 0, 0, stripCanvas.width, stripCanvas.height)
   } else {
-    if (mirror) {
-      context.translate(0, stripCanvas.height)
-      context.scale(1, -1)
-    }
     context.drawImage(
       source,
       0,
-      sourceHeight - stripSize,
+      sourceHeight - startPx - stripSize,
       sourceWidth,
       stripSize,
       0,
@@ -311,7 +296,6 @@ function createMirroredStripTexture(
     )
   }
 
-  context.restore()
   return configureTexture(new THREE.CanvasTexture(stripCanvas))
 }
 
@@ -324,14 +308,14 @@ function createMirroredEdgeTextures(
     coverVerticalNorm: number
   },
 ): { edges: EdgeTextures | null; cover: CoverTextures | null } {
-  const left = createMirroredStripTexture(source, 'left', geometrySpec.edgeVerticalNorm, true)
-  const right = createMirroredStripTexture(source, 'right', geometrySpec.edgeVerticalNorm, true)
-  const top = createMirroredStripTexture(source, 'top', geometrySpec.edgeHorizontalNorm, true)
-  const bottom = createMirroredStripTexture(source, 'bottom', geometrySpec.edgeHorizontalNorm, true)
-  const coverLeft = createMirroredStripTexture(source, 'left', geometrySpec.coverVerticalNorm, false)
-  const coverRight = createMirroredStripTexture(source, 'right', geometrySpec.coverVerticalNorm, false)
-  const coverTop = createMirroredStripTexture(source, 'top', geometrySpec.coverHorizontalNorm, false)
-  const coverBottom = createMirroredStripTexture(source, 'bottom', geometrySpec.coverHorizontalNorm, false)
+  const left = createMirroredStripTexture(source, 'left', 0, geometrySpec.edgeVerticalNorm)
+  const right = createMirroredStripTexture(source, 'right', 0, geometrySpec.edgeVerticalNorm)
+  const top = createMirroredStripTexture(source, 'top', 0, geometrySpec.edgeHorizontalNorm)
+  const bottom = createMirroredStripTexture(source, 'bottom', 0, geometrySpec.edgeHorizontalNorm)
+  const coverLeft = createMirroredStripTexture(source, 'left', geometrySpec.edgeVerticalNorm, geometrySpec.coverVerticalNorm)
+  const coverRight = createMirroredStripTexture(source, 'right', geometrySpec.edgeVerticalNorm, geometrySpec.coverVerticalNorm)
+  const coverTop = createMirroredStripTexture(source, 'top', geometrySpec.edgeHorizontalNorm, geometrySpec.coverHorizontalNorm)
+  const coverBottom = createMirroredStripTexture(source, 'bottom', geometrySpec.edgeHorizontalNorm, geometrySpec.coverHorizontalNorm)
 
   if (!left || !right || !top || !bottom || !coverLeft || !coverRight || !coverTop || !coverBottom) {
     left?.dispose()
