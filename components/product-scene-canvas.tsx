@@ -589,6 +589,9 @@ function CanvasObject({
   const stretcherTopFillerWidth = Math.max(0.02, topStretcherInset - stretcherInset - topFillerInset)
   const leftTopFillerX = -width / 2 + topStretcherInset + stretcherTopFillerWidth / 2
   const rightTopFillerX = width / 2 - topStretcherInset - stretcherTopFillerWidth / 2
+  const artworkSurfaceOffset = 0.012
+  const wrapOverlayInset = 0.0012
+
   return (
     <group position={position} rotation={rotation}>
       <mesh castShadow receiveShadow position={[0, 0, frontZ]}>
@@ -596,68 +599,72 @@ function CanvasObject({
         <primitive attach="material" object={hasArtwork ? artworkFrontMaterial : frontMaterial} />
       </mesh>
 
-      {hasArtwork ? (
+      {hasArtwork && artworkTextures.edges && (
         <>
-          <mesh castShadow receiveShadow position={[-width / 2 + wrapThickness / 2, 0, wrapCenterZ]} material={artworkLeftMaterial}>
-            <boxGeometry args={[wrapThickness, height, wrapDepth]} />
+          <mesh position={[-width / 2 - wrapOverlayInset, 0, 0]} rotation={[0, Math.PI / 2, 0]} renderOrder={1}>
+            <planeGeometry args={[wrapDepth, height]} />
+            <primitive attach="material" object={artworkLeftMaterial} />
           </mesh>
-          <mesh castShadow receiveShadow position={[width / 2 - wrapThickness / 2, 0, wrapCenterZ]} material={artworkRightMaterial}>
-            <boxGeometry args={[wrapThickness, height, wrapDepth]} />
+          <mesh position={[width / 2 + wrapOverlayInset, 0, 0]} rotation={[0, -Math.PI / 2, 0]} renderOrder={1}>
+            <planeGeometry args={[wrapDepth, height]} />
+            <primitive attach="material" object={artworkRightMaterial} />
           </mesh>
-          <mesh castShadow receiveShadow position={[0, height / 2 - wrapThickness / 2, wrapCenterZ]} material={artworkTopMaterial}>
-            <boxGeometry args={[innerWidth, wrapThickness, wrapDepth]} />
+          <mesh position={[0, height / 2 + wrapOverlayInset, 0]} rotation={[Math.PI / 2, 0, 0]} renderOrder={1}>
+            <planeGeometry args={[width, wrapDepth]} />
+            <primitive attach="material" object={artworkTopMaterial} />
           </mesh>
-          <mesh castShadow receiveShadow position={[0, -height / 2 + wrapThickness / 2, wrapCenterZ]} material={artworkBottomMaterial}>
-            <boxGeometry args={[innerWidth, wrapThickness, wrapDepth]} />
+          <mesh position={[0, -height / 2 - wrapOverlayInset, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
+            <planeGeometry args={[width, wrapDepth]} />
+            <primitive attach="material" object={artworkBottomMaterial} />
           </mesh>
-        </>
-      ) : (
-        <>
-          <mesh position={[0, 0, frontZ + 0.001]} receiveShadow>
-            <planeGeometry args={[innerWidth, innerHeight]} />
-            <meshStandardMaterial
-              color="#fffdfa"
-              roughness={0.98}
-              metalness={0}
-              transparent
-              opacity={0.3}
-            />
-          </mesh>
-
-          <BeveledBox
-            width={wrapThickness}
-            height={height}
-            depth={wrapDepth}
-            radius={wrapEdgeRadius}
-            position={[-width / 2 + wrapThickness / 2, 0, wrapCenterZ]}
-            material={wrapMaterial}
-          />
-          <BeveledBox
-            width={wrapThickness}
-            height={height}
-            depth={wrapDepth}
-            radius={wrapEdgeRadius}
-            position={[width / 2 - wrapThickness / 2, 0, wrapCenterZ]}
-            material={wrapMaterial}
-          />
-          <BeveledBox
-            width={innerWidth}
-            height={wrapThickness}
-            depth={wrapDepth}
-            radius={wrapEdgeRadius}
-            position={[0, height / 2 - wrapThickness / 2, wrapCenterZ]}
-            material={wrapMaterial}
-          />
-          <BeveledBox
-            width={innerWidth}
-            height={wrapThickness}
-            depth={wrapDepth}
-            radius={wrapEdgeRadius}
-            position={[0, -height / 2 + wrapThickness / 2, wrapCenterZ]}
-            material={wrapMaterial}
-          />
         </>
       )}
+
+      {!hasArtwork && (
+        <mesh position={[0, 0, frontZ + 0.001]} receiveShadow>
+          <planeGeometry args={[innerWidth, innerHeight]} />
+          <meshStandardMaterial
+            color="#fffdfa"
+            roughness={0.98}
+            metalness={0}
+            transparent
+            opacity={0.3}
+          />
+        </mesh>
+      )}
+
+      <BeveledBox
+        width={wrapThickness}
+        height={height}
+        depth={wrapDepth}
+        radius={wrapEdgeRadius}
+        position={[-width / 2 + wrapThickness / 2, 0, wrapCenterZ]}
+        material={wrapMaterial}
+      />
+      <BeveledBox
+        width={wrapThickness}
+        height={height}
+        depth={wrapDepth}
+        radius={wrapEdgeRadius}
+        position={[width / 2 - wrapThickness / 2, 0, wrapCenterZ]}
+        material={wrapMaterial}
+      />
+      <BeveledBox
+        width={innerWidth}
+        height={wrapThickness}
+        depth={wrapDepth}
+        radius={wrapEdgeRadius}
+        position={[0, height / 2 - wrapThickness / 2, wrapCenterZ]}
+        material={wrapMaterial}
+      />
+      <BeveledBox
+        width={innerWidth}
+        height={wrapThickness}
+        depth={wrapDepth}
+        radius={wrapEdgeRadius}
+        position={[0, -height / 2 + wrapThickness / 2, wrapCenterZ]}
+        material={wrapMaterial}
+      />
 
       <mesh castShadow receiveShadow position={[0, 0, backZ]}>
         <planeGeometry args={[rearCanvasWidth, rearCanvasHeight]} />
