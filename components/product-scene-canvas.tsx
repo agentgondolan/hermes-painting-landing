@@ -591,23 +591,28 @@ function CanvasObject({
   const rightTopFillerX = width / 2 - topStretcherInset - stretcherTopFillerWidth / 2
   return (
     <group position={position} rotation={rotation}>
+      <mesh castShadow receiveShadow position={[0, 0, frontZ]}>
+        <planeGeometry args={[width, height]} />
+        <primitive attach="material" object={hasArtwork ? artworkFrontMaterial : frontMaterial} />
+      </mesh>
+
       {hasArtwork ? (
-        <mesh castShadow receiveShadow>
-          <boxGeometry args={[width, height, depth]} />
-          <primitive attach="material-0" object={artworkRightMaterial} />
-          <primitive attach="material-1" object={artworkLeftMaterial} />
-          <primitive attach="material-2" object={artworkTopMaterial} />
-          <primitive attach="material-3" object={artworkBottomMaterial} />
-          <primitive attach="material-4" object={artworkFrontMaterial} />
-          <primitive attach="material-5" object={artworkBackMaterial} />
-        </mesh>
+        <>
+          <mesh castShadow receiveShadow position={[-width / 2 + wrapThickness / 2, 0, wrapCenterZ]} material={artworkLeftMaterial}>
+            <boxGeometry args={[wrapThickness, height, wrapDepth]} />
+          </mesh>
+          <mesh castShadow receiveShadow position={[width / 2 - wrapThickness / 2, 0, wrapCenterZ]} material={artworkRightMaterial}>
+            <boxGeometry args={[wrapThickness, height, wrapDepth]} />
+          </mesh>
+          <mesh castShadow receiveShadow position={[0, height / 2 - wrapThickness / 2, wrapCenterZ]} material={artworkTopMaterial}>
+            <boxGeometry args={[innerWidth, wrapThickness, wrapDepth]} />
+          </mesh>
+          <mesh castShadow receiveShadow position={[0, -height / 2 + wrapThickness / 2, wrapCenterZ]} material={artworkBottomMaterial}>
+            <boxGeometry args={[innerWidth, wrapThickness, wrapDepth]} />
+          </mesh>
+        </>
       ) : (
         <>
-          <mesh castShadow receiveShadow position={[0, 0, frontZ]}>
-            <planeGeometry args={[width, height]} />
-            <primitive attach="material" object={frontMaterial} />
-          </mesh>
-
           <mesh position={[0, 0, frontZ + 0.001]} receiveShadow>
             <planeGeometry args={[innerWidth, innerHeight]} />
             <meshStandardMaterial
