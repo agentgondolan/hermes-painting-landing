@@ -1,14 +1,35 @@
 'use client'
 
-export type FrameSizeId = '40x50' | '40x60' | '60x80'
+import canvasSpecData from './canvas-spec.json'
+
+export type FrameSizeId = string
 export type FrameOrientation = 'vertical' | 'horizontal'
 
-export type FrameSizeOption = {
-  id: FrameSizeId
+export type CanvasSpecFrameSize = {
+  id: string
   label: string
   widthCm: number
   heightCm: number
 }
+
+export type CanvasBackFrameSpec = {
+  barWidthCm: number
+  imageCoverCm: number
+  woodRevealCm: number
+  enableMirroredBackCover: boolean
+}
+
+export type CanvasSpec = {
+  defaultFrameSizeId: string
+  worldUnitsPerCm: number
+  edgeDepthCm: number
+  backFrame: CanvasBackFrameSpec
+  frameSizes: CanvasSpecFrameSize[]
+}
+
+export type FrameSizeOption = CanvasSpecFrameSize
+
+const CANVAS_SPEC = canvasSpecData as CanvasSpec
 
 export type CropDetails = {
   applied: boolean
@@ -39,13 +60,9 @@ export type ProcessArtworkOptions = {
 
 export type ImageProcessor = (file: File, options?: ProcessArtworkOptions) => Promise<ProcessedArtwork>
 
-export const FRAME_SIZE_OPTIONS: FrameSizeOption[] = [
-  { id: '40x50', label: '40 × 50 cm', widthCm: 40, heightCm: 50 },
-  { id: '40x60', label: '40 × 60 cm', widthCm: 40, heightCm: 60 },
-  { id: '60x80', label: '60 × 80 cm', widthCm: 60, heightCm: 80 },
-]
+export const FRAME_SIZE_OPTIONS: FrameSizeOption[] = CANVAS_SPEC.frameSizes
 
-export const DEFAULT_FRAME_SIZE_ID: FrameSizeId = '40x50'
+export const DEFAULT_FRAME_SIZE_ID: FrameSizeId = CANVAS_SPEC.defaultFrameSizeId
 
 const MOCK_DELAY_MS = 1400
 const MAX_OUTPUT_EDGE = 2000
@@ -53,6 +70,22 @@ const EPSILON = 0.01
 
 export function getFrameSizeOption(sizeId: FrameSizeId) {
   return FRAME_SIZE_OPTIONS.find((option) => option.id === sizeId) ?? FRAME_SIZE_OPTIONS[0]
+}
+
+export function getCanvasSpec() {
+  return CANVAS_SPEC
+}
+
+export function getCanvasWorldUnitsPerCm() {
+  return CANVAS_SPEC.worldUnitsPerCm
+}
+
+export function getCanvasEdgeDepthCm() {
+  return CANVAS_SPEC.edgeDepthCm
+}
+
+export function getCanvasBackFrameSpec() {
+  return CANVAS_SPEC.backFrame
 }
 
 export function getOrientationFromDimensions(width: number, height: number): FrameOrientation {
@@ -73,14 +106,14 @@ export function getOrientedFrameDimensions(sizeId: FrameSizeId, orientation: Fra
     return {
       widthCm: option.heightCm,
       heightCm: option.widthCm,
-      depthCm: 3,
+      depthCm: CANVAS_SPEC.edgeDepthCm,
     }
   }
 
   return {
     widthCm: option.widthCm,
     heightCm: option.heightCm,
-    depthCm: 3,
+    depthCm: CANVAS_SPEC.edgeDepthCm,
   }
 }
 

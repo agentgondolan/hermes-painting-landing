@@ -1,0 +1,16 @@
+{
+  "defaultFrameSizeId": "40x50",
+  "worldUnitsPerCm": 0.052,
+  "edgeDepthCm": 1.8,
+  "backFrame": {
+    "barWidthCm": 4,
+    "imageCoverCm": 2,
+    "woodRevealCm": 2,
+    "enableMirroredBackCover": true
+  },
+  "frameSizes": [
+    { "id": "40x50", "label": "40 × 50 cm", "widthCm": 40, "heightCm": 50 },
+    { "id": "40x60", "label": "40 × 60 cm", "widthCm": 40, "heightCm": 60 },
+    { "id": "60x80", "label": "60 × 80 cm", "widthCm": 60, "heightCm": 80 }
+  ]
+}

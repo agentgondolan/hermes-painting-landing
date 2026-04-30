@@ -5,6 +5,8 @@ import { OrbitControls } from '@react-three/drei'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import {
+  getCanvasBackFrameSpec,
+  getCanvasWorldUnitsPerCm,
   getOrientedFrameDimensions,
   DEFAULT_FRAME_SIZE_ID,
   type FrameOrientation,
@@ -216,9 +218,17 @@ type EdgeTextures = {
   bottom: THREE.Texture
 }
 
+type CoverTextures = {
+  left: THREE.Texture
+  right: THREE.Texture
+  top: THREE.Texture
+  bottom: THREE.Texture
+}
+
 type ArtworkTextures = {
   front: THREE.Texture
   edges: EdgeTextures | null
+  cover: CoverTextures | null
 }
 
 function configureTexture(texture: THREE.Texture) {
@@ -232,20 +242,23 @@ function configureTexture(texture: THREE.Texture) {
   return texture
 }
 
-function createMirroredEdgeTexture(
+function createMirroredStripTexture(
   source: HTMLImageElement | HTMLCanvasElement,
   side: keyof EdgeTextures,
+  normalizedThickness: number,
+  mirror: boolean = true,
 ) {
   const sourceWidth = source.width || 1
   const sourceHeight = source.height || 1
-  const edgeCanvas = document.createElement('canvas')
   const isVertical = side === 'left' || side === 'right'
-  const stripSize = Math.max(8, Math.round((isVertical ? sourceWidth : sourceHeight) * 0.03))
+  const clampedThickness = Math.max(0.001, Math.min(0.5, normalizedThickness))
+  const stripSize = Math.max(1, Math.round((isVertical ? sourceWidth : sourceHeight) * clampedThickness))
+  const stripCanvas = document.createElement('canvas')
 
-  edgeCanvas.width = isVertical ? 96 : sourceWidth
-  edgeCanvas.height = isVertical ? sourceHeight : 96
+  stripCanvas.width = isVertical ? 160 : sourceWidth
+  stripCanvas.height = isVertical ? sourceHeight : 160
 
-  const context = edgeCanvas.getContext('2d')
+  const context = stripCanvas.getContext('2d')
   if (!context) {
     return null
   }
@@ -253,12 +266,16 @@ function createMirroredEdgeTexture(
   context.save()
 
   if (side === 'left') {
-    context.translate(edgeCanvas.width, 0)
-    context.scale(-1, 1)
-    context.drawImage(source, 0, 0, stripSize, sourceHeight, 0, 0, edgeCanvas.width, edgeCanvas.height)
+    if (mirror) {
+      context.translate(stripCanvas.width, 0)
+      context.scale(-1, 1)
+    }
+    context.drawImage(source, 0, 0, stripSize, sourceHeight, 0, 0, stripCanvas.width, stripCanvas.height)
   } else if (side === 'right') {
-    context.translate(edgeCanvas.width, 0)
-    context.scale(-1, 1)
+    if (mirror) {
+      context.translate(stripCanvas.width, 0)
+      context.scale(-1, 1)
+    }
     context.drawImage(
       source,
       sourceWidth - stripSize,
@@ -267,16 +284,20 @@ function createMirroredEdgeTexture(
       sourceHeight,
       0,
       0,
-      edgeCanvas.width,
-      edgeCanvas.height,
+      stripCanvas.width,
+      stripCanvas.height,
     )
   } else if (side === 'top') {
-    context.translate(0, edgeCanvas.height)
-    context.scale(1, -1)
-    context.drawImage(source, 0, 0, sourceWidth, stripSize, 0, 0, edgeCanvas.width, edgeCanvas.height)
+    if (mirror) {
+      context.translate(0, stripCanvas.height)
+      context.scale(1, -1)
+    }
+    context.drawImage(source, 0, 0, sourceWidth, stripSize, 0, 0, stripCanvas.width, stripCanvas.height)
   } else {
-    context.translate(0, edgeCanvas.height)
-    context.scale(1, -1)
+    if (mirror) {
+      context.translate(0, stripCanvas.height)
+      context.scale(1, -1)
+    }
     context.drawImage(
       source,
       0,
@@ -285,31 +306,49 @@ function createMirroredEdgeTexture(
       stripSize,
       0,
       0,
-      edgeCanvas.width,
-      edgeCanvas.height,
+      stripCanvas.width,
+      stripCanvas.height,
     )
   }
 
   context.restore()
-
-  return configureTexture(new THREE.CanvasTexture(edgeCanvas))
+  return configureTexture(new THREE.CanvasTexture(stripCanvas))
 }
 
-function createMirroredEdgeTextures(source: HTMLImageElement | HTMLCanvasElement): EdgeTextures | null {
-  const left = createMirroredEdgeTexture(source, 'left')
-  const right = createMirroredEdgeTexture(source, 'right')
-  const top = createMirroredEdgeTexture(source, 'top')
-  const bottom = createMirroredEdgeTexture(source, 'bottom')
+function createMirroredEdgeTextures(
+  source: HTMLImageElement | HTMLCanvasElement,
+  geometrySpec: {
+    edgeHorizontalNorm: number
+    edgeVerticalNorm: number
+    coverHorizontalNorm: number
+    coverVerticalNorm: number
+  },
+): { edges: EdgeTextures | null; cover: CoverTextures | null } {
+  const left = createMirroredStripTexture(source, 'left', geometrySpec.edgeVerticalNorm, true)
+  const right = createMirroredStripTexture(source, 'right', geometrySpec.edgeVerticalNorm, true)
+  const top = createMirroredStripTexture(source, 'top', geometrySpec.edgeHorizontalNorm, true)
+  const bottom = createMirroredStripTexture(source, 'bottom', geometrySpec.edgeHorizontalNorm, true)
+  const coverLeft = createMirroredStripTexture(source, 'left', geometrySpec.coverVerticalNorm, false)
+  const coverRight = createMirroredStripTexture(source, 'right', geometrySpec.coverVerticalNorm, false)
+  const coverTop = createMirroredStripTexture(source, 'top', geometrySpec.coverHorizontalNorm, false)
+  const coverBottom = createMirroredStripTexture(source, 'bottom', geometrySpec.coverHorizontalNorm, false)
 
-  if (!left || !right || !top || !bottom) {
+  if (!left || !right || !top || !bottom || !coverLeft || !coverRight || !coverTop || !coverBottom) {
     left?.dispose()
     right?.dispose()
     top?.dispose()
     bottom?.dispose()
-    return null
+    coverLeft?.dispose()
+    coverRight?.dispose()
+    coverTop?.dispose()
+    coverBottom?.dispose()
+    return { edges: null, cover: null }
   }
 
-  return { left, right, top, bottom }
+  return {
+    edges: { left, right, top, bottom },
+    cover: { left: coverLeft, right: coverRight, top: coverTop, bottom: coverBottom },
+  }
 }
 
 function disposeArtworkTextures(textures: ArtworkTextures | null) {
@@ -318,9 +357,21 @@ function disposeArtworkTextures(textures: ArtworkTextures | null) {
   textures?.edges?.right.dispose()
   textures?.edges?.top.dispose()
   textures?.edges?.bottom.dispose()
+  textures?.cover?.left.dispose()
+  textures?.cover?.right.dispose()
+  textures?.cover?.top.dispose()
+  textures?.cover?.bottom.dispose()
 }
 
-function useArtworkTextures(artworkTextureUrl?: string | null) {
+function useArtworkTextures(
+  artworkTextureUrl: string | null | undefined,
+  geometrySpec: {
+    edgeDepthCm: number
+    backCoverCm: number
+    frameWidthCm: number
+    frameHeightCm: number
+  },
+) {
   const fallbackTexture = useBaseCanvasTexture()
   const [artworkTextures, setArtworkTextures] = useState<ArtworkTextures | null>(null)
 
@@ -350,9 +401,19 @@ function useArtworkTextures(artworkTextureUrl?: string | null) {
             ? configuredTexture.image
             : null
 
+        const mirrored = sourceImage
+          ? createMirroredEdgeTextures(sourceImage, {
+              edgeHorizontalNorm: geometrySpec.edgeDepthCm / geometrySpec.frameHeightCm,
+              edgeVerticalNorm: geometrySpec.edgeDepthCm / geometrySpec.frameWidthCm,
+              coverHorizontalNorm: geometrySpec.backCoverCm / geometrySpec.frameHeightCm,
+              coverVerticalNorm: geometrySpec.backCoverCm / geometrySpec.frameWidthCm,
+            })
+          : { edges: null, cover: null }
+
         const nextTextures: ArtworkTextures = {
           front: configuredTexture,
-          edges: sourceImage ? createMirroredEdgeTextures(sourceImage) : null,
+          edges: mirrored.edges,
+          cover: mirrored.cover,
         }
 
         setArtworkTextures((current) => {
@@ -374,7 +435,13 @@ function useArtworkTextures(artworkTextureUrl?: string | null) {
     return () => {
       cancelled = true
     }
-  }, [artworkTextureUrl])
+  }, [
+    artworkTextureUrl,
+    geometrySpec.backCoverCm,
+    geometrySpec.edgeDepthCm,
+    geometrySpec.frameHeightCm,
+    geometrySpec.frameWidthCm,
+  ])
 
   useEffect(() => {
     return () => {
@@ -391,13 +458,14 @@ function useArtworkTextures(artworkTextureUrl?: string | null) {
   return {
     front: artworkTextures?.front ?? fallbackTexture,
     edges: artworkTextures?.edges ?? null,
+    cover: artworkTextures?.cover ?? null,
   }
 }
 
 function useCanvasDimensions(frameSizeId: FrameSizeId, orientation: FrameOrientation): CanvasDimensions {
   return useMemo(() => {
     const dimensionsCm = getOrientedFrameDimensions(frameSizeId, orientation)
-    const worldUnitsPerCm = 0.052
+    const worldUnitsPerCm = getCanvasWorldUnitsPerCm()
 
     return {
       width: dimensionsCm.widthCm * worldUnitsPerCm,
@@ -412,15 +480,28 @@ function CanvasObject({
   rotation,
   artworkTextureUrl,
   dimensions,
+  frameSizeId,
+  orientation,
 }: {
   position: [number, number, number]
   rotation: [number, number, number]
   artworkTextureUrl?: string | null
   dimensions: CanvasDimensions
+  frameSizeId: FrameSizeId
+  orientation: FrameOrientation
 }) {
-  const artworkTextures = useArtworkTextures(artworkTextureUrl)
+  const frameDimensionsCm = getOrientedFrameDimensions(frameSizeId, orientation)
+  const backFrameSpec = getCanvasBackFrameSpec()
+  const worldUnitsPerCm = getCanvasWorldUnitsPerCm()
+  const artworkTextures = useArtworkTextures(artworkTextureUrl, {
+    edgeDepthCm: frameDimensionsCm.depthCm,
+    backCoverCm: backFrameSpec.imageCoverCm,
+    frameWidthCm: frameDimensionsCm.widthCm,
+    frameHeightCm: frameDimensionsCm.heightCm,
+  })
   const canvasTexture = artworkTextures.front
   const hasArtwork = Boolean(artworkTextureUrl)
+  const allowBackCoverMirroring = backFrameSpec.enableMirroredBackCover && hasArtwork
 
   const frontMaterial = useMemo(() => {
     const material = new THREE.MeshStandardMaterial({
@@ -433,10 +514,10 @@ function CanvasObject({
     return material
   }, [])
 
-  const wrapMaterial = useMemo(() => {
+  const edgeBaseMaterial = useMemo(() => {
     const material = new THREE.MeshStandardMaterial({
       color: '#ddd0bf',
-      roughness: 0.84,
+      roughness: 0.9,
       metalness: 0,
       side: THREE.DoubleSide,
     })
@@ -447,7 +528,7 @@ function CanvasObject({
   const backCanvasMaterial = useMemo(() => {
     const material = new THREE.MeshStandardMaterial({
       color: '#e7ddcf',
-      roughness: 0.9,
+      roughness: 0.92,
       metalness: 0,
       side: THREE.DoubleSide,
     })
@@ -460,22 +541,14 @@ function CanvasObject({
       map: canvasTexture,
       roughness: 0.92,
       metalness: 0,
+      side: THREE.DoubleSide,
     })
+    material.shadowSide = THREE.DoubleSide
     material.polygonOffset = true
     material.polygonOffsetFactor = -4
     material.polygonOffsetUnits = -4
     return material
   }, [canvasTexture])
-
-  const artworkBackMaterial = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: '#e7ddcf',
-        roughness: 0.9,
-        metalness: 0,
-      }),
-    [],
-  )
 
   const artworkLeftMaterial = useMemo(
     () =>
@@ -484,6 +557,7 @@ function CanvasObject({
         color: artworkTextures.edges?.left ? '#ffffff' : '#ddd0bf',
         roughness: 0.88,
         metalness: 0,
+        side: THREE.DoubleSide,
       }),
     [artworkTextures.edges],
   )
@@ -495,6 +569,7 @@ function CanvasObject({
         color: artworkTextures.edges?.right ? '#ffffff' : '#ddd0bf',
         roughness: 0.88,
         metalness: 0,
+        side: THREE.DoubleSide,
       }),
     [artworkTextures.edges],
   )
@@ -506,6 +581,7 @@ function CanvasObject({
         color: artworkTextures.edges?.top ? '#ffffff' : '#ddd0bf',
         roughness: 0.88,
         metalness: 0,
+        side: THREE.DoubleSide,
       }),
     [artworkTextures.edges],
   )
@@ -517,8 +593,57 @@ function CanvasObject({
         color: artworkTextures.edges?.bottom ? '#ffffff' : '#ddd0bf',
         roughness: 0.88,
         metalness: 0,
+        side: THREE.DoubleSide,
       }),
     [artworkTextures.edges],
+  )
+
+  const backCoverLeftMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        map: allowBackCoverMirroring ? artworkTextures.cover?.left ?? null : null,
+        color: allowBackCoverMirroring && artworkTextures.cover?.left ? '#ffffff' : '#e7ddcf',
+        roughness: 0.9,
+        metalness: 0,
+        side: THREE.DoubleSide,
+      }),
+    [allowBackCoverMirroring, artworkTextures.cover],
+  )
+
+  const backCoverRightMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        map: allowBackCoverMirroring ? artworkTextures.cover?.right ?? null : null,
+        color: allowBackCoverMirroring && artworkTextures.cover?.right ? '#ffffff' : '#e7ddcf',
+        roughness: 0.9,
+        metalness: 0,
+        side: THREE.DoubleSide,
+      }),
+    [allowBackCoverMirroring, artworkTextures.cover],
+  )
+
+  const backCoverTopMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        map: allowBackCoverMirroring ? artworkTextures.cover?.top ?? null : null,
+        color: allowBackCoverMirroring && artworkTextures.cover?.top ? '#ffffff' : '#e7ddcf',
+        roughness: 0.9,
+        metalness: 0,
+        side: THREE.DoubleSide,
+      }),
+    [allowBackCoverMirroring, artworkTextures.cover],
+  )
+
+  const backCoverBottomMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        map: allowBackCoverMirroring ? artworkTextures.cover?.bottom ?? null : null,
+        color: allowBackCoverMirroring && artworkTextures.cover?.bottom ? '#ffffff' : '#e7ddcf',
+        roughness: 0.9,
+        metalness: 0,
+        side: THREE.DoubleSide,
+      }),
+    [allowBackCoverMirroring, artworkTextures.cover],
   )
 
   const stretcherMaterial = useMemo(
@@ -534,66 +659,61 @@ function CanvasObject({
   useEffect(
     () => () => {
       frontMaterial.dispose()
-      wrapMaterial.dispose()
+      edgeBaseMaterial.dispose()
       backCanvasMaterial.dispose()
       artworkFrontMaterial.dispose()
-      artworkBackMaterial.dispose()
       artworkLeftMaterial.dispose()
       artworkRightMaterial.dispose()
       artworkTopMaterial.dispose()
       artworkBottomMaterial.dispose()
+      backCoverLeftMaterial.dispose()
+      backCoverRightMaterial.dispose()
+      backCoverTopMaterial.dispose()
+      backCoverBottomMaterial.dispose()
       stretcherMaterial.dispose()
     },
     [
-      artworkBackMaterial,
       artworkBottomMaterial,
       artworkFrontMaterial,
       artworkLeftMaterial,
       artworkRightMaterial,
       artworkTopMaterial,
       backCanvasMaterial,
+      backCoverBottomMaterial,
+      backCoverLeftMaterial,
+      backCoverRightMaterial,
+      backCoverTopMaterial,
+      edgeBaseMaterial,
       frontMaterial,
       stretcherMaterial,
-      wrapMaterial,
     ],
   )
 
   const width = dimensions.width
   const height = dimensions.height
   const depth = dimensions.depth
-  const wrapThickness = Math.max(0.04, Math.min(width, height) * 0.028)
-  const wrapEdgeRadius = wrapThickness * 0.06
-  const frontZ = depth / 2 - 0.002
-  const wrapCenterZ = 0
-  const wrapDepth = Math.max(0.02, depth - 0.008)
-  const backZ = -depth / 2 + 0.003
-  const innerWidth = Math.max(0.08, width - wrapThickness * 2)
-  const innerHeight = Math.max(0.08, height - wrapThickness * 2)
-  const rearCanvasInset = wrapThickness * 1.6
-  const rearCanvasWidth = Math.max(0.06, width - rearCanvasInset * 2)
-  const rearCanvasHeight = Math.max(0.06, height - rearCanvasInset * 2)
-  const stretcherThickness = Math.max(0.04, Math.min(width, height) * 0.038)
-  const stretcherDepth = Math.max(0.032, depth * 0.42)
+  const backCoverWidth = backFrameSpec.imageCoverCm * worldUnitsPerCm
+  const woodRevealWidth = backFrameSpec.woodRevealCm * worldUnitsPerCm
+  const backBarWidth = backFrameSpec.barWidthCm * worldUnitsPerCm
+  const frontZ = depth / 2 - 0.001
+  const sideZ = 0
+  const backZ = -depth / 2 + 0.0015
+  const backCoverZ = backZ + 0.0008
+  const centerBackWidth = Math.max(0.08, width - backBarWidth * 2)
+  const centerBackHeight = Math.max(0.08, height - backBarWidth * 2)
+  const woodVerticalHeight = Math.max(0.08, height - backCoverWidth * 2)
+  const woodHorizontalWidth = Math.max(0.08, width - backBarWidth * 2)
+  const coverHorizontalWidth = Math.max(0.08, width - backCoverWidth * 2)
+  const stretcherDepth = Math.max(depth * 0.44, woodRevealWidth * 0.7)
+  const sideLeftMaterial = hasArtwork ? artworkLeftMaterial : edgeBaseMaterial
+  const sideRightMaterial = hasArtwork ? artworkRightMaterial : edgeBaseMaterial
+  const sideTopMaterial = hasArtwork ? artworkTopMaterial : edgeBaseMaterial
+  const sideBottomMaterial = hasArtwork ? artworkBottomMaterial : edgeBaseMaterial
+  const woodLeftCenterX = -width / 2 + backCoverWidth + woodRevealWidth / 2
+  const woodRightCenterX = width / 2 - backCoverWidth - woodRevealWidth / 2
+  const woodTopCenterY = height / 2 - backCoverWidth - woodRevealWidth / 2
+  const woodBottomCenterY = -height / 2 + backCoverWidth + woodRevealWidth / 2
   const stretcherZ = backZ + stretcherDepth / 2 + 0.008
-  const stretcherInset = Math.max(0.08, wrapThickness * 1.9)
-  const topStretcherInset = stretcherInset + Math.max(0.04, wrapThickness * 0.85)
-  const topFillerInset = wrapThickness * 0.42
-  const verticalStretcherTopExtension = stretcherThickness / 2
-  const verticalStretcherHeight = height - stretcherInset * 2 + verticalStretcherTopExtension
-  const horizontalStretcherWidth = Math.max(0.06, width - stretcherInset * 2)
-  const topHorizontalStretcherWidth = Math.max(0.06, width - topStretcherInset * 2)
-  const stretcherSideX = width / 2 - stretcherInset
-  const stretcherTopY = height / 2 - stretcherInset
-  const verticalStretcherCenterY = verticalStretcherTopExtension / 2
-  const stretcherBottomY = -height / 2 + stretcherInset
-  const stretcherTopFillerWidth = Math.max(0.02, topStretcherInset - stretcherInset - topFillerInset)
-  const leftTopFillerX = -width / 2 + topStretcherInset + stretcherTopFillerWidth / 2
-  const rightTopFillerX = width / 2 - topStretcherInset - stretcherTopFillerWidth / 2
-  const artworkSurfaceOffset = 0.012
-  const leftWrapMaterial = hasArtwork ? artworkLeftMaterial : wrapMaterial
-  const rightWrapMaterial = hasArtwork ? artworkRightMaterial : wrapMaterial
-  const topWrapMaterial = hasArtwork ? artworkTopMaterial : wrapMaterial
-  const bottomWrapMaterial = hasArtwork ? artworkBottomMaterial : wrapMaterial
 
   return (
     <group position={position} rotation={rotation}>
@@ -604,7 +724,7 @@ function CanvasObject({
 
       {!hasArtwork && (
         <mesh position={[0, 0, frontZ + 0.001]} receiveShadow>
-          <planeGeometry args={[innerWidth, innerHeight]} />
+          <planeGeometry args={[Math.max(0.08, width - backCoverWidth * 2), Math.max(0.08, height - backCoverWidth * 2)]} />
           <meshStandardMaterial
             color="#fffdfa"
             roughness={0.98}
@@ -615,61 +735,56 @@ function CanvasObject({
         </mesh>
       )}
 
-      <BeveledBox
-        width={wrapThickness}
-        height={height}
-        depth={wrapDepth}
-        radius={wrapEdgeRadius}
-        position={[-width / 2 + wrapThickness / 2, 0, wrapCenterZ]}
-        material={leftWrapMaterial}
-      />
-      <BeveledBox
-        width={wrapThickness}
-        height={height}
-        depth={wrapDepth}
-        radius={wrapEdgeRadius}
-        position={[width / 2 - wrapThickness / 2, 0, wrapCenterZ]}
-        material={rightWrapMaterial}
-      />
-      <BeveledBox
-        width={innerWidth}
-        height={wrapThickness}
-        depth={wrapDepth}
-        radius={wrapEdgeRadius}
-        position={[0, height / 2 - wrapThickness / 2, wrapCenterZ]}
-        material={topWrapMaterial}
-      />
-      <BeveledBox
-        width={innerWidth}
-        height={wrapThickness}
-        depth={wrapDepth}
-        radius={wrapEdgeRadius}
-        position={[0, -height / 2 + wrapThickness / 2, wrapCenterZ]}
-        material={bottomWrapMaterial}
-      />
+      <mesh castShadow receiveShadow position={[-width / 2, 0, sideZ]} rotation={[0, Math.PI / 2, 0]}>
+        <planeGeometry args={[depth, height]} />
+        <primitive attach="material" object={sideLeftMaterial} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[width / 2, 0, sideZ]} rotation={[0, -Math.PI / 2, 0]}>
+        <planeGeometry args={[depth, height]} />
+        <primitive attach="material" object={sideRightMaterial} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[0, height / 2, sideZ]} rotation={[Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[width, depth]} />
+        <primitive attach="material" object={sideTopMaterial} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[0, -height / 2, sideZ]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[width, depth]} />
+        <primitive attach="material" object={sideBottomMaterial} />
+      </mesh>
 
       <mesh castShadow receiveShadow position={[0, 0, backZ]}>
-        <planeGeometry args={[rearCanvasWidth, rearCanvasHeight]} />
+        <planeGeometry args={[centerBackWidth, centerBackHeight]} />
         <primitive attach="material" object={backCanvasMaterial} />
       </mesh>
 
-      <mesh castShadow receiveShadow position={[-stretcherSideX, verticalStretcherCenterY, stretcherZ]} material={stretcherMaterial}>
-        <boxGeometry args={[stretcherThickness, verticalStretcherHeight, stretcherDepth]} />
+      <mesh castShadow receiveShadow position={[-width / 2 + backCoverWidth / 2, 0, backCoverZ]}>
+        <planeGeometry args={[backCoverWidth, height]} />
+        <primitive attach="material" object={backCoverLeftMaterial} />
       </mesh>
-      <mesh castShadow receiveShadow position={[stretcherSideX, verticalStretcherCenterY, stretcherZ]} material={stretcherMaterial}>
-        <boxGeometry args={[stretcherThickness, verticalStretcherHeight, stretcherDepth]} />
+      <mesh castShadow receiveShadow position={[width / 2 - backCoverWidth / 2, 0, backCoverZ]}>
+        <planeGeometry args={[backCoverWidth, height]} />
+        <primitive attach="material" object={backCoverRightMaterial} />
       </mesh>
-      <mesh castShadow receiveShadow position={[0, stretcherTopY, stretcherZ]} material={stretcherMaterial}>
-        <boxGeometry args={[topHorizontalStretcherWidth, stretcherThickness, stretcherDepth]} />
+      <mesh castShadow receiveShadow position={[0, height / 2 - backCoverWidth / 2, backCoverZ]}>
+        <planeGeometry args={[coverHorizontalWidth, backCoverWidth]} />
+        <primitive attach="material" object={backCoverTopMaterial} />
       </mesh>
-      <mesh castShadow receiveShadow position={[0, stretcherBottomY, stretcherZ]} material={stretcherMaterial}>
-        <boxGeometry args={[horizontalStretcherWidth, stretcherThickness, stretcherDepth]} />
+      <mesh castShadow receiveShadow position={[0, -height / 2 + backCoverWidth / 2, backCoverZ]}>
+        <planeGeometry args={[coverHorizontalWidth, backCoverWidth]} />
+        <primitive attach="material" object={backCoverBottomMaterial} />
       </mesh>
-      <mesh castShadow receiveShadow position={[leftTopFillerX, stretcherTopY, stretcherZ]} material={stretcherMaterial}>
-        <boxGeometry args={[stretcherTopFillerWidth, stretcherThickness, stretcherDepth]} />
+
+      <mesh castShadow receiveShadow position={[woodLeftCenterX, 0, stretcherZ]} material={stretcherMaterial}>
+        <boxGeometry args={[woodRevealWidth, woodVerticalHeight, stretcherDepth]} />
       </mesh>
-      <mesh castShadow receiveShadow position={[rightTopFillerX, stretcherTopY, stretcherZ]} material={stretcherMaterial}>
-        <boxGeometry args={[stretcherTopFillerWidth, stretcherThickness, stretcherDepth]} />
+      <mesh castShadow receiveShadow position={[woodRightCenterX, 0, stretcherZ]} material={stretcherMaterial}>
+        <boxGeometry args={[woodRevealWidth, woodVerticalHeight, stretcherDepth]} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[0, woodTopCenterY, stretcherZ]} material={stretcherMaterial}>
+        <boxGeometry args={[woodHorizontalWidth, woodRevealWidth, stretcherDepth]} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[0, woodBottomCenterY, stretcherZ]} material={stretcherMaterial}>
+        <boxGeometry args={[woodHorizontalWidth, woodRevealWidth, stretcherDepth]} />
       </mesh>
     </group>
   )
@@ -738,6 +853,8 @@ function Easel({
         rotation={[canvasTiltX, 0, 0]}
         artworkTextureUrl={artworkTextureUrl}
         dimensions={dimensions}
+        frameSizeId={frameSizeId}
+        orientation={orientation}
       />
     </group>
   )
