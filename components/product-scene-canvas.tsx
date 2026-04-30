@@ -590,7 +590,10 @@ function CanvasObject({
   const leftTopFillerX = -width / 2 + topStretcherInset + stretcherTopFillerWidth / 2
   const rightTopFillerX = width / 2 - topStretcherInset - stretcherTopFillerWidth / 2
   const artworkSurfaceOffset = 0.012
-  const wrapOverlayInset = 0.0012
+  const leftWrapMaterial = hasArtwork ? artworkLeftMaterial : wrapMaterial
+  const rightWrapMaterial = hasArtwork ? artworkRightMaterial : wrapMaterial
+  const topWrapMaterial = hasArtwork ? artworkTopMaterial : wrapMaterial
+  const bottomWrapMaterial = hasArtwork ? artworkBottomMaterial : wrapMaterial
 
   return (
     <group position={position} rotation={rotation}>
@@ -598,27 +601,6 @@ function CanvasObject({
         <planeGeometry args={[width, height]} />
         <primitive attach="material" object={hasArtwork ? artworkFrontMaterial : frontMaterial} />
       </mesh>
-
-      {hasArtwork && artworkTextures.edges && (
-        <>
-          <mesh position={[-width / 2 - wrapOverlayInset, 0, 0]} rotation={[0, Math.PI / 2, 0]} renderOrder={1}>
-            <planeGeometry args={[wrapDepth, height]} />
-            <primitive attach="material" object={artworkLeftMaterial} />
-          </mesh>
-          <mesh position={[width / 2 + wrapOverlayInset, 0, 0]} rotation={[0, -Math.PI / 2, 0]} renderOrder={1}>
-            <planeGeometry args={[wrapDepth, height]} />
-            <primitive attach="material" object={artworkRightMaterial} />
-          </mesh>
-          <mesh position={[0, height / 2 + wrapOverlayInset, 0]} rotation={[Math.PI / 2, 0, 0]} renderOrder={1}>
-            <planeGeometry args={[width, wrapDepth]} />
-            <primitive attach="material" object={artworkTopMaterial} />
-          </mesh>
-          <mesh position={[0, -height / 2 - wrapOverlayInset, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
-            <planeGeometry args={[width, wrapDepth]} />
-            <primitive attach="material" object={artworkBottomMaterial} />
-          </mesh>
-        </>
-      )}
 
       {!hasArtwork && (
         <mesh position={[0, 0, frontZ + 0.001]} receiveShadow>
@@ -639,7 +621,7 @@ function CanvasObject({
         depth={wrapDepth}
         radius={wrapEdgeRadius}
         position={[-width / 2 + wrapThickness / 2, 0, wrapCenterZ]}
-        material={wrapMaterial}
+        material={leftWrapMaterial}
       />
       <BeveledBox
         width={wrapThickness}
@@ -647,7 +629,7 @@ function CanvasObject({
         depth={wrapDepth}
         radius={wrapEdgeRadius}
         position={[width / 2 - wrapThickness / 2, 0, wrapCenterZ]}
-        material={wrapMaterial}
+        material={rightWrapMaterial}
       />
       <BeveledBox
         width={innerWidth}
@@ -655,7 +637,7 @@ function CanvasObject({
         depth={wrapDepth}
         radius={wrapEdgeRadius}
         position={[0, height / 2 - wrapThickness / 2, wrapCenterZ]}
-        material={wrapMaterial}
+        material={topWrapMaterial}
       />
       <BeveledBox
         width={innerWidth}
@@ -663,7 +645,7 @@ function CanvasObject({
         depth={wrapDepth}
         radius={wrapEdgeRadius}
         position={[0, -height / 2 + wrapThickness / 2, wrapCenterZ]}
-        material={wrapMaterial}
+        material={bottomWrapMaterial}
       />
 
       <mesh castShadow receiveShadow position={[0, 0, backZ]}>
