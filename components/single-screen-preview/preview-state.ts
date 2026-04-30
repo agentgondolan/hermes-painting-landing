@@ -74,6 +74,7 @@ export function previewReducer(
       return {
         ...state,
         status: "processing",
+        finalUrl: null,
       }
 
     case "PROCESSING_SUCCESS":
@@ -130,7 +131,7 @@ export interface SceneDisplayModel {
 
 export function deriveSceneModel(state: PreviewState): SceneDisplayModel {
   return {
-    imageSrc: state.finalUrl ?? state.temporaryUrl ?? null,
+    imageSrc: state.finalUrl,
     previewKind:
       state.finalUrl !== null
         ? "final"

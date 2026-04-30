@@ -327,7 +327,12 @@ export const mockImageProcessor: ImageProcessor = async (file, options) => {
   await new Promise((resolve) => window.setTimeout(resolve, MOCK_DELAY_MS))
 
   const image = await loadExifAdjustedImage(file)
-  const orientation = getOrientationFromDimensions(image.naturalWidth, image.naturalHeight)
+  const preferredSize = options?.preferredSizeId ? getFrameSizeOption(options.preferredSizeId) : null
+  const orientation = preferredSize
+    ? preferredSize.widthCm >= preferredSize.heightCm
+      ? 'horizontal'
+      : 'vertical'
+    : getOrientationFromDimensions(image.naturalWidth, image.naturalHeight)
   const sourceRatio = image.naturalWidth / image.naturalHeight
   const sizeId = options?.preferredSizeId ?? getClosestFrameSizeId(sourceRatio, orientation)
   const sizeLabel = getFrameSizeOption(sizeId).label
