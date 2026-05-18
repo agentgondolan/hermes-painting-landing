@@ -16,7 +16,7 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://painting.makeyourcr
 const title = 'Custom Paint by Numbers from Your Photo | Makeyourcraft'
 const description =
   'Turn your favorite photo into a personalized paint-by-numbers kit. Upload a picture, preview your custom artwork, and create a meaningful handmade gift.'
-const ogImage = '/opengraph-image'
+const ogImage = '/opengraph-image.png'
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
