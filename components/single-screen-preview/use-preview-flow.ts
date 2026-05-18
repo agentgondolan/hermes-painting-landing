@@ -12,6 +12,7 @@ import {
   mockImageProcessor,
   getExifCorrectedPreviewUrl,
 } from "@/lib/image-processing"
+import { captureEvent } from "@/lib/analytics/posthog"
 import { ACCEPTED_MIME_TYPES, DEFAULT_SIZE_ID, UX_COPY } from "./constants"
 
 export function usePreviewFlow() {
@@ -55,6 +56,13 @@ export function usePreviewFlow() {
             sessionToken,
           })
 
+          captureEvent('preview_processing_completed', {
+            selected_size: result.sizeId,
+            selected_size_label: result.sizeLabel,
+            source_file_type: file.type || 'unknown',
+            source_file_size_mb: Number((file.size / 1024 / 1024).toFixed(2)),
+          })
+
           if (
             previousFinalUrl &&
             previousFinalUrl !== currentTemporaryUrl &&
@@ -68,9 +76,17 @@ export function usePreviewFlow() {
             processingRequestRef.current === requestId &&
             stateRef.current.sessionToken === sessionToken
           ) {
+            const errorMessage = err?.message ?? UX_COPY.errorBadFile
+
+            captureEvent('preview_processing_failed', {
+              selected_size: stateRef.current.selectedSize?.id,
+              source_file_type: file.type || 'unknown',
+              error_message: errorMessage,
+            })
+
             dispatch({
               type: "PROCESSING_FAILURE",
-              error: err?.message ?? UX_COPY.errorBadFile,
+              error: errorMessage,
               sessionToken,
             })
           }
@@ -83,6 +99,10 @@ export function usePreviewFlow() {
   const handleSelectImage = useCallback(
     (file: File) => {
       if (!ACCEPTED_MIME_TYPES.includes(file.type as (typeof ACCEPTED_MIME_TYPES)[number])) {
+        captureEvent('preview_file_rejected', {
+          file_type: file.type || 'unknown',
+          file_size_mb: Number((file.size / 1024 / 1024).toFixed(2)),
+        })
         dispatch({ type: "RESET" })
         return
       }
@@ -94,6 +114,11 @@ export function usePreviewFlow() {
       const preferredSizeId = previousState.selectedSize?.id ?? DEFAULT_SIZE_ID
 
       dispatch({ type: "SELECT_IMAGE", file, sessionToken })
+      captureEvent('preview_image_selected', {
+        selected_size: preferredSizeId,
+        file_type: file.type || 'unknown',
+        file_size_mb: Number((file.size / 1024 / 1024).toFixed(2)),
+      })
 
       getExifCorrectedPreviewUrl(file)
         .then((previewUrl) => {
@@ -135,9 +160,13 @@ export function usePreviewFlow() {
   }, [processSelectedFile])
 
   const handleReset = useCallback(() => {
+    captureEvent('preview_reset_clicked', {
+      selected_size: state.selectedSize?.id,
+      status: state.status,
+    })
     revokePreviewUrls(state.temporaryUrl, state.finalUrl)
     dispatch({ type: "RESET" })
-  }, [revokePreviewUrls, state.finalUrl, state.temporaryUrl])
+  }, [revokePreviewUrls, state.finalUrl, state.selectedSize?.id, state.status, state.temporaryUrl])
 
   const handleSetSize = useCallback(
     (size: FrameSizeOption) => {

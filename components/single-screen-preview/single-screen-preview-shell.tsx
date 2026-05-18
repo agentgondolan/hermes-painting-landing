@@ -1,15 +1,21 @@
 "use client"
 
+import { Suspense } from "react"
 import { LayoutFrame } from "./layout-frame"
 import { usePreviewFlow } from "./use-preview-flow"
 import { PreviewScenePanel } from "./preview-scene-panel"
 import { GuidedControls } from "./guided-controls"
+import { AdCreativeExperimentTracker } from "@/components/ad-creative-experiment-tracker"
 
 export function SingleScreenPreviewShell() {
   const { state, sceneModel, guidedModel, actions } = usePreviewFlow()
 
   return (
     <LayoutFrame>
+      <Suspense fallback={null}>
+        <AdCreativeExperimentTracker />
+      </Suspense>
+
       {/* Scene Zone */}
       <div className="relative flex-1">
         <PreviewScenePanel sceneModel={sceneModel} />
