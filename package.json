@@ -8,19 +8,25 @@
     "start": "next start --hostname 0.0.0.0 --port 3206",
     "preview": "npm run build && npm run start",
     "lint": "next lint",
-    "opennext-build": "npx opennextjs-cloudflare build"
+    "opennext-build": "npx opennextjs-cloudflare build",
+    "worker:typecheck": "tsc -p workers/mge-bff/tsconfig.json --noEmit",
+    "worker:dev": "wrangler dev --config workers/mge-bff/wrangler.toml",
+    "worker:deploy": "wrangler deploy --config workers/mge-bff/wrangler.toml"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "gsap": "^3.14.2",
-    "next": "15.5.14",
+    "next": "^15.5.18",
+    "posthog-js": "^1.374.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",
+    "server-only": "^0.0.1",
     "three": "^0.183.2"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260519.1",
     "@tailwindcss/postcss": "^4.1.3",
     "@types/node": "^22.13.10",
     "@types/react": "^19.0.10",
@@ -28,6 +34,7 @@
     "@types/three": "^0.183.1",
     "playwright": "^1.58.2",
     "tailwindcss": "^4.1.3",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "wrangler": "^4.93.0"
   }
 }

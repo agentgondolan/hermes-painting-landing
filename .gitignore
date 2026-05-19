@@ -5,3 +5,8 @@ node_modules
 .env
 .env.*
 .next.bak-*
+tsconfig.tsbuildinfo
+
+# Local Wrangler state
+.wrangler/
+workers/**/.wrangler/

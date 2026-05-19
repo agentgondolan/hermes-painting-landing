@@ -15,6 +15,7 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       PROJECT_NAME: hermes-painting-landing
       BUILD_DIR: .next/prod
+      NEXT_PUBLIC_MGE_BFF_BASE_URL: ${{ vars.NEXT_PUBLIC_MGE_BFF_BASE_URL }}
     steps:
       - uses: actions/checkout@v4
 
