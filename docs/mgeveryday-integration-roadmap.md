@@ -46,11 +46,16 @@ Free-tier fit as of 2026-05-19: Cloudflare Workers/Pages Functions include a fre
 
 ---
 
-## Phase 1 — DOT preview integration
+## Phase 1 — DOT preview integration: multi-size previews on 3D canvas
 
-**Status:** Worker BFF foundation implemented under `workers/mge-bff/`; frontend integration uses real MGE preview only when `NEXT_PUBLIC_MGE_BFF_BASE_URL` is configured, otherwise it keeps the mock local preview fallback.
+**Status:** Partially implemented. The live site has a server-side MGE preview BFF and can create/poll real DOT previews. The current UI still needs a dedicated multi-size preview phase so each frame size produces its own DOT preview and the selected result is rendered on the 3D canvas. Current MGE output is mockup-style; this is acceptable for now. Later, MGE should support returning a clean preview image without mockup framing.
 
-**Purpose:** Replace mock preview processing with MGEeveryday preview for DOT only.
+**Purpose:** From one uploaded image, generate DOT previews for the selectable frame sizes and show the selected size-specific preview on the 3D canvas.
+
+**Frame sizes for first DOT test:**
+- `40x50`
+- `40x60`
+- `60x80`
 
 **MGE API endpoints:**
 - `POST /api/v1/preview/` multipart upload, requires `mockup:create` scope and `brand_id`.
@@ -58,20 +63,25 @@ Free-tier fit as of 2026-05-19: Cloudflare Workers/Pages Functions include a fre
 - `PUT /api/v1/preview/{preview_id}/` for replacing/revising uploaded photo.
 
 **Scope:**
-- Add `/api/mge/preview` route handler that accepts browser upload, sends multipart to MGEeveryday with `brand_id=116` and DOT product preference.
-- Add polling route `/api/mge/preview/:id`.
-- Map MGE preview options into the app state: selected option, preview image URL, SKU/order contract, orderability.
-- Update UI to show real DOT preview option(s), not fake local canvas processing.
+- On image upload, create one DOT preview request per frame size: `40x50`, `40x60`, `60x80`.
+- Include the selected/requested frame size in each BFF call so MGE can generate a size-specific result.
+- Store preview results keyed by frame size in app state: preview ID, status, image URL/mockup URL, orderability, and order contract when available.
+- Render the selected frame size's preview result on the existing 3D canvas.
+- When the user changes frame size, switch to that size's completed preview if ready; otherwise show a processing state for that size.
+- Keep the current mock/local fallback only when the BFF is unavailable or MGE returns no usable image.
+- Document that MGE currently returns a mockup preview, with a future API improvement request for clean preview output.
 
 **Open questions / docs to verify during implementation:**
-- Exact `PreviewCreate` multipart fields for selecting product family DOT and size/manufacturing preferences.
-- Shape of preview result image URL(s): CDN URL, expiry, CORS, and whether the frontend can render directly.
+- Exact `PreviewCreate` multipart field name/value for size selection (`preferred_size` currently used by the BFF, but the public docs should confirm this contract).
+- Whether MGE guarantees one requested DOT size per preview call, or can return all requested DOT sizes in one call.
+- Shape and priority of image fields: clean preview URL vs mockup URL vs option image URL.
 - Whether preview options always include `order_contract` sufficient for draft/order line items.
 
 **Verification:**
 - Upload one image from the frontend.
-- Preview reaches `COMPLETED` or `PARTIAL`.
-- At least one DOT option is rendered in the single-screen app.
+- Three DOT preview calls are made: `40x50`, `40x60`, `60x80`.
+- Each preview reaches `COMPLETED` or `PARTIAL`, or exposes a per-size error without breaking the others.
+- Switching frame size changes the image shown on the 3D canvas to that size's DOT preview/mockup.
 - App handles quota, bad image, and partial-result errors cleanly.
 
 ---
