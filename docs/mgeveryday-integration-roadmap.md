@@ -19,7 +19,9 @@
 
 Chosen path: keep the current static Cloudflare Pages frontend and add a small Cloudflare Worker/Pages Function backend-for-frontend.
 
-Reason: this preserves the online Cloudflare Pages testing flow, keeps the MGE API token out of the browser bundle, minimizes deployment disruption, and can later be reused by other MGEeveryday-powered storefronts.
+Production implementation: use Cloudflare Pages Functions on the same Pages project for `/api/mge/*`, with the standalone Worker kept as an optional future route for custom domains or multiple storefronts.
+
+Reason: this preserves the online Cloudflare Pages testing flow, keeps the MGE API token out of the browser bundle, avoids requiring Cloudflare `workers.dev` onboarding for the first live test, minimizes deployment disruption, and can later be reused by other MGEeveryday-powered storefronts.
 
 Free-tier fit as of 2026-05-19: Cloudflare Workers/Pages Functions include a free tier suitable for testing and early traffic: 100,000 requests/day, 10 ms CPU/request, 128 MB memory, 50 subrequests/request, and 100 MB request body size on the Cloudflare Free plan. Upgrade trigger: sustained production traffic above that, heavier CPU work, or operational need for paid limits/logging.
 

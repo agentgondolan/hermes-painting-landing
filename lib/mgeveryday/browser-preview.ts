@@ -14,6 +14,7 @@
 
 const DEFAULT_BFF_BASE = ''
 const POLL_INTERVAL_MS = 2_000
+const SAME_ORIGIN_BFF = 'same-origin'
 
 /**
  * Parse the BFF base URL from the public env or return null.
@@ -24,6 +25,9 @@ export function resolveBffBaseUrl(): string | null {
     : DEFAULT_BFF_BASE
   if (!url) {
     return null
+  }
+  if (url === SAME_ORIGIN_BFF) {
+    return DEFAULT_BFF_BASE
   }
   return url.replace(/\/+$/, '')
 }
@@ -68,7 +72,7 @@ export interface BffPreviewClient {
 
 export function createPreviewClient(baseUrl?: string): BffPreviewClient | null {
   const base = baseUrl ?? resolveBffBaseUrl()
-  if (!base) {
+  if (base === null) {
     return null
   }
   return new PreviewClientImpl(base)
