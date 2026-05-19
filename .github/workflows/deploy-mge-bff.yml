@@ -1,0 +1,47 @@
+name: Deploy MGE BFF Worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'workers/mge-bff/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy-mge-bff.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      MGEVERYDAY_API_TOKEN: ${{ secrets.MGEVERYDAY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck Worker
+        run: npm run worker:typecheck
+
+      - name: Validate required secrets
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || (echo "Missing CLOUDFLARE_API_TOKEN" && exit 1)
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || (echo "Missing CLOUDFLARE_ACCOUNT_ID" && exit 1)
+          test -n "$MGEVERYDAY_API_TOKEN" || (echo "Missing MGEVERYDAY_API_TOKEN" && exit 1)
+
+      - name: Configure Worker secret
+        run: printf "%s" "$MGEVERYDAY_API_TOKEN" | npx wrangler secret put MGEVERYDAY_API_TOKEN --config workers/mge-bff/wrangler.toml
+
+      - name: Deploy Worker
+        run: npm run worker:deploy

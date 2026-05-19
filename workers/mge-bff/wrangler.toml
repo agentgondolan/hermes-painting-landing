@@ -1,0 +1,16 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "hermes-painting-mge-bff"
+main = "src/index.ts"
+compatibility_date = "2025-04-28"
+
+# Deploy as a standalone Worker (not bound to Pages)
+# To route from Pages, use a subdomain or Pages route config.
+
+[vars]
+MGEVERYDAY_BASE_URL = "https://www.mgeveryday.sg"
+MGEVERYDAY_BRAND_ID = "116"
+ALLOWED_ORIGIN = "https://hermes-painting-landing.pages.dev"
+
+[triggers]
+# Add routes here when binding to a custom domain, e.g.:
+# routes = [{ pattern = "mge-bff.example.com/api/*", zone_name = "example.com" }]
