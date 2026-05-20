@@ -407,12 +407,10 @@ function useArtworkTextures(
       },
       undefined,
       () => {
-        if (!cancelled) {
-          setArtworkTextures((current) => {
-            disposeArtworkTextures(current)
-            return null
-          })
-        }
+        // Keep the last successfully loaded artwork visible if the next preview
+        // URL cannot be loaded as a WebGL texture (for example a remote preview
+        // image without usable CORS headers). Clearing here swaps the canvas to
+        // the white base texture exactly when the async DOT preview reports ready.
       },
     )
 
