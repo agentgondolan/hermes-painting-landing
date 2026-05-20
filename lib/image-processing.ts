@@ -193,19 +193,6 @@ function formatCropStatus(sizeId: FrameSizeId, orientation: FrameOrientation, cr
 
 // --- EXIF orientation handling ---
 
-// EXIF orientation tag (274) values and their transforms
-// 1=normal, 3=180°, 6=90° CW (photo appears narrow/long when held sideways), 8=90° CCW (photo appears narrow/long when held sideways)
-const EXIF_TRANSFORMS: Record<number, { rotation: number; flipH: boolean }> = {
-  1: { rotation: 0, flipH: false },
-  2: { rotation: 0, flipH: true },
-  3: { rotation: 180, flipH: false },
-  4: { rotation: 180, flipH: true },
-  5: { rotation: 90, flipH: true },
-  6: { rotation: -90, flipH: false },
-  7: { rotation: -90, flipH: true },
-  8: { rotation: 90, flipH: false },
-}
-
 function getExifOrientation(arrayBuffer: ArrayBuffer): number | null {
   const view = new DataView(arrayBuffer)
   if (view.getUint16(0) !== 0xffd8) {
@@ -276,63 +263,55 @@ async function loadExifAdjustedImageToBlobUrl(file: File): Promise<string> {
     return URL.createObjectURL(file)
   }
 
-  const transform = EXIF_TRANSFORMS[orientation] || EXIF_TRANSFORMS[1]
-  if (!transform.rotation && !transform.flipH) {
-    return URL.createObjectURL(file)
-  }
-
-  // Use createImageBitmap with imageOrientation: 'none' to get RAW pixels
-  // This prevents the browser from auto-applying EXIF rotation before we draw,
-  // which causes double-rotation issues when combined with manual canvas rotation.
-  let imageBitmap: ImageBitmap
+  // Let the browser decoder apply EXIF exactly once, then draw that oriented
+  // bitmap into a new canvas. The exported blob has no EXIF tag, so MGE receives
+  // already-upright pixels and cannot rotate iPhone photos a second time.
   try {
-    imageBitmap = await createImageBitmap(file, { imageOrientation: 'none' })
-  } catch {
-    // Fallback: use Image() — may auto-rotate on some browsers
+    const imageBitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+    const canvas = document.createElement('canvas')
+    canvas.width = imageBitmap.width
+    canvas.height = imageBitmap.height
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      return URL.createObjectURL(file)
+    }
+
+    ctx.drawImage(imageBitmap, 0, 0)
+    imageBitmap.close()
+
     return new Promise<string>((resolve) => {
+      canvas.toBlob((blob) => {
+        if (!blob) { resolve(URL.createObjectURL(file)); return }
+        resolve(URL.createObjectURL(blob))
+      }, file.type === 'image/png' ? 'image/png' : file.type === 'image/webp' ? 'image/webp' : 'image/jpeg')
+    })
+  } catch {
+    // Fallback: Image() also applies EXIF orientation in modern browsers.
+    return new Promise<string>((resolve, reject) => {
       const tmpUrl = URL.createObjectURL(file)
       const img = new Image()
-      img.onload = () => { URL.revokeObjectURL(tmpUrl); resolve(tmpUrl) }
-      img.onerror = () => { URL.revokeObjectURL(tmpUrl); resolve(tmpUrl) }
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = img.naturalWidth || img.width
+        canvas.height = img.naturalHeight || img.height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          URL.revokeObjectURL(tmpUrl)
+          resolve(URL.createObjectURL(file))
+          return
+        }
+        ctx.drawImage(img, 0, 0)
+        URL.revokeObjectURL(tmpUrl)
+        canvas.toBlob((blob) => {
+          if (!blob) { resolve(URL.createObjectURL(file)); return }
+          resolve(URL.createObjectURL(blob))
+        }, file.type === 'image/png' ? 'image/png' : file.type === 'image/webp' ? 'image/webp' : 'image/jpeg')
+      }
+      img.onerror = () => { URL.revokeObjectURL(tmpUrl); reject(new Error('Could not load adjusted image')) }
       img.src = tmpUrl
     })
   }
-
-  const w = imageBitmap.width
-  const h = imageBitmap.height
-
-  const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d')
-  if (!ctx) {
-    return URL.createObjectURL(file)
-  }
-
-  // Set canvas dimensions after rotation
-  if (transform.rotation % 180 !== 0) {
-    canvas.width = h
-    canvas.height = w
-  } else {
-    canvas.width = w
-    canvas.height = h
-  }
-
-  // Apply rotation/flip
-  ctx.save()
-  ctx.translate(canvas.width / 2, canvas.height / 2)
-  ctx.rotate((transform.rotation * Math.PI) / 180)
-  if (transform.flipH) {
-    ctx.scale(-1, 1)
-  }
-  ctx.drawImage(imageBitmap, -w / 2, -h / 2)
-  ctx.restore()
-
-  // Return blob URL of the corrected canvas (no EXIF tag included)
-  return new Promise<string>((resolve) => {
-    canvas.toBlob((blob) => {
-      if (!blob) { resolve(URL.createObjectURL(file)); return }
-      resolve(URL.createObjectURL(blob))
-    }, file.type === 'image/png' ? 'image/png' : file.type === 'image/webp' ? 'image/webp' : 'image/jpeg')
-  })
 }
 
 async function loadExifAdjustedImage(file: File): Promise<HTMLImageElement> {
