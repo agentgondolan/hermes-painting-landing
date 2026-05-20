@@ -863,7 +863,7 @@ function StageFloor() {
 function ProductRig({ reducedMotion = false, rotationY = 0, artworkTextureUrl, frameSizeId = DEFAULT_FRAME_SIZE_ID, orientation = "vertical" }: ProductSceneCanvasProps) {
   const group = useRef<THREE.Group>(null)
   const dimensions = useCanvasDimensions(frameSizeId, orientation)
-  const baseTiltX = reducedMotion ? -0.035 : -0.06
+  const baseTiltX = 0
   const basePositionY = -2.54
   const basePositionZ = 0.08
   const easelScale = 1.08
@@ -874,13 +874,8 @@ function ProductRig({ reducedMotion = false, rotationY = 0, artworkTextureUrl, f
       return
     }
 
-    const time = _.clock.getElapsedTime()
-    const idleX = reducedMotion ? baseTiltX : baseTiltX + Math.cos(time * 0.36) * 0.004
-    const autoRotate = reducedMotion ? 0 : time * 0.15
-    const idleY = reducedMotion ? 0 : Math.sin(time * 0.28) * 0.012
-
-    group.current.rotation.x = THREE.MathUtils.lerp(group.current.rotation.x, idleX, 1 - Math.exp(-delta * 2.6))
-    group.current.rotation.y = THREE.MathUtils.lerp(group.current.rotation.y, autoRotate + rotationY + idleY, 1 - Math.exp(-delta * 3))
+    group.current.rotation.x = THREE.MathUtils.lerp(group.current.rotation.x, baseTiltX, 1 - Math.exp(-delta * 2.6))
+    group.current.rotation.y = THREE.MathUtils.lerp(group.current.rotation.y, rotationY, 1 - Math.exp(-delta * 3))
     group.current.position.y = basePositionY - widthLift
     group.current.position.z = basePositionZ
   })
@@ -921,7 +916,7 @@ export function ProductSceneCanvas(props: ProductSceneCanvasProps) {
       shadows
       dpr={[1, 2]}
       gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
-      camera={{ position: [4.55, 1.95, 12.1], fov: 29, near: 0.1, far: 40 }}
+      camera={{ position: [0, 1.95, 12.1], fov: 29, near: 0.1, far: 40 }}
     >
       <StudioLighting />
       <ProductRig

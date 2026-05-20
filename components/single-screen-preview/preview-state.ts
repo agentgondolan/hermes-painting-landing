@@ -235,11 +235,7 @@ export interface SceneDisplayModel {
 export function deriveSceneModel(state: PreviewState): SceneDisplayModel {
   const selectedPreview = getSelectedDotPreview(state)
   const selectedPreviewUrl = selectedPreview?.status === "ready" ? selectedPreview.imageUrl : null
-  // Keep the 3D canvas textured with the browser-prepared artwork. The MGE
-  // result is the production/order preview and can be mostly white line art,
-  // so swapping it onto the WebGL canvas makes the uploaded photo appear to
-  // disappear exactly when processing completes.
-  const imageSrc = state.temporaryUrl ?? selectedPreviewUrl ?? state.finalUrl
+  const imageSrc = selectedPreviewUrl ?? state.temporaryUrl ?? state.finalUrl
 
   return {
     imageSrc,
