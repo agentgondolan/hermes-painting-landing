@@ -44,6 +44,10 @@ export async function handleMgeBffRequest(request: Request, env: Env): Promise<R
       return withCors(await createPreview(request, env), request, env)
     }
 
+    if (url.pathname === '/api/mge/image' && request.method === 'GET') {
+      return withCors(await proxyPreviewImage(request), request, env)
+    }
+
     const match = url.pathname.match(/^\/api\/mge\/preview\/([^/]+)$/)
     if (match && request.method === 'GET') {
       return withCors(await getPreview(match[1], env), request, env)
@@ -103,6 +107,47 @@ async function getPreview(previewId: string, env: Env): Promise<Response> {
   })
 
   return normalizeMgeResponse(response)
+}
+
+async function proxyPreviewImage(request: Request): Promise<Response> {
+  const source = new URL(request.url).searchParams.get('url')
+  if (!source) {
+    return json({ error: 'Missing image url' }, 400)
+  }
+
+  let imageUrl: URL
+  try {
+    imageUrl = new URL(source)
+  } catch {
+    return json({ error: 'Invalid image url' }, 400)
+  }
+
+  if (!isPublicHttpImageUrl(imageUrl)) {
+    return json({ error: 'Preview image url is not allowed' }, 400)
+  }
+
+  const upstream = await fetch(imageUrl.toString(), {
+    headers: {
+      Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+    },
+  })
+
+  if (!upstream.ok) {
+    return json({ error: 'Preview image fetch failed', status: upstream.status }, upstream.status >= 500 ? 502 : upstream.status)
+  }
+
+  const contentType = upstream.headers.get('Content-Type') || 'image/jpeg'
+  if (!contentType.toLowerCase().startsWith('image/')) {
+    return json({ error: 'Preview image response was not an image' }, 502)
+  }
+
+  return new Response(upstream.body, {
+    status: 200,
+    headers: {
+      'Content-Type': contentType,
+      'Cache-Control': 'public, max-age=3600',
+    },
+  })
 }
 
 async function normalizeMgeResponse(response: Response, successStatus = 200): Promise<Response> {
@@ -226,6 +271,27 @@ function corsHeaders(origin: string): Record<string, string> {
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   }
+}
+
+function isPublicHttpImageUrl(url: URL): boolean {
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return false
+
+  const hostname = url.hostname.toLowerCase()
+  if (
+    hostname === 'localhost' ||
+    hostname === '0.0.0.0' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1' ||
+    hostname.endsWith('.localhost') ||
+    /^10\./.test(hostname) ||
+    /^192\.168\./.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname) ||
+    /^169\.254\./.test(hostname)
+  ) {
+    return false
+  }
+
+  return true
 }
 
 function asRecord(value: unknown): JsonRecord {

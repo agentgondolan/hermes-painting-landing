@@ -36,14 +36,14 @@ export interface BffPreviewCreateResult {
   previewId: string
   status: string
   imageUrl: string | null
-  options: Array<{ previewOptionId: string | number; orderable: boolean; imageUrl: string | null; [key: string]: unknown }>
+  options: Array<{ previewOptionId: string | number; orderable: boolean; imageUrl: string | null; mockupUrl?: string | null; [key: string]: unknown }>
 }
 
 export interface BffPreviewStatusResult {
   previewId: string
   status: string
   imageUrl: string | null
-  options: Array<{ previewOptionId: string | number; orderable: boolean; imageUrl: string | null; [key: string]: unknown }>
+  options: Array<{ previewOptionId: string | number; orderable: boolean; imageUrl: string | null; mockupUrl?: string | null; [key: string]: unknown }>
 }
 
 export interface BffError {
@@ -100,7 +100,7 @@ export class PreviewClientImpl implements BffPreviewClient {
     }
 
     const data: BffPreviewCreateResult = await res.json()
-    return data
+    return proxiedPreviewResult(data, this.base)
   }
 
   async getPreview(previewId: string): Promise<BffPreviewStatusResult> {
@@ -109,7 +109,8 @@ export class PreviewClientImpl implements BffPreviewClient {
       const err = await readBffError(res)
       throw new Error(formatBffError(err, `Preview status fetch failed: ${res.status}`))
     }
-    return res.json() as Promise<BffPreviewStatusResult>
+    const data = await res.json() as BffPreviewStatusResult
+    return proxiedPreviewResult(data, this.base)
   }
 
   async pollPreview(previewId: string, options: PollOptions = {}): Promise<BffPreviewCreateResult> {
@@ -139,6 +140,32 @@ export class PreviewClientImpl implements BffPreviewClient {
 
     // Timeout — return latest state even if not terminal
     return this.getPreview(previewId) as unknown as Promise<BffPreviewCreateResult>
+  }
+}
+
+function proxiedPreviewResult<T extends BffPreviewCreateResult | BffPreviewStatusResult>(result: T, base: string): T {
+  return {
+    ...result,
+    imageUrl: proxiedImageUrl(result.imageUrl, base),
+    options: result.options.map((option) => ({
+      ...option,
+      imageUrl: proxiedImageUrl(option.imageUrl, base),
+      mockupUrl: proxiedImageUrl(option.mockupUrl ?? null, base),
+    })),
+  }
+}
+
+function proxiedImageUrl(imageUrl: string | null, base: string): string | null {
+  if (!imageUrl) return null
+  if (imageUrl.startsWith('blob:') || imageUrl.startsWith('data:')) return imageUrl
+  if (imageUrl.startsWith(`${base}/api/mge/image`) || imageUrl.startsWith('/api/mge/image')) return imageUrl
+
+  try {
+    const parsed = new URL(imageUrl)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return imageUrl
+    return `${base}/api/mge/image?url=${encodeURIComponent(parsed.toString())}`
+  } catch {
+    return imageUrl
   }
 }
 
