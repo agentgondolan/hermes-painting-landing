@@ -940,8 +940,6 @@ export function ProductSceneCanvas(props: ProductSceneCanvasProps) {
         enableRotate
         enableDamping
         dampingFactor={0.08}
-        autoRotate
-        autoRotateSpeed={1.5}
       />
     </Canvas>
   )
