@@ -210,7 +210,7 @@ export function previewReducer(
       const nextState = {
         ...state,
         selectedSize: event.size,
-        finalUrl: state.dotPreviews[event.size.id]?.imageUrl ?? state.finalUrl,
+        finalUrl: state.dotPreviews[event.size.id]?.imageUrl ?? null,
       }
       return {
         ...nextState,

@@ -63,7 +63,7 @@ export interface PollOptions {
 
 export interface BffPreviewClient {
   /** Upload an image and create a preview session */
-  createPreview(file: File, preferredSize?: string): Promise<BffPreviewCreateResult>
+  createPreview(file: File, preferredSize?: string, clientCropped?: boolean): Promise<BffPreviewCreateResult>
   /** Poll until the preview is COMPLETED / PARTIAL or an imageUrl is available */
   pollPreview(previewId: string, options?: PollOptions): Promise<BffPreviewCreateResult>
   /** Get current preview status */
@@ -81,11 +81,14 @@ export function createPreviewClient(baseUrl?: string): BffPreviewClient | null {
 export class PreviewClientImpl implements BffPreviewClient {
   constructor(private readonly base: string) {}
 
-  async createPreview(file: File, preferredSize?: string): Promise<BffPreviewCreateResult> {
+  async createPreview(file: File, preferredSize?: string, clientCropped = false): Promise<BffPreviewCreateResult> {
     const form = new FormData()
     form.append('image', file, file.name || 'upload')
     if (preferredSize) {
       form.append('preferredSize', preferredSize)
+    }
+    if (clientCropped) {
+      form.append('clientCropped', 'true')
     }
 
     const res = await fetch(`${this.base}/api/mge/preview`, {

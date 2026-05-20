@@ -898,6 +898,8 @@ function ProductRig({ reducedMotion = false, rotationY = 0, artworkTextureUrl, f
   )
 }
 
+const LOCKED_CAMERA_POLAR_ANGLE = Math.PI * 0.45
+
 export function ProductSceneCanvas(props: ProductSceneCanvasProps) {
   // Bridge the new single-screen props to the legacy component
   const artworkTextureUrl = props.artworkTextureUrl ?? props.imageSrc ?? null
@@ -935,9 +937,10 @@ export function ProductSceneCanvas(props: ProductSceneCanvasProps) {
         enableZoom
         minZoom={5}
         maxZoom={20}
-        minPolarAngle={Math.PI * 0.2}
-        maxPolarAngle={Math.PI * 0.8}
+        minPolarAngle={LOCKED_CAMERA_POLAR_ANGLE}
+        maxPolarAngle={LOCKED_CAMERA_POLAR_ANGLE}
         enableRotate
+        rotateSpeed={0.9}
         enableDamping
         dampingFactor={0.08}
       />

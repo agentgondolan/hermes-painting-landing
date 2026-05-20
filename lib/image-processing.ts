@@ -54,6 +54,10 @@ export type ProcessedArtwork = {
   cleanup?: () => void
 }
 
+export type PreparedArtworkForFrame = ProcessedArtwork & {
+  file: File
+}
+
 export type ProcessArtworkOptions = {
   preferredSizeId?: FrameSizeId
 }
@@ -356,10 +360,7 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string) {
   })
 }
 
-export const mockImageProcessor: ImageProcessor = async (file, options) => {
-  await new Promise((resolve) => window.setTimeout(resolve, MOCK_DELAY_MS))
-
-  const image = await loadExifAdjustedImage(file)
+function getPreparedArtworkMeta(image: HTMLImageElement, options?: ProcessArtworkOptions) {
   const preferredSize = options?.preferredSizeId ? getFrameSizeOption(options.preferredSizeId) : null
   const orientation = preferredSize
     ? preferredSize.widthCm >= preferredSize.heightCm
@@ -371,6 +372,12 @@ export const mockImageProcessor: ImageProcessor = async (file, options) => {
   const sizeLabel = getFrameSizeOption(sizeId).label
   const targetRatio = getFrameRatio(sizeId, orientation)
   const crop = getCenteredCrop(image.naturalWidth, image.naturalHeight, targetRatio)
+
+  return { orientation, sizeId, sizeLabel, crop }
+}
+
+async function renderCroppedArtwork(file: File, image: HTMLImageElement, options?: ProcessArtworkOptions) {
+  const { orientation, sizeId, sizeLabel, crop } = getPreparedArtworkMeta(image, options)
 
   const largestCropEdge = Math.max(crop.cropWidth, crop.cropHeight)
   const scale = largestCropEdge > MAX_OUTPUT_EDGE ? MAX_OUTPUT_EDGE / largestCropEdge : 1
@@ -403,9 +410,16 @@ export const mockImageProcessor: ImageProcessor = async (file, options) => {
   const mimeType = file.type === 'image/png' || file.type === 'image/webp' ? file.type : 'image/png'
   const blob = await canvasToBlob(canvas, mimeType)
   const resultUrl = URL.createObjectURL(blob)
+  const extension = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg'
+  const sourceName = file.name || `artwork.${extension}`
+  const preparedFile = new File([blob], sourceName.replace(/\.[^.]+$/, '') + `-${sizeId}.${extension}`, {
+    type: mimeType,
+    lastModified: file.lastModified || Date.now(),
+  })
 
   return {
     resultUrl,
+    file: preparedFile,
     mimeType,
     sourceName: file.name,
     sizeId,
@@ -414,5 +428,29 @@ export const mockImageProcessor: ImageProcessor = async (file, options) => {
     crop,
     statusMessage: formatCropStatus(sizeId, orientation, crop),
     cleanup: () => URL.revokeObjectURL(resultUrl),
+  }
+}
+
+export async function prepareArtworkForFrame(file: File, options?: ProcessArtworkOptions): Promise<PreparedArtworkForFrame> {
+  const image = await loadExifAdjustedImage(file)
+  return renderCroppedArtwork(file, image, options)
+}
+
+export const mockImageProcessor: ImageProcessor = async (file, options) => {
+  await new Promise((resolve) => window.setTimeout(resolve, MOCK_DELAY_MS))
+
+  const image = await loadExifAdjustedImage(file)
+  const prepared = await renderCroppedArtwork(file, image, options)
+
+  return {
+    resultUrl: prepared.resultUrl,
+    mimeType: prepared.mimeType,
+    sourceName: prepared.sourceName,
+    sizeId: prepared.sizeId,
+    sizeLabel: prepared.sizeLabel,
+    orientation: prepared.orientation,
+    crop: prepared.crop,
+    statusMessage: prepared.statusMessage,
+    cleanup: prepared.cleanup,
   }
 }

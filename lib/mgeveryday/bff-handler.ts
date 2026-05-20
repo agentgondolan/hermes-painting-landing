@@ -74,13 +74,14 @@ async function createPreview(request: Request, env: Env): Promise<Response> {
   }
 
   const preferredSize = normalizePreferredSize(incoming.get('preferredSize'))
+  const clientCropped = normalizeBoolean(incoming.get('clientCropped'))
   const body = new FormData()
   body.set('brand_id', env.MGEVERYDAY_BRAND_ID || DEFAULT_BRAND_ID)
   body.set('image', image, image.name || 'upload')
   body.append('products', 'DOT')
   body.set('comparison_count', '1')
   body.set('auto_enhance', 'true')
-  body.set('auto_crop', 'true')
+  body.set('auto_crop', clientCropped ? 'false' : 'true')
   if (preferredSize) {
     body.set('preferred_size', preferredSize)
   }
@@ -219,6 +220,10 @@ function summarizeOption(raw: unknown, productCode: string | null): NormalizedPr
 function normalizePreferredSize(value: FormDataEntryValue | null): string | null {
   if (typeof value !== 'string' || !value.trim()) return null
   return value.trim().toUpperCase()
+}
+
+function normalizeBoolean(value: FormDataEntryValue | null): boolean {
+  return typeof value === 'string' && ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
 
 function requireToken(env: Env): string {

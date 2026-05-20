@@ -76,7 +76,7 @@ export function GuidedControls({
   }
 
   return (
-    <div className="flex flex-col items-center gap-3 transition-all duration-300">
+    <div className="flex min-h-[190px] w-full flex-col items-center gap-3 transition-all duration-300">
       <input
         ref={fileInputRef}
         type="file"

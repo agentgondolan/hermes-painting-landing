@@ -22,8 +22,8 @@ export function SingleScreenPreviewShell() {
       </div>
 
       {/* Guided Control Zone */}
-      <div className="relative px-4 pb-safe pt-4">
-        <div className="mx-auto max-w-md">
+      <div className="relative h-[224px] shrink-0 px-4 pb-safe pt-4 sm:h-[214px]">
+        <div className="mx-auto flex h-full max-w-md items-start justify-center">
           <GuidedControls
             guidedModel={guidedModel}
             selectedSize={state.selectedSize}
