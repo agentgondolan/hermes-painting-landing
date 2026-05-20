@@ -233,10 +233,13 @@ type ArtworkTextures = {
 
 function configureTexture(texture: THREE.Texture) {
   texture.colorSpace = THREE.SRGBColorSpace
-  texture.anisotropy = 8
+  texture.anisotropy = 16
   texture.wrapS = THREE.ClampToEdgeWrapping
   texture.wrapT = THREE.ClampToEdgeWrapping
-  texture.minFilter = THREE.LinearMipmapLinearFilter
+  // The generated DOT preview is mostly fine linework. Mipmaps make those
+  // lines look soft on the 3D canvas, especially while the easel rotates.
+  texture.generateMipmaps = false
+  texture.minFilter = THREE.LinearFilter
   texture.magFilter = THREE.LinearFilter
   texture.needsUpdate = true
   return texture
@@ -258,8 +261,8 @@ function createMirroredStripTexture(
   const stripSize = Math.max(1, Math.min(axisSize - startPx, Math.round(axisSize * clampedSegment)))
   const stripCanvas = document.createElement('canvas')
 
-  stripCanvas.width = isVertical ? 160 : sourceWidth
-  stripCanvas.height = isVertical ? sourceHeight : 160
+  stripCanvas.width = isVertical ? 320 : sourceWidth
+  stripCanvas.height = isVertical ? sourceHeight : 320
 
   const context = stripCanvas.getContext('2d')
   if (!context) {
@@ -519,13 +522,11 @@ function CanvasObject({
   }, [])
 
   const artworkFrontMaterial = useMemo(() => {
-    const material = new THREE.MeshStandardMaterial({
+    const material = new THREE.MeshBasicMaterial({
       map: canvasTexture,
-      roughness: 0.92,
-      metalness: 0,
       side: THREE.DoubleSide,
+      toneMapped: false,
     })
-    material.shadowSide = THREE.DoubleSide
     material.polygonOffset = true
     material.polygonOffsetFactor = -4
     material.polygonOffsetUnits = -4
@@ -874,8 +875,11 @@ function ProductRig({ reducedMotion = false, rotationY = 0, artworkTextureUrl, f
       return
     }
 
+    const time = _.clock.getElapsedTime()
+    const autoRotateY = reducedMotion ? 0 : time * 0.15
+
     group.current.rotation.x = THREE.MathUtils.lerp(group.current.rotation.x, baseTiltX, 1 - Math.exp(-delta * 2.6))
-    group.current.rotation.y = THREE.MathUtils.lerp(group.current.rotation.y, rotationY, 1 - Math.exp(-delta * 3))
+    group.current.rotation.y = THREE.MathUtils.lerp(group.current.rotation.y, autoRotateY + rotationY, 1 - Math.exp(-delta * 3))
     group.current.position.y = basePositionY - widthLift
     group.current.position.z = basePositionZ
   })
@@ -914,7 +918,7 @@ export function ProductSceneCanvas(props: ProductSceneCanvasProps) {
   return (
     <Canvas
       shadows
-      dpr={[1, 2]}
+      dpr={[1.5, 3]}
       gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
       camera={{ position: [0, 1.95, 12.1], fov: 29, near: 0.1, far: 40 }}
     >
