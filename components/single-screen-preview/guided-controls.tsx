@@ -99,7 +99,12 @@ export function GuidedControls({
       {guidedModel.showProgress && (
         <div className="flex flex-col items-center gap-2">
           <div className="h-1 w-24 animate-pulse rounded-full bg-white/20" />
-          <p className="text-xs text-white/40">{guidedModel.helperText}</p>
+          <p className="text-xs text-white/50">{guidedModel.helperText}</p>
+          {guidedModel.productDetail && (
+            <p className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-white/45">
+              {guidedModel.productDetail}
+            </p>
+          )}
         </div>
       )}
 
@@ -134,12 +139,19 @@ export function GuidedControls({
 
       {/* Buy CTA */}
       {guidedModel.showBuyCta && (
-        <button
-          onClick={handleBuyClick}
-          className="rounded-full bg-[#2d6a4f] border-none px-8 py-3 text-sm font-semibold text-white transition hover:bg-[#40916c]"
-        >
-          {UX_COPY.buyCta}
-        </button>
+        <div className="flex flex-col items-center gap-2">
+          {guidedModel.productDetail && (
+            <p className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-white/50">
+              {guidedModel.productDetail}
+            </p>
+          )}
+          <button
+            onClick={handleBuyClick}
+            className="rounded-full bg-[#2d6a4f] border-none px-8 py-3 text-sm font-semibold text-white transition hover:bg-[#40916c]"
+          >
+            {UX_COPY.buyCta}
+          </button>
+        </div>
       )}
 
       {/* Error */}

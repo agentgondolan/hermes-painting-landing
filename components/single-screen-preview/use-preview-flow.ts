@@ -13,13 +13,25 @@ import {
   getExifCorrectedPreviewUrl,
 } from "@/lib/image-processing"
 import { captureEvent } from "@/lib/analytics/posthog"
-import { createPreviewClient } from "@/lib/mgeveryday/browser-preview"
+import { createPreviewClient, type BffPreviewCreateResult } from "@/lib/mgeveryday/browser-preview"
 import { ACCEPTED_MIME_TYPES, DEFAULT_SIZE_ID, UX_COPY } from "./constants"
+
+type PreviewFlowResult = Omit<BffPreviewCreateResult, 'previewId'> & {
+  previewId: string | null
+  cleanup?: () => void
+}
+
+function pickOrderable(result: Pick<PreviewFlowResult, 'options'>): boolean | null {
+  const firstOrderable = result.options.find((option) => option.orderable)
+  if (firstOrderable) return true
+  if (result.options.length > 0) return false
+  return null
+}
 
 export function usePreviewFlow() {
   const [state, dispatch] = useReducer(previewReducer, initialPreviewState)
   const stateRef = useRef(state)
-  const processingRequestRef = useRef<string | null>(null)
+  const processingRequestRef = useRef<Record<string, string>>({})
   stateRef.current = state
 
   const revokePreviewUrls = useCallback((temporaryUrl: string | null, finalUrl: string | null) => {
@@ -27,32 +39,50 @@ export function usePreviewFlow() {
       URL.revokeObjectURL(temporaryUrl)
     }
 
-    if (finalUrl && finalUrl !== temporaryUrl) {
+    if (finalUrl && finalUrl !== temporaryUrl && finalUrl.startsWith('blob:')) {
       URL.revokeObjectURL(finalUrl)
     }
   }, [])
 
-  const processSelectedFile = useCallback(
-    (file: File, sessionToken: string, preferredSizeId?: FrameSizeOption["id"]) => {
+  const processDotPreviewForSize = useCallback(
+    (file: File, sessionToken: string, preferredSizeId: FrameSizeOption["id"]) => {
       const requestId = crypto.randomUUID()
-      processingRequestRef.current = requestId
-      dispatch({ type: "START_PROCESSING", sessionToken })
+      processingRequestRef.current[preferredSizeId] = requestId
+      dispatch({ type: "START_PROCESSING", sessionToken, sizeId: preferredSizeId })
 
       const previewClient = createPreviewClient()
       const previewPromise = previewClient
         ? previewClient
-            .createPreview(file, preferredSizeId?.toUpperCase())
+            .createPreview(file, preferredSizeId.toUpperCase())
             .then((created) =>
               created.imageUrl
                 ? created
                 : previewClient.pollPreview(created.previewId),
             )
-        : mockImageProcessor(file, { preferredSizeId })
+        : null
 
-      previewPromise.then(
+      const fallbackToLocalPreview = (error?: unknown) => {
+        captureEvent('mge_preview_fallback_to_local', {
+          selected_size: preferredSizeId,
+          source_file_type: file.type || 'unknown',
+          error_message: error instanceof Error ? error.message : undefined,
+        })
+
+        return mockImageProcessor(file, { preferredSizeId }).then((result) => ({
+          imageUrl: result.resultUrl,
+          previewId: null,
+          status: 'LOCAL_FALLBACK',
+          options: [],
+          cleanup: result.cleanup,
+        }))
+      }
+
+      const activePromise = previewPromise ?? fallbackToLocalPreview()
+
+      activePromise.then(
         (result) => {
           if (
-            processingRequestRef.current !== requestId ||
+            processingRequestRef.current[preferredSizeId] !== requestId ||
             stateRef.current.sessionToken !== sessionToken
           ) {
             if ('cleanup' in result) {
@@ -61,18 +91,16 @@ export function usePreviewFlow() {
             return
           }
 
-          const previousFinalUrl = stateRef.current.finalUrl
-          const currentTemporaryUrl = stateRef.current.temporaryUrl
-          const resultUrl = 'imageUrl' in result ? result.imageUrl : result.resultUrl
+          const resultUrl = result.imageUrl
 
           if (!resultUrl) {
-            const errorMessage = 'MGE preview finished without a preview image URL'
+            const errorMessage = 'MGE preview finished without a preview_url image'
             captureEvent(previewClient ? 'mge_preview_processing_failed' : 'preview_processing_failed', {
-              selected_size: stateRef.current.selectedSize?.id,
+              selected_size: preferredSizeId,
               source_file_type: file.type || 'unknown',
               error_message: errorMessage,
             })
-            dispatch({ type: "PROCESSING_FAILURE", error: errorMessage, sessionToken })
+            dispatch({ type: "PROCESSING_FAILURE", error: errorMessage, sessionToken, sizeId: preferredSizeId })
             return
           }
 
@@ -80,44 +108,65 @@ export function usePreviewFlow() {
             type: "PROCESSING_SUCCESS",
             url: resultUrl,
             sessionToken,
+            sizeId: preferredSizeId,
+            previewId: result.previewId,
+            status: result.status,
+            orderable: pickOrderable(result),
           })
 
-          captureEvent(previewClient ? 'mge_preview_processing_completed' : 'preview_processing_completed', {
+          captureEvent(previewClient ? 'mge_dot_preview_completed' : 'preview_processing_completed', {
             selected_size: preferredSizeId,
-            selected_size_label: 'sizeLabel' in result ? result.sizeLabel : preferredSizeId,
-            preview_id: 'previewId' in result ? result.previewId : undefined,
+            selected_size_label: stateRef.current.selectedSize?.id === preferredSizeId ? stateRef.current.selectedSize?.label : preferredSizeId,
+            preview_id: result.previewId ?? undefined,
+            preview_status: result.status,
+            product: 'DOT',
             source_file_type: file.type || 'unknown',
             source_file_size_mb: Number((file.size / 1024 / 1024).toFixed(2)),
           })
-
-          if (
-            previousFinalUrl &&
-            previousFinalUrl !== currentTemporaryUrl &&
-            previousFinalUrl !== resultUrl &&
-            previousFinalUrl.startsWith('blob:')
-          ) {
-            URL.revokeObjectURL(previousFinalUrl)
-          }
         },
         (err) => {
-          if (
-            processingRequestRef.current === requestId &&
-            stateRef.current.sessionToken === sessionToken
-          ) {
-            const errorMessage = err?.message ?? UX_COPY.errorBadFile
+          fallbackToLocalPreview(err).then(
+            (fallbackResult) => {
+              if (
+                processingRequestRef.current[preferredSizeId] !== requestId ||
+                stateRef.current.sessionToken !== sessionToken
+              ) {
+                fallbackResult.cleanup?.()
+                return
+              }
 
-            captureEvent(previewClient ? 'mge_preview_processing_failed' : 'preview_processing_failed', {
-              selected_size: stateRef.current.selectedSize?.id,
-              source_file_type: file.type || 'unknown',
-              error_message: errorMessage,
-            })
+              dispatch({
+                type: "PROCESSING_SUCCESS",
+                url: fallbackResult.imageUrl,
+                sessionToken,
+                sizeId: preferredSizeId,
+                previewId: null,
+                status: fallbackResult.status,
+                orderable: null,
+              })
+            },
+            (fallbackError) => {
+              if (
+                processingRequestRef.current[preferredSizeId] === requestId &&
+                stateRef.current.sessionToken === sessionToken
+              ) {
+                const errorMessage = fallbackError?.message ?? err?.message ?? UX_COPY.errorBadFile
 
-            dispatch({
-              type: "PROCESSING_FAILURE",
-              error: errorMessage,
-              sessionToken,
-            })
-          }
+                captureEvent(previewClient ? 'mge_preview_processing_failed' : 'preview_processing_failed', {
+                  selected_size: preferredSizeId,
+                  source_file_type: file.type || 'unknown',
+                  error_message: errorMessage,
+                })
+
+                dispatch({
+                  type: "PROCESSING_FAILURE",
+                  error: errorMessage,
+                  sessionToken,
+                  sizeId: preferredSizeId,
+                })
+              }
+            },
+          )
         },
       )
     },
@@ -144,6 +193,7 @@ export function usePreviewFlow() {
       dispatch({ type: "SELECT_IMAGE", file, sessionToken })
       captureEvent('preview_image_selected', {
         selected_size: preferredSizeId,
+        product: 'DOT',
         file_type: file.type || 'unknown',
         file_size_mb: Number((file.size / 1024 / 1024).toFixed(2)),
       })
@@ -156,7 +206,7 @@ export function usePreviewFlow() {
           }
 
           dispatch({ type: "TEMP_PREVIEW_READY", url: previewUrl, sessionToken })
-          processSelectedFile(file, sessionToken, preferredSizeId)
+          processDotPreviewForSize(file, sessionToken, preferredSizeId)
         })
         .catch(() => {
           const previewUrl = URL.createObjectURL(file)
@@ -167,10 +217,10 @@ export function usePreviewFlow() {
           }
 
           dispatch({ type: "TEMP_PREVIEW_READY", url: previewUrl, sessionToken })
-          processSelectedFile(file, sessionToken, preferredSizeId)
+          processDotPreviewForSize(file, sessionToken, preferredSizeId)
         })
     },
-    [processSelectedFile, revokePreviewUrls],
+    [processDotPreviewForSize, revokePreviewUrls],
   )
 
   const handleRetry = useCallback(() => {
@@ -180,12 +230,9 @@ export function usePreviewFlow() {
       return
     }
 
-    processSelectedFile(
-      currentState.selectedFile,
-      currentState.sessionToken,
-      currentState.selectedSize?.id ?? DEFAULT_SIZE_ID,
-    )
-  }, [processSelectedFile])
+    const sizeId = currentState.selectedSize?.id ?? DEFAULT_SIZE_ID
+    processDotPreviewForSize(currentState.selectedFile, currentState.sessionToken, sizeId)
+  }, [processDotPreviewForSize])
 
   const handleReset = useCallback(() => {
     captureEvent('preview_reset_clicked', {
@@ -205,9 +252,14 @@ export function usePreviewFlow() {
         return
       }
 
-      processSelectedFile(currentState.selectedFile, currentState.sessionToken, size.id)
+      const cachedPreview = currentState.dotPreviews[size.id]
+      if (cachedPreview?.status === 'ready' || cachedPreview?.status === 'processing') {
+        return
+      }
+
+      processDotPreviewForSize(currentState.selectedFile, currentState.sessionToken, size.id)
     },
-    [processSelectedFile],
+    [processDotPreviewForSize],
   )
 
   useEffect(() => {

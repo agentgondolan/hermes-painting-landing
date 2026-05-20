@@ -15,6 +15,18 @@ import {
 } from '@/lib/image-processing'
 export type { FrameSizeOption }
 
+export type DotPreviewStatus = "idle" | "processing" | "ready" | "error"
+
+export interface DotPreviewResult {
+  sizeId: string
+  status: DotPreviewStatus
+  previewId: string | null
+  imageUrl: string | null
+  productCode: "DOT"
+  orderable: boolean | null
+  error: string | null
+}
+
 export interface PreviewState {
   status: PreviewStatus
   sessionToken: string | null
@@ -22,15 +34,16 @@ export interface PreviewState {
   finalUrl: string | null
   selectedFile: File | null
   selectedSize: FrameSizeOption | null
+  dotPreviews: Record<string, DotPreviewResult>
   error: string | null
 }
 
 export type PreviewEvent =
   | { type: "SELECT_IMAGE"; file: File; sessionToken: string }
   | { type: "TEMP_PREVIEW_READY"; url: string; sessionToken: string }
-  | { type: "START_PROCESSING"; sessionToken: string }
-  | { type: "PROCESSING_SUCCESS"; url: string; sessionToken: string }
-  | { type: "PROCESSING_FAILURE"; error: string; sessionToken: string }
+  | { type: "START_PROCESSING"; sessionToken: string; sizeId?: string }
+  | { type: "PROCESSING_SUCCESS"; url: string; sessionToken: string; sizeId?: string; previewId?: string | null; status?: string; orderable?: boolean | null }
+  | { type: "PROCESSING_FAILURE"; error: string; sessionToken: string; sizeId?: string }
   | { type: "RETRY" }
   | { type: "RESET" }
   | { type: "SET_SIZE"; size: FrameSizeOption }
@@ -42,7 +55,36 @@ export const initialPreviewState: PreviewState = {
   finalUrl: null,
   selectedFile: null,
   selectedSize: getFrameSizeOption(DEFAULT_FRAME_SIZE_ID),
+  dotPreviews: {},
   error: null,
+}
+
+function createProcessingDotPreview(sizeId: string): DotPreviewResult {
+  return {
+    sizeId,
+    status: "processing",
+    previewId: null,
+    imageUrl: null,
+    productCode: "DOT",
+    orderable: null,
+    error: null,
+  }
+}
+
+function getSelectedDotPreview(state: PreviewState): DotPreviewResult | null {
+  const sizeId = state.selectedSize?.id
+  return sizeId ? state.dotPreviews[sizeId] ?? null : null
+}
+
+function deriveStatusForSelectedSize(state: PreviewState): PreviewStatus {
+  const selectedPreview = getSelectedDotPreview(state)
+
+  if (!state.selectedFile) return "idle"
+  if (selectedPreview?.status === "ready") return "final-preview-ready"
+  if (selectedPreview?.status === "error") return "error"
+  if (selectedPreview?.status === "processing") return "processing"
+  if (state.temporaryUrl) return "temporary-preview-ready"
+  return "image-selected"
 }
 
 export function previewReducer(
@@ -58,6 +100,7 @@ export function previewReducer(
         sessionToken: event.sessionToken,
         temporaryUrl: null,
         finalUrl: null,
+        dotPreviews: {},
         error: null,
       }
 
@@ -65,41 +108,93 @@ export function previewReducer(
       if (state.sessionToken !== event.sessionToken) return state
       return {
         ...state,
-        status: "temporary-preview-ready",
+        status: state.status === "processing" ? "processing" : "temporary-preview-ready",
         temporaryUrl: event.url,
       }
 
-    case "START_PROCESSING":
+    case "START_PROCESSING": {
       if (state.sessionToken !== event.sessionToken) return state
+      const sizeId = event.sizeId ?? state.selectedSize?.id
       return {
         ...state,
         status: "processing",
-        finalUrl: null,
-      }
-
-    case "PROCESSING_SUCCESS":
-      if (state.sessionToken !== event.sessionToken) return state
-      return {
-        ...state,
-        status: "final-preview-ready",
-        finalUrl: event.url,
+        dotPreviews: sizeId
+          ? {
+              ...state.dotPreviews,
+              [sizeId]: createProcessingDotPreview(sizeId),
+            }
+          : state.dotPreviews,
         error: null,
       }
+    }
+
+    case "PROCESSING_SUCCESS": {
+      if (state.sessionToken !== event.sessionToken) return state
+      const sizeId = event.sizeId ?? state.selectedSize?.id
+      const nextState: PreviewState = {
+        ...state,
+        finalUrl: sizeId === state.selectedSize?.id ? event.url : state.finalUrl,
+        dotPreviews: sizeId
+          ? {
+              ...state.dotPreviews,
+              [sizeId]: {
+                sizeId,
+                status: "ready",
+                previewId: event.previewId ?? null,
+                imageUrl: event.url,
+                productCode: "DOT",
+                orderable: event.orderable ?? null,
+                error: null,
+              },
+            }
+          : state.dotPreviews,
+        error: null,
+      }
+      return {
+        ...nextState,
+        status: deriveStatusForSelectedSize(nextState),
+      }
+    }
 
     case "PROCESSING_FAILURE": {
       if (state.sessionToken !== event.sessionToken) return state
-      return {
+      const sizeId = event.sizeId ?? state.selectedSize?.id
+      const nextState: PreviewState = {
         ...state,
-        status: "error",
+        dotPreviews: sizeId
+          ? {
+              ...state.dotPreviews,
+              [sizeId]: {
+                sizeId,
+                status: "error",
+                previewId: null,
+                imageUrl: null,
+                productCode: "DOT",
+                orderable: null,
+                error: event.error,
+              },
+            }
+          : state.dotPreviews,
         error: event.error,
+      }
+      return {
+        ...nextState,
+        status: deriveStatusForSelectedSize(nextState),
       }
     }
 
     case "RETRY": {
+      const selectedSizeId = state.selectedSize?.id
       return {
         ...state,
         status: "processing",
         error: null,
+        dotPreviews: selectedSizeId
+          ? {
+              ...state.dotPreviews,
+              [selectedSizeId]: createProcessingDotPreview(selectedSizeId),
+            }
+          : state.dotPreviews,
       }
     }
 
@@ -108,13 +203,20 @@ export function previewReducer(
         ...initialPreviewState,
         temporaryUrl: null,
         finalUrl: null,
+        dotPreviews: {},
       }
 
-    case "SET_SIZE":
-      return {
+    case "SET_SIZE": {
+      const nextState = {
         ...state,
         selectedSize: event.size,
+        finalUrl: state.dotPreviews[event.size.id]?.imageUrl ?? state.finalUrl,
       }
+      return {
+        ...nextState,
+        status: deriveStatusForSelectedSize(nextState),
+      }
+    }
 
     default:
       return state
@@ -127,19 +229,25 @@ export interface SceneDisplayModel {
   previewKind: "none" | "temporary" | "final"
   selectedSize: FrameSizeOption | null
   isProcessing: boolean
+  productCode: "DOT" | null
 }
 
 export function deriveSceneModel(state: PreviewState): SceneDisplayModel {
+  const selectedPreview = getSelectedDotPreview(state)
+  const selectedPreviewUrl = selectedPreview?.status === "ready" ? selectedPreview.imageUrl : null
+  const imageSrc = selectedPreviewUrl ?? state.temporaryUrl ?? state.finalUrl
+
   return {
-    imageSrc: state.finalUrl,
+    imageSrc,
     previewKind:
-      state.finalUrl !== null
+      selectedPreviewUrl !== null
         ? "final"
         : state.temporaryUrl !== null
           ? "temporary"
           : "none",
     selectedSize: state.selectedSize,
-    isProcessing: state.status === "processing",
+    isProcessing: selectedPreview?.status === "processing" || state.status === "processing",
+    productCode: selectedPreview?.status === "ready" || selectedPreview?.status === "processing" ? "DOT" : null,
   }
 }
 
@@ -152,9 +260,21 @@ export interface GuidedControlModel {
   showError: boolean
   showReplace: boolean
   helperText: string
+  productDetail: string | null
+}
+
+function productDetailFor(state: PreviewState): string | null {
+  const selectedSize = state.selectedSize
+  const selectedPreview = getSelectedDotPreview(state)
+  if (!selectedSize || !selectedPreview) return null
+  return `Product: DOT · Size: ${selectedSize.label}`
 }
 
 export function deriveGuidedModel(state: PreviewState): GuidedControlModel {
+  const selectedSize = state.selectedSize
+  const selectedPreview = getSelectedDotPreview(state)
+  const productDetail = productDetailFor(state)
+
   switch (state.status) {
     case "idle":
       return {
@@ -165,6 +285,7 @@ export function deriveGuidedModel(state: PreviewState): GuidedControlModel {
         showError: false,
         showReplace: false,
         helperText: "Upload a photo to begin",
+        productDetail: null,
       }
     case "image-selected":
       return {
@@ -175,26 +296,29 @@ export function deriveGuidedModel(state: PreviewState): GuidedControlModel {
         showError: false,
         showReplace: false,
         helperText: "Preparing preview…",
+        productDetail,
       }
     case "temporary-preview-ready":
       return {
         showUpload: false,
         showProgress: true,
-        showSizeSelector: false,
+        showSizeSelector: true,
         showBuyCta: false,
         showError: false,
-        showReplace: false,
-        helperText: "Generating your preview…",
+        showReplace: true,
+        helperText: `Generating DOT preview${selectedSize ? ` for ${selectedSize.label}` : ''}…`,
+        productDetail,
       }
     case "processing":
       return {
         showUpload: false,
         showProgress: true,
-        showSizeSelector: false,
+        showSizeSelector: true,
         showBuyCta: false,
         showError: false,
         showReplace: true,
-        helperText: "Transforming your image…",
+        helperText: `Generating DOT preview${selectedSize ? ` for ${selectedSize.label}` : ''}…`,
+        productDetail,
       }
     case "final-preview-ready":
       return {
@@ -204,17 +328,19 @@ export function deriveGuidedModel(state: PreviewState): GuidedControlModel {
         showBuyCta: true,
         showError: false,
         showReplace: true,
-        helperText: "Your preview is ready",
+        helperText: selectedPreview?.status === "ready" ? "DOT preview ready" : "Your preview is ready",
+        productDetail,
       }
     case "error":
       return {
         showUpload: false,
         showProgress: false,
-        showSizeSelector: false,
+        showSizeSelector: true,
         showBuyCta: false,
         showError: true,
         showReplace: true,
-        helperText: state.error ?? "Something went wrong",
+        helperText: selectedPreview?.error ?? state.error ?? "Something went wrong",
+        productDetail,
       }
     default:
       return deriveGuidedModel({ status: "idle" } as PreviewState)

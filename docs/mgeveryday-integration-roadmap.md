@@ -48,7 +48,7 @@ Free-tier fit as of 2026-05-19: Cloudflare Workers/Pages Functions include a fre
 
 ## Phase 1 — DOT preview integration: multi-size previews on 3D canvas
 
-**Status:** Partially implemented. The live site has a server-side MGE preview BFF and can create/poll real DOT previews. The current UI still needs a dedicated multi-size preview phase so each frame size produces its own DOT preview and the selected result is rendered on the 3D canvas. Current MGE output is mockup-style; this is acceptable for now. Later, MGE should support returning a clean preview image without mockup framing.
+**Status:** In implementation. The live site has a server-side MGE preview BFF and can create/poll real DOT previews. The UI phase now prioritizes the default frame size first, keeps the cropped uploaded image on the 3D canvas while MGE generates the DOT preview, then swaps the canvas texture to MGE `preview_url` when ready. MGE already returns the desired clean `preview_url`; mockup output is not a blocker.
 
 **Purpose:** From one uploaded image, generate DOT previews for the selectable frame sizes and show the selected size-specific preview on the 3D canvas.
 
@@ -63,13 +63,13 @@ Free-tier fit as of 2026-05-19: Cloudflare Workers/Pages Functions include a fre
 - `PUT /api/v1/preview/{preview_id}/` for replacing/revising uploaded photo.
 
 **Scope:**
-- On image upload, create one DOT preview request per frame size: `40x50`, `40x60`, `60x80`.
-- Include the selected/requested frame size in each BFF call so MGE can generate a size-specific result.
-- Store preview results keyed by frame size in app state: preview ID, status, image URL/mockup URL, orderability, and order contract when available.
-- Render the selected frame size's preview result on the existing 3D canvas.
-- When the user changes frame size, switch to that size's completed preview if ready; otherwise show a processing state for that size.
+- On image upload, create a DOT preview request for the default selected frame size first.
+- Keep the auto-cropped uploaded image on the 3D canvas while the MGE preview is being generated.
+- Show progress copy that the DOT preview is being generated.
+- When MGE returns `preview_url`, swap the 3D canvas texture to that image and show product details (`Product: DOT`).
+- When the user later selects another size (`40x50`, `40x60`, `60x80`), create that size's DOT preview if it has not already been generated.
 - Keep the current mock/local fallback only when the BFF is unavailable or MGE returns no usable image.
-- Document that MGE currently returns a mockup preview, with a future API improvement request for clean preview output.
+- Use MGE `preview_url` as the preferred clean image for the 3D canvas; fall back only if no usable `preview_url` exists.
 
 **Open questions / docs to verify during implementation:**
 - Exact `PreviewCreate` multipart field name/value for size selection (`preferred_size` currently used by the BFF, but the public docs should confirm this contract).
@@ -79,9 +79,11 @@ Free-tier fit as of 2026-05-19: Cloudflare Workers/Pages Functions include a fre
 
 **Verification:**
 - Upload one image from the frontend.
-- Three DOT preview calls are made: `40x50`, `40x60`, `60x80`.
-- Each preview reaches `COMPLETED` or `PARTIAL`, or exposes a per-size error without breaking the others.
-- Switching frame size changes the image shown on the 3D canvas to that size's DOT preview/mockup.
+- The auto-cropped uploaded image appears immediately on the 3D canvas.
+- One DOT preview call is made first for the default selected size.
+- UI shows DOT preview generation progress while keeping the cropped image visible.
+- When MGE returns `preview_url`, the 3D canvas swaps to that preview image and shows `Product: DOT` detail.
+- Selecting another frame size creates that size's DOT preview on demand, then swaps the 3D canvas to it when ready.
 - App handles quota, bad image, and partial-result errors cleanly.
 
 ---
