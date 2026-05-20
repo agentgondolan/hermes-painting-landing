@@ -125,6 +125,29 @@ export function usePreviewFlow() {
           })
         },
         (err) => {
+          if (previewClient) {
+            if (
+              processingRequestRef.current[preferredSizeId] === requestId &&
+              stateRef.current.sessionToken === sessionToken
+            ) {
+              const errorMessage = err instanceof Error ? err.message : 'MGE preview request failed'
+
+              captureEvent('mge_preview_processing_failed', {
+                selected_size: preferredSizeId,
+                source_file_type: file.type || 'unknown',
+                error_message: errorMessage,
+              })
+
+              dispatch({
+                type: "PROCESSING_FAILURE",
+                error: errorMessage,
+                sessionToken,
+                sizeId: preferredSizeId,
+              })
+            }
+            return
+          }
+
           fallbackToLocalPreview(err).then(
             (fallbackResult) => {
               if (

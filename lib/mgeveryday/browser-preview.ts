@@ -96,7 +96,7 @@ export class PreviewClientImpl implements BffPreviewClient {
 
     if (!res.ok) {
       const err = await readBffError(res)
-      throw new Error(err.error ?? `Preview creation failed: ${res.status}`)
+      throw new Error(formatBffError(err, `Preview creation failed: ${res.status}`))
     }
 
     const data: BffPreviewCreateResult = await res.json()
@@ -107,7 +107,7 @@ export class PreviewClientImpl implements BffPreviewClient {
     const res = await fetch(`${this.base}/api/mge/preview/${encodeURIComponent(previewId)}`)
     if (!res.ok) {
       const err = await readBffError(res)
-      throw new Error(err.error ?? `Preview status fetch failed: ${res.status}`)
+      throw new Error(formatBffError(err, `Preview status fetch failed: ${res.status}`))
     }
     return res.json() as Promise<BffPreviewStatusResult>
   }
@@ -149,6 +149,16 @@ export class PreviewClientImpl implements BffPreviewClient {
 function isTerminalPreview(result: { status: string; imageUrl: string | null }): boolean {
   const s = result.status.toUpperCase()
   return s === 'COMPLETED' || s === 'PARTIAL' || s === 'READY' || result.imageUrl !== null
+}
+
+function formatBffError(error: BffError, fallback: string): string {
+  if (error.detail) {
+    return error.detail
+  }
+  if (error.error) {
+    return error.error
+  }
+  return fallback
 }
 
 async function readBffError(response: Response): Promise<BffError> {
