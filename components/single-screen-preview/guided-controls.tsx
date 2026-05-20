@@ -140,6 +140,7 @@ export function GuidedControls({
       {/* Buy CTA */}
       {guidedModel.showBuyCta && (
         <div className="flex flex-col items-center gap-2">
+          <p className="text-xs text-white/55">{guidedModel.helperText}</p>
           {guidedModel.productDetail && (
             <p className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-white/50">
               {guidedModel.productDetail}
