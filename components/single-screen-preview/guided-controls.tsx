@@ -79,7 +79,7 @@ export function GuidedControls({
   }
 
   return (
-    <div className="flex min-h-[190px] w-full flex-col items-center gap-3 transition-all duration-300">
+    <div className="flex min-h-0 w-full flex-col items-center gap-2 transition-all duration-300">
       <input
         ref={fileInputRef}
         type="file"
@@ -115,7 +115,7 @@ export function GuidedControls({
             <button
               key={opt.id}
               onClick={() => handleSetSize(opt)}
-              className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+              className={`rounded-full border px-4 py-1.5 text-sm font-medium transition ${
                 selectedSize?.id === opt.id
                   ? "bg-white/20 border-white/40 text-white"
                   : "border-white/20 text-white/70 hover:bg-white/10 hover:text-white"
@@ -132,7 +132,7 @@ export function GuidedControls({
         <div className="flex flex-col items-center gap-2">
           <button
             onClick={handleBuyClick}
-            className="rounded-full bg-[#2d6a4f] border-none px-8 py-3 text-sm font-semibold text-white transition hover:bg-[#40916c]"
+            className="rounded-full bg-[#2d6a4f] border-none px-8 py-2.5 text-sm font-semibold text-white transition hover:bg-[#40916c]"
           >
             {UX_COPY.buyCta}
           </button>

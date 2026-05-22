@@ -34,7 +34,7 @@ export function PreviewOptionOverlay({
   }
 
   return (
-    <div className="absolute right-[10%] top-[18%] z-20 flex w-[min(270px,78vw)] flex-col gap-2 sm:right-[16%] sm:top-[16%]">
+    <div className="absolute left-4 top-5 z-20 flex w-[min(245px,72vw)] flex-col gap-2 sm:left-[12%] sm:top-[14%] sm:w-[min(270px,72vw)]">
       {isProcessing && (
         <div className="pointer-events-none flex w-fit items-center gap-2 rounded-full border border-white/15 bg-black/25 px-3 py-2 text-[11px] font-medium text-white/70 shadow-2xl shadow-black/20 backdrop-blur-md">
           <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/20 border-t-white/80" />
