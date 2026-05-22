@@ -339,11 +339,8 @@ export interface GuidedControlModel {
   productDetail: string | null
 }
 
-function productDetailFor(state: PreviewState): string | null {
-  const selectedSize = state.selectedSize
-  const selectedPreview = getSelectedDotPreview(state)
-  if (!selectedSize || !selectedPreview) return null
-  return `Product: DOT · Size: ${selectedSize.label}`
+function productDetailFor(_state: PreviewState): string | null {
+  return null
 }
 
 export function deriveGuidedModel(state: PreviewState): GuidedControlModel {
@@ -409,7 +406,7 @@ export function deriveGuidedModel(state: PreviewState): GuidedControlModel {
         showBuyCta: true,
         showError: false,
         showReplace: true,
-        helperText: selectedPreview?.status === "ready" ? "DOT preview ready" : "Your preview is ready",
+        helperText: "",
         productDetail,
       }
     case "error":

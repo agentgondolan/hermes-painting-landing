@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef } from "react"
-import type { GuidedControlModel, PreviewOptionChoice } from "./preview-state"
+import type { GuidedControlModel } from "./preview-state"
 import type { FrameSizeOption } from "@/lib/image-processing"
 import { FRAME_SIZE_OPTIONS } from "@/lib/image-processing"
 import { captureEvent } from "@/lib/analytics/posthog"
@@ -10,25 +10,21 @@ import { UX_COPY, ACCEPTED_MIME_TYPES } from "./constants"
 interface GuidedControlsProps {
   guidedModel: GuidedControlModel
   selectedSize: FrameSizeOption | null
-  previewOptions: PreviewOptionChoice[]
   selectedPreviewOptionId: string | null
   onSelectImage: (file: File) => void
   onRetry: () => void
   onReset: () => void
   onSetSize: (size: FrameSizeOption) => void
-  onSetPreviewOption: (sizeId: string, optionId: string) => void
 }
 
 export function GuidedControls({
   guidedModel,
   selectedSize,
-  previewOptions,
   selectedPreviewOptionId,
   onSelectImage,
   onRetry,
   onReset,
   onSetSize,
-  onSetPreviewOption,
 }: GuidedControlsProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -66,17 +62,6 @@ export function GuidedControls({
       size_label: size.label,
     })
     onSetSize(size)
-  }
-
-  const handleSetPreviewOption = (option: PreviewOptionChoice) => {
-    if (!selectedSize) return
-    captureEvent('preview_option_selected_clicked', {
-      selected_size: selectedSize.id,
-      preview_option_id: option.previewOptionId,
-      preview_option_label: option.label,
-      orderable: option.orderable,
-    })
-    onSetPreviewOption(selectedSize.id, option.previewOptionId)
   }
 
   const handleRetry = () => {
@@ -142,36 +127,9 @@ export function GuidedControls({
         </div>
       )}
 
-
-      {/* Preview option selector */}
-      {guidedModel.showPreviewOptions && (
-        <div className="flex max-w-full flex-wrap justify-center gap-2">
-          {previewOptions.map((option, index) => (
-            <button
-              key={option.previewOptionId}
-              onClick={() => handleSetPreviewOption(option)}
-              title={option.description ?? option.label}
-              className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-                selectedPreviewOptionId === option.previewOptionId
-                  ? "border-[#95d5b2]/70 bg-[#2d6a4f]/45 text-white"
-                  : "border-white/20 text-white/70 hover:bg-white/10 hover:text-white"
-              }`}
-            >
-              {option.label || `Option ${index + 1}`}
-            </button>
-          ))}
-        </div>
-      )}
-
       {/* Buy CTA */}
       {guidedModel.showBuyCta && (
         <div className="flex flex-col items-center gap-2">
-          <p className="text-xs text-white/55">{guidedModel.helperText}</p>
-          {guidedModel.productDetail && (
-            <p className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-white/50">
-              {guidedModel.productDetail}
-            </p>
-          )}
           <button
             onClick={handleBuyClick}
             className="rounded-full bg-[#2d6a4f] border-none px-8 py-3 text-sm font-semibold text-white transition hover:bg-[#40916c]"
