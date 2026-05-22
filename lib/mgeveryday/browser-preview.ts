@@ -36,14 +36,30 @@ export interface BffPreviewCreateResult {
   previewId: string
   status: string
   imageUrl: string | null
-  options: Array<{ previewOptionId: string | number; orderable: boolean; imageUrl: string | null; mockupUrl?: string | null; [key: string]: unknown }>
+  options: Array<{
+    previewOptionId: string | number
+    label: string | null
+    description: string | null
+    orderable: boolean
+    imageUrl: string | null
+    mockupUrl: string | null
+    [key: string]: unknown
+  }>
 }
 
 export interface BffPreviewStatusResult {
   previewId: string
   status: string
   imageUrl: string | null
-  options: Array<{ previewOptionId: string | number; orderable: boolean; imageUrl: string | null; mockupUrl?: string | null; [key: string]: unknown }>
+  options: Array<{
+    previewOptionId: string | number
+    label: string | null
+    description: string | null
+    orderable: boolean
+    imageUrl: string | null
+    mockupUrl: string | null
+    [key: string]: unknown
+  }>
 }
 
 export interface BffError {
@@ -174,11 +190,12 @@ function proxiedImageUrl(imageUrl: string | null, base: string): string | null {
 
 /**
  * Check if a preview is in a terminal / ready state.
- * MGE uses status names like "COMPLETED", "PARTIAL", "READY".
+ * MGE may expose the first image before all requested preview options are done,
+ * so do not stop polling only because imageUrl exists.
  */
 function isTerminalPreview(result: { status: string; imageUrl: string | null }): boolean {
   const s = result.status.toUpperCase()
-  return s === 'COMPLETED' || s === 'PARTIAL' || s === 'READY' || result.imageUrl !== null
+  return s === 'COMPLETED' || s === 'PARTIAL' || s === 'READY'
 }
 
 function formatBffError(error: BffError, fallback: string): string {

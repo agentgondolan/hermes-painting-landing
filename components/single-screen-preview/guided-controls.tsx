@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef } from "react"
-import type { GuidedControlModel } from "./preview-state"
+import type { GuidedControlModel, PreviewOptionChoice } from "./preview-state"
 import type { FrameSizeOption } from "@/lib/image-processing"
 import { FRAME_SIZE_OPTIONS } from "@/lib/image-processing"
 import { captureEvent } from "@/lib/analytics/posthog"
@@ -10,19 +10,25 @@ import { UX_COPY, ACCEPTED_MIME_TYPES } from "./constants"
 interface GuidedControlsProps {
   guidedModel: GuidedControlModel
   selectedSize: FrameSizeOption | null
+  previewOptions: PreviewOptionChoice[]
+  selectedPreviewOptionId: string | null
   onSelectImage: (file: File) => void
   onRetry: () => void
   onReset: () => void
   onSetSize: (size: FrameSizeOption) => void
+  onSetPreviewOption: (sizeId: string, optionId: string) => void
 }
 
 export function GuidedControls({
   guidedModel,
   selectedSize,
+  previewOptions,
+  selectedPreviewOptionId,
   onSelectImage,
   onRetry,
   onReset,
   onSetSize,
+  onSetPreviewOption,
 }: GuidedControlsProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -62,6 +68,17 @@ export function GuidedControls({
     onSetSize(size)
   }
 
+  const handleSetPreviewOption = (option: PreviewOptionChoice) => {
+    if (!selectedSize) return
+    captureEvent('preview_option_selected_clicked', {
+      selected_size: selectedSize.id,
+      preview_option_id: option.previewOptionId,
+      preview_option_label: option.label,
+      orderable: option.orderable,
+    })
+    onSetPreviewOption(selectedSize.id, option.previewOptionId)
+  }
+
   const handleRetry = () => {
     captureEvent('preview_retry_clicked', {
       selected_size: selectedSize?.id,
@@ -72,6 +89,7 @@ export function GuidedControls({
   const handleBuyClick = () => {
     captureEvent('preview_order_clicked', {
       selected_size: selectedSize?.id,
+      preview_option_id: selectedPreviewOptionId ?? undefined,
     })
   }
 
@@ -93,19 +111,6 @@ export function GuidedControls({
         >
           {UX_COPY.upload}
         </button>
-      )}
-
-      {/* Progress */}
-      {guidedModel.showProgress && (
-        <div className="flex flex-col items-center gap-2">
-          <div className="h-1 w-24 animate-pulse rounded-full bg-white/20" />
-          <p className="text-xs text-white/50">{guidedModel.helperText}</p>
-          {guidedModel.productDetail && (
-            <p className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-white/45">
-              {guidedModel.productDetail}
-            </p>
-          )}
-        </div>
       )}
 
       {/* Replace */}
@@ -132,6 +137,27 @@ export function GuidedControls({
               }`}
             >
               {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+
+      {/* Preview option selector */}
+      {guidedModel.showPreviewOptions && (
+        <div className="flex max-w-full flex-wrap justify-center gap-2">
+          {previewOptions.map((option, index) => (
+            <button
+              key={option.previewOptionId}
+              onClick={() => handleSetPreviewOption(option)}
+              title={option.description ?? option.label}
+              className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                selectedPreviewOptionId === option.previewOptionId
+                  ? "border-[#95d5b2]/70 bg-[#2d6a4f]/45 text-white"
+                  : "border-white/20 text-white/70 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              {option.label || `Option ${index + 1}`}
             </button>
           ))}
         </div>

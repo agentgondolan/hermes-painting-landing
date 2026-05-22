@@ -7,6 +7,7 @@ import {
   deriveSceneModel,
   deriveGuidedModel,
   type FrameSizeOption,
+  type PreviewOptionChoice,
 } from "./preview-state"
 import {
   prepareArtworkForFrame,
@@ -25,6 +26,19 @@ function pickOrderable(result: Pick<PreviewFlowResult, 'options'>): boolean | nu
   if (firstOrderable) return true
   if (result.options.length > 0) return false
   return null
+}
+
+function normalizePreviewOptions(result: Pick<PreviewFlowResult, 'options'>): PreviewOptionChoice[] {
+  return result.options
+    .filter((option) => option.imageUrl && option.previewOptionId)
+    .map((option, index) => ({
+      previewOptionId: String(option.previewOptionId),
+      label: option.label ?? `Option ${index + 1}`,
+      description: option.description ?? null,
+      imageUrl: option.imageUrl as string,
+      mockupUrl: option.mockupUrl ?? null,
+      orderable: option.orderable,
+    }))
 }
 
 export function usePreviewFlow() {
@@ -115,6 +129,7 @@ export function usePreviewFlow() {
                 previewId: result.previewId,
                 status: result.status,
                 orderable: pickOrderable(result),
+                options: normalizePreviewOptions(result),
               })
 
               captureEvent(previewClient ? 'mge_dot_preview_completed' : 'preview_processing_completed', {
@@ -122,6 +137,7 @@ export function usePreviewFlow() {
                 selected_size_label: stateRef.current.selectedSize?.id === preferredSizeId ? stateRef.current.selectedSize?.label : preferredSizeId,
                 preview_id: result.previewId ?? undefined,
                 preview_status: result.status,
+                preview_option_count: result.options.length,
                 product: 'DOT',
                 source_file_type: preparedArtwork.file.type || file.type || 'unknown',
                 source_file_size_mb: Number((preparedArtwork.file.size / 1024 / 1024).toFixed(2)),
@@ -245,6 +261,14 @@ export function usePreviewFlow() {
     [processDotPreviewForSize],
   )
 
+  const handleSetPreviewOption = useCallback((sizeId: string, optionId: string) => {
+    dispatch({ type: "SET_PREVIEW_OPTION", sizeId, optionId })
+    captureEvent('preview_option_selected', {
+      selected_size: sizeId,
+      preview_option_id: optionId,
+    })
+  }, [])
+
   useEffect(() => {
     return () => {
       revokePreviewUrls(stateRef.current.temporaryUrl, stateRef.current.finalUrl)
@@ -260,6 +284,7 @@ export function usePreviewFlow() {
       retry: handleRetry,
       reset: handleReset,
       setSize: handleSetSize,
+      setPreviewOption: handleSetPreviewOption,
     },
   }
 }

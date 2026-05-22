@@ -11,6 +11,7 @@ interface NormalizedPreviewOption {
   previewOptionId: string | number
   productCode: string | null
   label: string | null
+  description: string | null
   orderable: boolean
   imageUrl: string | null
   mockupUrl: string | null
@@ -85,6 +86,15 @@ async function createPreview(request: Request, env: Env): Promise<Response> {
   if (preferredSize) {
     body.set('preferred_size', preferredSize)
   }
+
+  // Request multiple DOT preview options (variants)
+  const previewOptionsPayload = JSON.stringify({
+    DOT: [
+      { variant: 'source' },
+      { variant: 'drama' },
+    ],
+  })
+  body.set('preview_options', previewOptionsPayload)
 
   const response = await fetch(`${baseUrl(env)}/api/v1/preview/`, {
     method: 'POST',
@@ -210,6 +220,7 @@ function summarizeOption(raw: unknown, productCode: string | null): NormalizedPr
     previewOptionId: String(obj.option_id ?? obj.preview_option_id ?? obj.id ?? ''),
     productCode: productCode ?? pickFirstString([obj.product_code, obj.product]),
     label: pickFirstString([obj.label, obj.name]),
+    description: pickFirstString([obj.description]),
     orderable: Boolean(obj.orderable),
     imageUrl,
     mockupUrl,

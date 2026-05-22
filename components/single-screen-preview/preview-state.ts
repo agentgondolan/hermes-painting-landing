@@ -17,14 +17,29 @@ export type { FrameSizeOption }
 
 export type DotPreviewStatus = "idle" | "processing" | "ready" | "error"
 
+/** A single preview option variant (DOT uses 'variant' key) */
+export interface PreviewOptionChoice {
+  previewOptionId: string
+  label: string
+  description: string | null
+  imageUrl: string
+  mockupUrl: string | null
+  orderable: boolean
+}
+
 export interface DotPreviewResult {
   sizeId: string
   status: DotPreviewStatus
   previewId: string | null
+  /** Fallback main image URL (from response top-level) */
   imageUrl: string | null
   productCode: "DOT"
   orderable: boolean | null
   error: string | null
+  /** All preview option variants for this size */
+  options: PreviewOptionChoice[]
+  /** ID of the currently selected option, or null */
+  selectedOptionId: string | null
 }
 
 export interface PreviewState {
@@ -42,11 +57,12 @@ export type PreviewEvent =
   | { type: "SELECT_IMAGE"; file: File; sessionToken: string }
   | { type: "TEMP_PREVIEW_READY"; url: string; sessionToken: string }
   | { type: "START_PROCESSING"; sessionToken: string; sizeId?: string }
-  | { type: "PROCESSING_SUCCESS"; url: string; sessionToken: string; sizeId?: string; previewId?: string | null; status?: string; orderable?: boolean | null }
+  | { type: "PROCESSING_SUCCESS"; url: string; sessionToken: string; sizeId?: string; previewId?: string | null; status?: string; orderable?: boolean | null; options?: PreviewOptionChoice[] }
   | { type: "PROCESSING_FAILURE"; error: string; sessionToken: string; sizeId?: string }
   | { type: "RETRY" }
   | { type: "RESET" }
   | { type: "SET_SIZE"; size: FrameSizeOption }
+  | { type: "SET_PREVIEW_OPTION"; sizeId: string; optionId: string }
 
 export const initialPreviewState: PreviewState = {
   status: "idle",
@@ -68,12 +84,32 @@ function createProcessingDotPreview(sizeId: string): DotPreviewResult {
     productCode: "DOT",
     orderable: null,
     error: null,
+    options: [],
+    selectedOptionId: null,
   }
+}
+
+function pickDefaultSelectedOption(options: PreviewOptionChoice[]): string | null {
+  // Prefer first orderable option with a valid image
+  const firstOrderable = options.find((o) => o.orderable && o.imageUrl)
+  if (firstOrderable) return firstOrderable.previewOptionId
+  // Fallback: first option with an image
+  const firstImage = options.find((o) => o.imageUrl)
+  if (firstImage) return firstImage.previewOptionId
+  return null
 }
 
 function getSelectedDotPreview(state: PreviewState): DotPreviewResult | null {
   const sizeId = state.selectedSize?.id
   return sizeId ? state.dotPreviews[sizeId] ?? null : null
+}
+
+/** Resolve the active image URL: selected option URL > preview's own imageUrl > fallback */
+function resolveActiveUrl(dot: DotPreviewResult): string | null {
+  if (!dot.selectedOptionId || dot.status !== 'ready') return null
+  const opt = dot.options.find((o) => o.previewOptionId === dot.selectedOptionId)
+  if (opt && opt.imageUrl) return opt.imageUrl
+  return dot.imageUrl
 }
 
 function deriveStatusForSelectedSize(state: PreviewState): PreviewStatus {
@@ -131,9 +167,18 @@ export function previewReducer(
     case "PROCESSING_SUCCESS": {
       if (state.sessionToken !== event.sessionToken) return state
       const sizeId = event.sizeId ?? state.selectedSize?.id
+      const options = event.options ?? []
+      const selectedOptionId = pickDefaultSelectedOption(options)
+      const selectedOptionUrl = selectedOptionId
+        ? options.find((o) => o.previewOptionId === selectedOptionId)?.imageUrl ?? null
+        : null
+      const finalUrl = sizeId === state.selectedSize?.id
+        ? (selectedOptionUrl ?? event.url)
+        : state.finalUrl
+
       const nextState: PreviewState = {
         ...state,
-        finalUrl: sizeId === state.selectedSize?.id ? event.url : state.finalUrl,
+        finalUrl,
         dotPreviews: sizeId
           ? {
               ...state.dotPreviews,
@@ -145,6 +190,8 @@ export function previewReducer(
                 productCode: "DOT",
                 orderable: event.orderable ?? null,
                 error: null,
+                options,
+                selectedOptionId,
               },
             }
           : state.dotPreviews,
@@ -172,6 +219,8 @@ export function previewReducer(
                 productCode: "DOT",
                 orderable: null,
                 error: event.error,
+                options: [],
+                selectedOptionId: null,
               },
             }
           : state.dotPreviews,
@@ -207,10 +256,35 @@ export function previewReducer(
       }
 
     case "SET_SIZE": {
+      const dp = state.dotPreviews[event.size.id]
+      const resolvedUrl = dp?.status === 'ready' ? resolveActiveUrl(dp) ?? dp.imageUrl ?? null : null
       const nextState = {
         ...state,
         selectedSize: event.size,
-        finalUrl: state.dotPreviews[event.size.id]?.imageUrl ?? null,
+        finalUrl: resolvedUrl,
+      }
+      return {
+        ...nextState,
+        status: deriveStatusForSelectedSize(nextState),
+      }
+    }
+
+    case "SET_PREVIEW_OPTION": {
+      const dp = state.dotPreviews[event.sizeId]
+      if (!dp || dp.status !== 'ready') return state
+      const opt = dp.options.find((o) => o.previewOptionId === event.optionId)
+      if (!opt) return state
+      const isActiveSize = event.sizeId === state.selectedSize?.id
+      const nextState = {
+        ...state,
+        finalUrl: isActiveSize ? opt.imageUrl : state.finalUrl,
+        dotPreviews: {
+          ...state.dotPreviews,
+          [event.sizeId]: {
+            ...dp,
+            selectedOptionId: event.optionId,
+          },
+        },
       }
       return {
         ...nextState,
@@ -234,13 +308,14 @@ export interface SceneDisplayModel {
 
 export function deriveSceneModel(state: PreviewState): SceneDisplayModel {
   const selectedPreview = getSelectedDotPreview(state)
-  const selectedPreviewUrl = selectedPreview?.status === "ready" ? selectedPreview.imageUrl : null
-  const imageSrc = selectedPreviewUrl ?? state.temporaryUrl ?? state.finalUrl
+  const activeUrl = selectedPreview?.status === "ready" ? resolveActiveUrl(selectedPreview) : null
+  const fallbackUrl = activeUrl ?? (selectedPreview?.status === "ready" ? selectedPreview.imageUrl : null)
+  const imageSrc = fallbackUrl ?? state.temporaryUrl ?? state.finalUrl
 
   return {
     imageSrc,
     previewKind:
-      selectedPreviewUrl !== null
+      activeUrl !== null || (selectedPreview?.status === "ready" && selectedPreview.imageUrl !== null)
         ? "final"
         : state.temporaryUrl !== null
           ? "temporary"
@@ -256,6 +331,7 @@ export interface GuidedControlModel {
   showUpload: boolean
   showProgress: boolean
   showSizeSelector: boolean
+  showPreviewOptions: boolean
   showBuyCta: boolean
   showError: boolean
   showReplace: boolean
@@ -281,6 +357,7 @@ export function deriveGuidedModel(state: PreviewState): GuidedControlModel {
         showUpload: true,
         showProgress: false,
         showSizeSelector: false,
+        showPreviewOptions: false,
         showBuyCta: false,
         showError: false,
         showReplace: false,
@@ -292,6 +369,7 @@ export function deriveGuidedModel(state: PreviewState): GuidedControlModel {
         showUpload: false,
         showProgress: true,
         showSizeSelector: false,
+        showPreviewOptions: false,
         showBuyCta: false,
         showError: false,
         showReplace: false,
@@ -303,6 +381,7 @@ export function deriveGuidedModel(state: PreviewState): GuidedControlModel {
         showUpload: false,
         showProgress: true,
         showSizeSelector: true,
+        showPreviewOptions: false,
         showBuyCta: false,
         showError: false,
         showReplace: true,
@@ -314,6 +393,7 @@ export function deriveGuidedModel(state: PreviewState): GuidedControlModel {
         showUpload: false,
         showProgress: true,
         showSizeSelector: true,
+        showPreviewOptions: false,
         showBuyCta: false,
         showError: false,
         showReplace: true,
@@ -325,6 +405,7 @@ export function deriveGuidedModel(state: PreviewState): GuidedControlModel {
         showUpload: false,
         showProgress: false,
         showSizeSelector: true,
+        showPreviewOptions: (selectedPreview?.options.length ?? 0) > 1,
         showBuyCta: true,
         showError: false,
         showReplace: true,
@@ -336,6 +417,7 @@ export function deriveGuidedModel(state: PreviewState): GuidedControlModel {
         showUpload: false,
         showProgress: false,
         showSizeSelector: true,
+        showPreviewOptions: false,
         showBuyCta: false,
         showError: true,
         showReplace: true,
