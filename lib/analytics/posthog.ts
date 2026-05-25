@@ -40,6 +40,8 @@ export function getPostHogClient() {
       capture_pageleave: true,
       person_profiles: 'identified_only',
       persistence: 'localStorage+cookie',
+      request_batching: false,
+      __preview_disable_beacon: true,
       loaded: (client) => {
         registerSessionSuperProperties(client)
 
@@ -55,13 +57,13 @@ export function getPostHogClient() {
 }
 
 export function captureEvent(eventName: string, properties: AnalyticsProperties = {}) {
-  const client = getPostHogClient()
+  getPostHogClient()
 
-  if (!client) {
+  if (typeof window === 'undefined' || !isAnalyticsConfigured()) {
     return
   }
 
-  client.capture(eventName, withBaseProperties(properties))
+  captureViaPostHogApi(eventName, withBaseProperties(properties))
 }
 
 export function identifyCustomer(distinctId: string, properties: IdentifyProperties = {}) {
@@ -103,11 +105,63 @@ export function compactProperties<T extends Record<string, AnalyticsValue>>(prop
 function withBaseProperties(properties: AnalyticsProperties) {
   return compactProperties({
     ...properties,
+    $current_url: properties.$current_url ?? (typeof window !== 'undefined' ? window.location.href : undefined),
+    $referrer: properties.$referrer ?? (typeof document !== 'undefined' ? document.referrer || null : undefined),
     product: properties.product ?? 'paint_by_numbers',
     site: 'makeyourcraft_landing',
     funnel: properties.funnel ?? 'photo_to_preview_to_order',
     app_version: process.env.NEXT_PUBLIC_APP_VERSION,
   })
+}
+
+function captureViaPostHogApi(eventName: string, properties: AnalyticsProperties) {
+  const distinctId = getOrCreateDistinctId()
+  const payload = JSON.stringify({
+    api_key: POSTHOG_KEY,
+    event: eventName,
+    distinct_id: distinctId,
+    properties,
+  })
+  const endpoint = `${POSTHOG_HOST?.replace(/\/$/, '')}/capture/`
+
+  if (navigator.sendBeacon) {
+    const sent = navigator.sendBeacon(endpoint, new Blob([payload], { type: 'application/json' }))
+    if (sent) return
+  }
+
+  fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: payload,
+    keepalive: true,
+  }).catch(() => {
+    // Analytics must never break the storefront.
+  })
+}
+
+function getOrCreateDistinctId() {
+  const storageKey = 'makeyourcraft_posthog_distinct_id'
+  const persisted = window.localStorage.getItem(storageKey)
+  if (persisted) return persisted
+
+  const postHogPersistenceKey = `ph_${POSTHOG_KEY}_posthog`
+  const postHogPersistence = window.localStorage.getItem(postHogPersistenceKey)
+  if (postHogPersistence) {
+    try {
+      const parsed = JSON.parse(postHogPersistence) as { distinct_id?: string; $device_id?: string }
+      const existingId = parsed.distinct_id ?? parsed.$device_id
+      if (existingId) {
+        window.localStorage.setItem(storageKey, existingId)
+        return existingId
+      }
+    } catch {
+      // Ignore corrupt analytics persistence and create a fresh ID.
+    }
+  }
+
+  const distinctId = crypto.randomUUID()
+  window.localStorage.setItem(storageKey, distinctId)
+  return distinctId
 }
 
 function registerSessionSuperProperties(client: PostHogLike) {
