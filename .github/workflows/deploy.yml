@@ -17,6 +17,9 @@ jobs:
       PROJECT_NAME: hermes-painting-landing
       BUILD_DIR: .next/prod
       NEXT_PUBLIC_MGE_BFF_BASE_URL: ${{ vars.NEXT_PUBLIC_MGE_BFF_BASE_URL }}
+      NEXT_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+      NEXT_PUBLIC_POSTHOG_HOST: ${{ vars.NEXT_PUBLIC_POSTHOG_HOST }}
+      NEXT_PUBLIC_APP_VERSION: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
