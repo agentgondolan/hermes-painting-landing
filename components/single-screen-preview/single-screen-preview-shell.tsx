@@ -6,6 +6,7 @@ import { usePreviewFlow } from "./use-preview-flow"
 import { PreviewScenePanel } from "./preview-scene-panel"
 import { GuidedControls } from "./guided-controls"
 import { PreviewOptionOverlay } from "./preview-option-overlay"
+import { PurchasePanel } from "./purchase-panel"
 import { AdCreativeExperimentTracker } from "@/components/ad-creative-experiment-tracker"
 
 export function SingleScreenPreviewShell() {
@@ -31,8 +32,9 @@ export function SingleScreenPreviewShell() {
       </div>
 
       {/* Guided Control Zone */}
-      <div className="relative h-[174px] shrink-0 px-4 pb-safe pt-3 sm:h-[184px]">
-        <div className="mx-auto flex h-full max-w-md items-start justify-center">
+      <div className="relative h-[204px] shrink-0 px-4 pb-safe pt-3 sm:h-[214px]">
+        <div className="mx-auto flex h-full max-w-md flex-col items-center justify-start gap-3">
+          <PurchasePanel selectedSize={state.selectedSize} selectedPreview={selectedPreview ?? null} />
           <GuidedControls
             guidedModel={guidedModel}
             selectedSize={state.selectedSize}

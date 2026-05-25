@@ -62,6 +62,23 @@ export interface BffPreviewStatusResult {
   }>
 }
 
+export interface BffPurchaseOptionsResult {
+  previewId: string
+  status: string
+  purchaseOptions: Array<{
+    previewOptionId: string
+    product: string | null
+    label: string | null
+    description: string | null
+    previewUrl: string | null
+    mockupUrl: string | null
+    productionSpeed: Record<string, unknown> | null
+    orderLine: Record<string, unknown> | null
+    unitPrice: string | null
+    currency: string | null
+  }>
+}
+
 export interface BffError {
   error: string
   status?: number
@@ -84,6 +101,8 @@ export interface BffPreviewClient {
   pollPreview(previewId: string, options?: PollOptions): Promise<BffPreviewCreateResult>
   /** Get current preview status */
   getPreview(previewId: string): Promise<BffPreviewStatusResult>
+  /** Get orderable purchase options for a completed/partial preview */
+  getPurchaseOptions(previewId: string): Promise<BffPurchaseOptionsResult>
 }
 
 export function createPreviewClient(baseUrl?: string): BffPreviewClient | null {
@@ -132,6 +151,16 @@ export class PreviewClientImpl implements BffPreviewClient {
     return proxiedPreviewResult(data, this.base)
   }
 
+  async getPurchaseOptions(previewId: string): Promise<BffPurchaseOptionsResult> {
+    const res = await fetch(`${this.base}/api/mge/preview/${encodeURIComponent(previewId)}/purchase-options`)
+    if (!res.ok) {
+      const err = await readBffError(res)
+      throw new Error(formatBffError(err, `Purchase options fetch failed: ${res.status}`))
+    }
+    const data = await res.json() as BffPurchaseOptionsResult
+    return proxiedPurchaseOptionsResult(data, this.base)
+  }
+
   async pollPreview(previewId: string, options: PollOptions = {}): Promise<BffPreviewCreateResult> {
     const { maxWaitMs = 120_000, intervalMs = POLL_INTERVAL_MS, signal } = options
     const started = Date.now()
@@ -170,6 +199,17 @@ function proxiedPreviewResult<T extends BffPreviewCreateResult | BffPreviewStatu
       ...option,
       imageUrl: proxiedImageUrl(option.imageUrl, base),
       mockupUrl: proxiedImageUrl(option.mockupUrl ?? null, base),
+    })),
+  }
+}
+
+function proxiedPurchaseOptionsResult(result: BffPurchaseOptionsResult, base: string): BffPurchaseOptionsResult {
+  return {
+    ...result,
+    purchaseOptions: result.purchaseOptions.map((option) => ({
+      ...option,
+      previewUrl: proxiedImageUrl(option.previewUrl, base),
+      mockupUrl: proxiedImageUrl(option.mockupUrl, base),
     })),
   }
 }

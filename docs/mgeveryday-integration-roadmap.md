@@ -117,13 +117,21 @@ Free-tier fit as of 2026-05-19: Cloudflare Workers/Pages Functions include a fre
 **MGE API endpoints:**
 - `POST /api/v1/order-drafts/`
 - `PATCH /api/v1/order-drafts/{id}/`
-- `POST /api/v1/order-drafts/{id}/assets/` or `/assets/from-url/`
+- `POST /api/v1/order-drafts/{id}/assets/`
+- `POST /api/v1/order-drafts/{id}/assets/from-url/`
 - `POST /api/v1/order-drafts/{id}/validate/`
+- `POST /api/v1/order-drafts/{id}/submit/`
+
+**Documented requirements:**
+- `POST /order-drafts/` requires `brand_id`.
+- `line_items[]` uses `OrderLineItemCreate`; `sku` is required.
+- Preview-backed orders use `preview_option_id` from `purchase_options[].order_line`.
+- Draft asset endpoints exist for direct-image draft items and return `asset_token`; the preview-backed checkout path does not need a separate asset upload.
 
 **Scope:**
 - Create draft after user clicks order/buy CTA.
 - Store draft ID in app session state.
-- Attach selected preview/order contract or asset token to line item.
+- Attach selected preview `order_line` to line item.
 - Validate draft before checkout placeholder.
 
 **Verification:**
@@ -193,17 +201,28 @@ Free-tier fit as of 2026-05-19: Cloudflare Workers/Pages Functions include a fre
 
 **Purpose:** Replace fake payment with real payment suitable for Singapore DOT test.
 
+**Detailed execution plan:** `docs/plans/2026-05-25-mge-purchase-options-stripe-price-data.md`
+
+**Current next step:** Replace the smoke-test fixed Stripe price with MGE `purchase-options` + Stripe Checkout `price_data`.
+
 **Preferred sequence:**
-1. Stripe first if it supports Singapore PayNow cleanly for this setup.
-2. Native PayNow provider if Stripe is insufficient.
-3. Card fallback if PayNow friction is too high.
+1. Investigate `GET /api/v1/preview/{preview_id}/purchase-options/` with a real generated preview ID.
+2. Normalize purchase options and calculate customer SGD prices server-side.
+3. Add a bottom-panel purchase step while keeping the 3D preview visible.
+4. Create and validate an MGE order draft for the selected purchase option before delivery/payment.
+5. Collect delivery, PATCH the same draft with delivery data, then validate again.
+6. Create Stripe Checkout sessions with `price_data`, not fixed `STRIPE_PRICE_ID`, only for validated drafts.
+7. Submit MGE orders only after payment webhook + idempotency are ready.
 
 **Scope:**
-- Payment intent/session before order submission.
+- Order draft before delivery and payment.
+- Payment session before final order submission.
 - Submit MGE order only after confirmed payment.
 - Add refunds/cancel path.
 
 **Verification:**
+- Draft is created/validated before payment.
+- Delivery validation passes on the same draft.
 - Test mode payment succeeds.
 - Webhook confirms payment.
 - Paid order submits exactly once.

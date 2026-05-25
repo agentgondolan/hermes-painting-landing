@@ -403,7 +403,7 @@ export function deriveGuidedModel(state: PreviewState): GuidedControlModel {
         showProgress: false,
         showSizeSelector: true,
         showPreviewOptions: (selectedPreview?.options.length ?? 0) > 1,
-        showBuyCta: true,
+        showBuyCta: false,
         showError: false,
         showReplace: true,
         helperText: "",

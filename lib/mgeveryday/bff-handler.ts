@@ -25,6 +25,25 @@ interface NormalizedPreview {
   options: NormalizedPreviewOption[]
 }
 
+interface NormalizedPurchaseOption {
+  previewOptionId: string
+  product: string | null
+  label: string | null
+  description: string | null
+  previewUrl: string | null
+  mockupUrl: string | null
+  productionSpeed: JsonRecord | null
+  orderLine: JsonRecord | null
+  unitPrice: string | null
+  currency: string | null
+}
+
+interface NormalizedPurchaseOptionsResponse {
+  previewId: string
+  status: string
+  purchaseOptions: NormalizedPurchaseOption[]
+}
+
 const DEFAULT_BASE_URL = 'https://www.mgeveryday.sg'
 const DEFAULT_BRAND_ID = '116'
 const PREVIEW_READY_STATUSES = new Set(['COMPLETED', 'PARTIAL', 'READY'])
@@ -47,6 +66,11 @@ export async function handleMgeBffRequest(request: Request, env: Env): Promise<R
 
     if (url.pathname === '/api/mge/image' && request.method === 'GET') {
       return withCors(await proxyPreviewImage(request), request, env)
+    }
+
+    const purchaseOptionsMatch = url.pathname.match(/^\/api\/mge\/preview\/([^/]+)\/purchase-options$/)
+    if (purchaseOptionsMatch && request.method === 'GET') {
+      return withCors(await getPurchaseOptions(purchaseOptionsMatch[1], env), request, env)
     }
 
     const match = url.pathname.match(/^\/api\/mge\/preview\/([^/]+)$/)
@@ -102,14 +126,14 @@ async function createPreview(request: Request, env: Env): Promise<Response> {
     body,
   })
 
-  return normalizeMgeResponse(response, 201)
+  return normalizeMgeResponse(response, 201, token)
 }
 
 async function getPreview(previewId: string, env: Env): Promise<Response> {
   const token = requireToken(env)
-  const safePreviewId = decodeURIComponent(previewId)
+  const safePreviewId = normalizePreviewId(previewId)
 
-  if (!/^[a-zA-Z0-9_-]+$/.test(safePreviewId)) {
+  if (!safePreviewId) {
     return json({ error: 'Invalid preview ID' }, 400)
   }
 
@@ -117,7 +141,22 @@ async function getPreview(previewId: string, env: Env): Promise<Response> {
     headers: { Authorization: `Bearer ${token}` },
   })
 
-  return normalizeMgeResponse(response)
+  return normalizeMgeResponse(response, 200, token)
+}
+
+async function getPurchaseOptions(previewId: string, env: Env): Promise<Response> {
+  const token = requireToken(env)
+  const safePreviewId = normalizePreviewId(previewId)
+
+  if (!safePreviewId) {
+    return json({ error: 'Invalid preview ID' }, 400)
+  }
+
+  const response = await fetch(`${baseUrl(env)}/api/v1/preview/${encodeURIComponent(safePreviewId)}/purchase-options/`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+
+  return normalizeMgePurchaseOptionsResponse(response, token)
 }
 
 async function proxyPreviewImage(request: Request): Promise<Response> {
@@ -161,7 +200,7 @@ async function proxyPreviewImage(request: Request): Promise<Response> {
   })
 }
 
-async function normalizeMgeResponse(response: Response, successStatus = 200): Promise<Response> {
+async function normalizeMgeResponse(response: Response, successStatus = 200, secretToRedact?: string): Promise<Response> {
   const text = await response.text()
   const raw = parseJson(text)
 
@@ -170,13 +209,62 @@ async function normalizeMgeResponse(response: Response, successStatus = 200): Pr
       {
         error: 'MGEeveryday preview request failed',
         status: response.status,
-        detail: summarizeMgeError(raw, text),
+        detail: summarizeMgeError(raw, text, secretToRedact),
       },
       response.status >= 500 ? 502 : response.status,
     )
   }
 
   return json(normalizePreview(raw), successStatus)
+}
+
+async function normalizeMgePurchaseOptionsResponse(response: Response, secretToRedact?: string): Promise<Response> {
+  const text = await response.text()
+  const raw = parseJson(text)
+
+  if (!response.ok) {
+    return json(
+      {
+        error: 'MGEeveryday purchase options request failed',
+        status: response.status,
+        detail: summarizeMgeError(raw, text, secretToRedact),
+      },
+      response.status >= 500 ? 502 : response.status,
+    )
+  }
+
+  return json(normalizePurchaseOptions(raw))
+}
+
+export function normalizePurchaseOptions(raw: unknown): NormalizedPurchaseOptionsResponse {
+  const obj = asRecord(raw)
+  const purchaseOptions = Array.isArray(obj.purchase_options)
+    ? obj.purchase_options.map(normalizePurchaseOption).filter((option) => option.previewOptionId && option.orderLine)
+    : []
+
+  return {
+    previewId: String(obj.preview_id ?? obj.id ?? ''),
+    status: String(obj.status ?? (purchaseOptions.length ? 'COMPLETED' : 'UNKNOWN')),
+    purchaseOptions,
+  }
+}
+
+function normalizePurchaseOption(raw: unknown): NormalizedPurchaseOption {
+  const obj = asRecord(raw)
+  const orderLine = asNullableRecord(obj.order_line)
+
+  return {
+    previewOptionId: String(obj.preview_option_id ?? obj.option_id ?? obj.id ?? orderLine?.preview_option_id ?? ''),
+    product: pickFirstString([obj.product, obj.product_code]),
+    label: pickFirstString([obj.label, obj.name]),
+    description: pickFirstString([obj.description]),
+    previewUrl: pickFirstString([obj.preview_url, obj.image_url, obj.preview_image_url]),
+    mockupUrl: pickFirstString([obj.mockup_url, obj.mockup_image_url]),
+    productionSpeed: asNullableRecord(obj.production_speed),
+    orderLine,
+    unitPrice: pickFirstString([obj.unit_price, obj.price]),
+    currency: pickFirstString([obj.currency]),
+  }
 }
 
 function normalizePreview(raw: unknown): NormalizedPreview {
@@ -242,6 +330,11 @@ function requireToken(env: Env): string {
     throw new Error('MGEeveryday API token is not configured')
   }
   return env.MGEVERYDAY_API_TOKEN
+}
+
+function normalizePreviewId(previewId: string): string | null {
+  const decoded = decodeURIComponent(previewId).trim()
+  return /^[a-zA-Z0-9_-]+$/.test(decoded) ? decoded : null
 }
 
 function baseUrl(env: Env): string {
@@ -314,6 +407,11 @@ function asRecord(value: unknown): JsonRecord {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonRecord) : {}
 }
 
+function asNullableRecord(value: unknown): JsonRecord | null {
+  const record = asRecord(value)
+  return Object.keys(record).length ? record : null
+}
+
 function parseJson(text: string): unknown {
   try {
     return text ? JSON.parse(text) : null
@@ -322,10 +420,15 @@ function parseJson(text: string): unknown {
   }
 }
 
-function summarizeMgeError(raw: unknown, text: string): string {
+function summarizeMgeError(raw: unknown, text: string, secretToRedact?: string): string {
   const obj = asRecord(raw)
   const detail = pickFirstString([obj.detail, obj.error, obj.message])
-  return detail || text.slice(0, 500) || 'No response body'
+  return redactSecret(detail || text.slice(0, 500) || 'No response body', secretToRedact)
+}
+
+function redactSecret(value: string, secretToRedact?: string): string {
+  if (!secretToRedact) return value
+  return value.split(secretToRedact).join('[REDACTED]')
 }
 
 function pickFirstString(values: unknown[]): string | null {

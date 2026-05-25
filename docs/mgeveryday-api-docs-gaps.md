@@ -137,3 +137,48 @@ For the Singapore DOT test, add or later expand:
 Phase 0 should not expose the MGEeveryday API token to the browser. The Next.js app needs a server-side API boundary that owns MGE auth and returns sanitized JSON to the client.
 
 Phase 1 should start with DOT only and avoid over-generalizing until one real preview → draft → submit path is proven.
+
+## Purchase options contract snapshot
+
+Source: `GET https://www.mgeveryday.sg/api/v1/preview/{preview_id}/purchase-options/` in the OpenAPI schema fetched on 2026-05-25.
+
+Endpoint notes from OpenAPI:
+
+- Call only after `GET /api/v1/preview/{preview_id}/` returns `COMPLETED` or `PARTIAL`.
+- Response lists preview options that can be ordered by the calling brand.
+- Each item includes a copyable `order_line` with `sku`, `quantity`, and `preview_option_id`.
+- Use the returned `order_line` object inside `line_items[]` when creating or validating an order.
+- Auth: Bearer API key via `APIKey` security scheme.
+- Documented errors: `401` missing API key, `403` ownership mismatch or missing scope, `404` preview not found.
+
+Documented/example response shape:
+
+```json
+{
+  "preview_id": "11111111-2222-3333-4444-555555555555",
+  "status": "COMPLETED",
+  "purchase_options": [
+    {
+      "preview_option_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "product": "DBN",
+      "label": "Square / 50 colors / source",
+      "description": "Square diamonds. Approx. 50 colors. Natural image filter.",
+      "preview_url": "https://cdn.example.com/preview.jpg",
+      "mockup_url": "https://cdn.example.com/mockup.jpg",
+      "production_speed": {
+        "code": "STD",
+        "label": "Standard"
+      },
+      "order_line": {
+        "sku": "DBN/VF/40X50/COL50/SQRA/W/STD",
+        "quantity": 1,
+        "preview_option_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+      },
+      "unit_price": "12.50",
+      "currency": "EUR"
+    }
+  ]
+}
+```
+
+Live DOT fixture captured from brand `116` confirms the same contract with `DOT/VF/40X50/W/BLACK/STD` and `DOT/VF/40X50/W/BLACK/EXP` SKUs. The sanitized fixture lives at `tests/fixtures/mge-purchase-options.sample.json`.

@@ -1,0 +1,44 @@
+{
+  "preview_id": "11111111-2222-3333-4444-555555555555",
+  "purchase_options": [
+    {
+      "currency": "EUR",
+      "description": "source",
+      "label": "BLACK / source / Standard",
+      "mockup_url": "",
+      "order_line": {
+        "preview_option_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "quantity": 1,
+        "sku": "DOT/VF/40X50/W/BLACK/STD"
+      },
+      "preview_option_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "preview_url": "[REDACTED_URL]",
+      "product": "DOT",
+      "production_speed": {
+        "code": "STD",
+        "label": "Standard"
+      },
+      "unit_price": "10.72"
+    },
+    {
+      "currency": "EUR",
+      "description": "source",
+      "label": "BLACK / source / Express",
+      "mockup_url": "",
+      "order_line": {
+        "preview_option_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "quantity": 1,
+        "sku": "DOT/VF/40X50/W/BLACK/EXP"
+      },
+      "preview_option_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "preview_url": "[REDACTED_URL]",
+      "product": "DOT",
+      "production_speed": {
+        "code": "EXP",
+        "label": "Express"
+      },
+      "unit_price": "14.72"
+    }
+  ],
+  "status": "COMPLETED"
+}
