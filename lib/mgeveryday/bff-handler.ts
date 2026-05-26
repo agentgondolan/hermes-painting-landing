@@ -211,7 +211,7 @@ async function createOrderDraft(request: Request, env: Env): Promise<Response> {
     source: 'makeyourcraft_landing',
   }
 
-  const response = await fetch(`${baseUrl(env)}/api/v1/order-draft/`, {
+  const response = await fetch(`${baseUrl(env)}/api/v1/order-drafts/`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,

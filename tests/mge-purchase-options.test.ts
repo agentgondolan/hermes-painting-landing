@@ -121,3 +121,67 @@ test('purchase-options BFF maps MGE 500s to 502 without leaking token', async ()
     globalThis.fetch = originalFetch
   }
 })
+
+test('order-draft BFF posts to documented plural MGE order-drafts endpoint', async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = []
+  const originalFetch = globalThis.fetch
+  const fixture = JSON.parse(await readFile(fixturePath, 'utf8'))
+
+  globalThis.fetch = (async (url, init) => {
+    calls.push({ url: String(url), init: init ?? {} })
+    if (String(url).includes('/api/v1/preview/preview-123/purchase-options/')) {
+      return new Response(JSON.stringify(fixture), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+
+    return new Response(
+      JSON.stringify({
+        id: 'draft-123',
+        preview_id: 'preview-123',
+        status: 'DRAFT',
+      }),
+      { status: 201, headers: { 'Content-Type': 'application/json' } },
+    )
+  }) as typeof fetch
+
+  try {
+    const response = await handleMgeBffRequest(
+      new Request('https://makeyourcraft.com/api/mge/order-draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          preview_id: 'preview-123',
+          preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+          purchase_option_id: 'DOT/VF/40X50/W/BLACK/STD',
+          selected_size: '40x50',
+          delivery_address: {
+            name: 'Test Customer',
+            email: 'test@example.com',
+            line1: '1 Test Street',
+            city: 'Singapore',
+            postal_code: '018956',
+            country: 'SG',
+          },
+        }),
+      }),
+      env,
+    )
+
+    assert.equal(response.status, 201)
+    assert.equal(calls.length, 2)
+    assert.equal(calls[0].url, 'https://mge.example.test/api/v1/preview/preview-123/purchase-options/')
+    assert.equal(calls[1].url, 'https://mge.example.test/api/v1/order-drafts/')
+
+    const headers = new Headers(calls[1].init.headers)
+    assert.equal(headers.get('Authorization'), 'Bearer mge_test_token')
+    assert.equal(headers.get('Content-Type'), 'application/json')
+
+    const upstreamBody = JSON.parse(String(calls[1].init.body))
+    assert.equal(upstreamBody.brand_id, '116')
+    assert.equal(upstreamBody.preview_id, 'preview-123')
+    assert.equal(upstreamBody.preview_option_id, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
+    assert.equal(upstreamBody.purchase_option_id, 'DOT/VF/40X50/W/BLACK/STD')
+    assert.deepEqual(upstreamBody.order_lines, [{ preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', sku: 'DOT/VF/40X50/W/BLACK/STD', quantity: 1 }])
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
