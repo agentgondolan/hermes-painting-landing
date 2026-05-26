@@ -205,9 +205,8 @@ async function createOrderDraft(request: Request, env: Env): Promise<Response> {
     purchase_option_id: canonical.purchaseOptionId,
     selected_size: pickFirstString([body.selected_size]),
     product: canonical.product ?? 'DOT',
-    delivery_address: sanitizeAddress(body.delivery_address),
-    order_line: canonical.orderLine,
-    order_lines: canonical.orderLine ? [canonical.orderLine] : undefined,
+    shipping_address: sanitizeShippingAddress(body.delivery_address),
+    line_items: canonical.orderLine ? [canonical.orderLine] : undefined,
     source: 'makeyourcraft_landing',
   }
 
@@ -477,14 +476,20 @@ function normalizeId(value: string): string | null {
   return /^[a-zA-Z0-9_:-]+$/.test(decoded) ? decoded : null
 }
 
-function sanitizeAddress(value: unknown): JsonRecord {
+function sanitizeShippingAddress(value: unknown): JsonRecord {
   const record = asRecord(value)
-  const allowed = ['name', 'email', 'phone', 'line1', 'line2', 'city', 'postal_code', 'country']
-  return Object.fromEntries(
-    allowed
-      .map((key) => [key, pickFirstString([record[key]])] as const)
-      .filter(([, val]) => val),
-  )
+  const mapped: JsonRecord = {
+    name: pickFirstString([record.name]),
+    email: pickFirstString([record.email]),
+    phone: pickFirstString([record.phone]),
+    street: pickFirstString([record.street, record.line1]),
+    street2: pickFirstString([record.street2, record.line2]),
+    city: pickFirstString([record.city]),
+    zip: pickFirstString([record.zip, record.postal_code]),
+    country: pickFirstString([record.country]),
+  }
+
+  return Object.fromEntries(Object.entries(mapped).filter(([, val]) => val))
 }
 
 function baseUrl(env: Env): string {

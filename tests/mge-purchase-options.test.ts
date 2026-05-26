@@ -180,7 +180,19 @@ test('order-draft BFF posts to documented plural MGE order-drafts endpoint', asy
     assert.equal(upstreamBody.preview_id, 'preview-123')
     assert.equal(upstreamBody.preview_option_id, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
     assert.equal(upstreamBody.purchase_option_id, 'DOT/VF/40X50/W/BLACK/STD')
-    assert.deepEqual(upstreamBody.order_lines, [{ preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', sku: 'DOT/VF/40X50/W/BLACK/STD', quantity: 1 }])
+    assert.deepEqual(upstreamBody.shipping_address, {
+      name: 'Test Customer',
+      email: 'test@example.com',
+      street: '1 Test Street',
+      city: 'Singapore',
+      zip: '018956',
+      country: 'SG',
+    })
+    assert.deepEqual(upstreamBody.line_items, [{ preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', sku: 'DOT/VF/40X50/W/BLACK/STD', quantity: 1 }])
+    assert.equal('delivery_address' in upstreamBody, false)
+    assert.equal('order_lines' in upstreamBody, false)
+    assert.equal('line1' in upstreamBody.shipping_address, false)
+    assert.equal('postal_code' in upstreamBody.shipping_address, false)
   } finally {
     globalThis.fetch = originalFetch
   }
