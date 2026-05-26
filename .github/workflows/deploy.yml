@@ -1,9 +1,11 @@
 name: Deploy static export to Cloudflare Pages
+run-name: Deploy static export to Cloudflare Pages @ ${{ github.sha }}
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    branches:
+      - main
+  workflow_dispatch: {}
 
 jobs:
   deploy:
