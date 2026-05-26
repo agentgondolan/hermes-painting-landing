@@ -173,8 +173,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
     <div className="pointer-events-auto w-full rounded-3xl border border-white/15 bg-black/35 p-3 shadow-2xl shadow-black/30 backdrop-blur-md">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] uppercase tracking-[0.24em] text-white/35">Ready to print</p>
-          <div className="mt-0.5 flex items-baseline gap-2">
+          <div className="flex items-baseline gap-2">
             <p className="text-lg font-semibold text-white">
               {quote.loading ? "Loading…" : quote.error ? "—" : `${quote.currency} ${quote.amount}`}
             </p>
