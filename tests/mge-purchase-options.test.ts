@@ -188,7 +188,8 @@ test('order-draft BFF posts to documented plural MGE order-drafts endpoint', asy
       zip: '018956',
       country: 'SG',
     })
-    assert.deepEqual(upstreamBody.line_items, [{ preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', sku: 'DOT/VF/40X50/W/BLACK/STD', quantity: 1 }])
+    assert.deepEqual(upstreamBody.line_items, [{ asset_url: '[REDACTED_URL]', sku: 'DOT/VF/40X50/W/BLACK/STD', quantity: 1 }])
+    assert.equal('preview_option_id' in upstreamBody.line_items[0], false)
     assert.equal('delivery_address' in upstreamBody, false)
     assert.equal('order_lines' in upstreamBody, false)
     assert.equal('line1' in upstreamBody.shipping_address, false)
