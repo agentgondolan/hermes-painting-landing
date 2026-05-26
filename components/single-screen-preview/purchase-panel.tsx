@@ -248,8 +248,26 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
     return null
   }
 
+  const panelClassName = showAddress
+    ? "pointer-events-auto fixed inset-x-3 bottom-3 z-50 mx-auto max-h-[calc(100dvh-1.5rem)] max-w-md overflow-y-auto rounded-[2rem] border border-white/15 bg-black/82 p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] shadow-2xl shadow-black/50 backdrop-blur-xl"
+    : "pointer-events-auto w-full rounded-3xl border border-white/15 bg-black/35 p-3 shadow-2xl shadow-black/30 backdrop-blur-md"
+
+  const closeAddressStep = () => {
+    setShowAddress(false)
+    persistCheckoutSelection({ selectedPurchaseOptionId, checkoutInProgress: false })
+  }
+
   return (
-    <div className="pointer-events-auto w-full rounded-3xl border border-white/15 bg-black/35 p-3 shadow-2xl shadow-black/30 backdrop-blur-md">
+    <>
+      {showAddress && (
+        <button
+          type="button"
+          aria-label="Close delivery details"
+          onClick={closeAddressStep}
+          className="fixed inset-0 z-40 cursor-default bg-black/35 backdrop-blur-[2px]"
+        />
+      )}
+      <div className={panelClassName}>
       {!showAddress ? (
         <>
           <div className="flex items-center justify-between gap-3">
@@ -305,14 +323,11 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-white">Delivery details</p>
-              <p className="text-xs text-white/45">Needed before Stripe so MGE can reserve the kit.</p>
+              <p className="text-xs text-white/45">Where should we send your kit?</p>
             </div>
             <button
               type="button"
-              onClick={() => {
-                setShowAddress(false)
-                persistCheckoutSelection({ selectedPurchaseOptionId, checkoutInProgress: false })
-              }}
+              onClick={closeAddressStep}
               className="rounded-full border border-white/15 px-3 py-1 text-xs font-semibold text-white/70 hover:text-white"
             >
               Back
@@ -341,7 +356,8 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
       {(error || quote.error) && (
         <p className="mt-2 text-xs text-amber-200/80">{error || quote.error}</p>
       )}
-    </div>
+      </div>
+    </>
   )
 }
 
