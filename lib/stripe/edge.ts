@@ -1,9 +1,23 @@
+type NormalizedPurchaseOption = {
+  purchaseOptionId: string
+  previewOptionId: string
+  product: string | null
+  productionSpeedCode: string | null
+  productionSpeedLabel: string | null
+  orderLine: Record<string, unknown> | null
+  unitPrice: string | null
+  currency: string | null
+}
+
 export interface StripeEnv {
   STRIPE_SECRET_KEY?: string
   STRIPE_PRICE_ID?: string
   STRIPE_WEBHOOK_SECRET?: string
   ALLOWED_ORIGIN?: string
   EUR_TO_SGD_RATE?: string
+  MGEVERYDAY_API_TOKEN?: string
+  MGEVERYDAY_BASE_URL?: string
+  MGEVERYDAY_BRAND_ID?: string
 }
 
 type Fetcher = typeof fetch
@@ -20,15 +34,19 @@ type StripeWebhookEvent = {
   data?: unknown
 }
 
-type CheckoutPurchaseOption = {
+type CheckoutOrderDraft = {
+  orderDraftId?: unknown
+  previewId?: unknown
   previewOptionId?: unknown
+  purchaseOptionId?: unknown
+  status?: unknown
   product?: unknown
-  label?: unknown
-  description?: unknown
+  selectedSize?: unknown
+  productionSpeedCode?: unknown
+  productionSpeedLabel?: unknown
   orderLine?: unknown
   unitPrice?: unknown
   currency?: unknown
-  productionSpeed?: unknown
 }
 
 type CheckoutRequestBody = {
@@ -36,7 +54,9 @@ type CheckoutRequestBody = {
   preview_id?: unknown
   preview_option_id?: unknown
   distinct_id?: unknown
-  purchase_option?: CheckoutPurchaseOption
+  purchase_option_id?: unknown
+  order_draft_id?: unknown
+  order_draft?: CheckoutOrderDraft
 }
 
 export type RetailPriceQuote = {
@@ -55,6 +75,7 @@ const WEBHOOK_TOLERANCE_SECONDS = 300
 const TARGET_GROSS_MARGIN = 0.5
 const SINGAPORE_GST_RATE = 0.09
 const DEFAULT_EUR_TO_SGD_RATE = 1.46
+const DEFAULT_MGEVERYDAY_BASE_URL = 'https://www.mgeveryday.sg'
 
 export async function createStripeCheckoutSession(
   request: Request,
@@ -72,7 +93,7 @@ export async function createStripeCheckoutSession(
   try {
     const secretKey = requireSandboxSecretKey(env)
     const origin = requestOrigin(request)
-    const checkoutContext = await readCheckoutContext(request, env)
+    const checkoutContext = await readCheckoutContext(request, env, fetcher)
 
     const body = new URLSearchParams()
     body.set('mode', 'payment')
@@ -216,6 +237,7 @@ export function calculateRetailPriceQuote(
 async function readCheckoutContext(
   request: Request,
   env: StripeEnv,
+  fetcher: Fetcher = fetch,
 ): Promise<{
   dynamicPrice: boolean
   productName: string
@@ -225,92 +247,175 @@ async function readCheckoutContext(
 }> {
   const contentType = request.headers.get('Content-Type') || ''
   if (!contentType.toLowerCase().includes('application/json')) {
-    return {
-      dynamicPrice: false,
-      productName: 'Custom Paint-by-Number Kit',
-      productDescription: null,
-      quote: calculateRetailPriceQuote(1, 'SGD'),
-      metadata: {},
-    }
+    return fallbackCheckoutContext()
   }
 
   const raw = await request.json().catch(() => null)
   if (!raw || typeof raw !== 'object') {
-    return {
-      dynamicPrice: false,
-      productName: 'Custom Paint-by-Number Kit',
-      productDescription: null,
-      quote: calculateRetailPriceQuote(1, 'SGD'),
-      metadata: {},
-    }
+    return fallbackCheckoutContext()
   }
 
   const source = raw as CheckoutRequestBody
-  const option = source.purchase_option
-  if (!option || typeof option !== 'object') {
-    return {
-      dynamicPrice: false,
-      productName: 'Custom Paint-by-Number Kit',
-      productDescription: null,
-      quote: calculateRetailPriceQuote(1, 'SGD'),
-      metadata: compactMetadata({
-        selected_size: source.selected_size,
-        preview_id: source.preview_id,
-        preview_option_id: source.preview_option_id,
-        distinct_id: source.distinct_id,
-      }),
-    }
+  const draft = source.order_draft
+  const orderDraftId = stringValue(source.order_draft_id)
+
+  if (!orderDraftId || !draft || typeof draft !== 'object') {
+    throw new Error('order_draft_id and order_draft are required for checkout')
   }
 
-  const previewId = stringValue(source.preview_id)
-  const requestedPreviewOptionId = stringValue(source.preview_option_id)
-  const optionPreviewOptionId = stringValue(option.previewOptionId)
-  const orderLine = asRecord(option.orderLine)
-  const orderLinePreviewOptionId = stringValue(orderLine?.preview_option_id ?? orderLine?.previewOptionId)
-  const previewOptionId = requestedPreviewOptionId || optionPreviewOptionId || orderLinePreviewOptionId
+  const draftOrderDraftId = stringValue(draft.orderDraftId)
+  if (draftOrderDraftId && draftOrderDraftId !== orderDraftId) {
+    throw new Error('order_draft_id does not match the order draft')
+  }
 
-  if (!previewId) {
-    throw new Error('preview_id is required for dynamic checkout')
+  const previewId = stringValue(source.preview_id) || stringValue(draft.previewId)
+  const previewOptionId = stringValue(source.preview_option_id) || stringValue(draft.previewOptionId)
+  const purchaseOptionId = stringValue(source.purchase_option_id) || stringValue(draft.purchaseOptionId)
+
+  if (!previewId) throw new Error('preview_id is required for dynamic checkout')
+  if (!previewOptionId) throw new Error('preview_option_id is required for dynamic checkout')
+  if (!purchaseOptionId) throw new Error('purchase_option_id is required for dynamic checkout')
+
+  const token = requireValue(env.MGEVERYDAY_API_TOKEN, 'MGEVERYDAY_API_TOKEN')
+  const canonical = await loadCanonicalPurchaseOptionForCheckout(previewId, previewOptionId, purchaseOptionId, env, token, fetcher)
+  if (!canonical) {
+    throw new Error('order_draft does not match an orderable MGE purchase option')
   }
-  if (!previewOptionId) {
-    throw new Error('preview_option_id is required for dynamic checkout')
-  }
-  if (optionPreviewOptionId && optionPreviewOptionId !== previewOptionId) {
-    throw new Error('Selected preview option does not match purchase option')
-  }
-  if (orderLinePreviewOptionId && orderLinePreviewOptionId !== previewOptionId) {
-    throw new Error('Selected preview option does not match MGE order line')
-  }
+
+  validateDraftMatchesCanonical(draft, canonical)
 
   const exchangeRate = parseOptionalPositiveNumber(env.EUR_TO_SGD_RATE, DEFAULT_EUR_TO_SGD_RATE)
-  const quote = calculateRetailPriceQuote(stringValue(option.unitPrice), stringValue(option.currency), exchangeRate)
-  const speed = asRecord(option.productionSpeed)
-  const speedCode = stringValue(speed?.code)
+  const quote = calculateRetailPriceQuote(canonical.unitPrice ?? '', canonical.currency, exchangeRate)
+  const orderLine = canonical.orderLine
   const sku = stringValue(orderLine?.sku)
-  const label = stringValue(option.label)
-  const selectedSize = stringValue(source.selected_size)
+  const selectedSize = stringValue(source.selected_size) || stringValue(draft.selectedSize)
+  const speedCode = canonical.productionSpeedCode || stringValue(draft.productionSpeedCode)
+  const speedLabel = canonical.productionSpeedLabel || stringValue(draft.productionSpeedLabel)
 
   return {
     dynamicPrice: true,
     productName: 'Custom Paint-by-Number Kit',
-    productDescription: [selectedSize, label, speedCode ? `${speedCode} production` : null]
+    productDescription: [selectedSize, speedLabel || speedCode ? `${speedLabel || speedCode} production` : null]
       .filter(Boolean)
       .join(' · ') || null,
     quote,
     metadata: compactMetadata({
-      selected_size: source.selected_size,
+      order_draft_id: orderDraftId,
+      selected_size: selectedSize,
       preview_id: previewId,
       preview_option_id: previewOptionId,
+      purchase_option_id: purchaseOptionId,
       distinct_id: source.distinct_id,
-      product: option.product,
+      product: canonical.product ?? stringValue(draft.product),
       sku,
-      production_speed: speedCode,
+      production_speed: speedCode || speedLabel,
       source_currency: quote.sourceCurrency,
       source_unit_price: quote.sourceAmount.toFixed(2),
       eur_to_sgd_rate: quote.exchangeRate.toFixed(4),
       retail_unit_amount_sgd: quote.unitAmount,
       order_line: orderLine ? JSON.stringify(orderLine).slice(0, 500) : undefined,
     }),
+  }
+}
+
+function validateDraftMatchesCanonical(draft: CheckoutOrderDraft, canonical: NormalizedPurchaseOption): void {
+  const draftPreviewOptionId = stringValue(draft.previewOptionId)
+  if (draftPreviewOptionId && draftPreviewOptionId !== canonical.previewOptionId) {
+    throw new Error('order_draft preview option does not match the canonical purchase option')
+  }
+
+  const draftPurchaseOptionId = stringValue(draft.purchaseOptionId)
+  if (draftPurchaseOptionId && draftPurchaseOptionId !== canonical.purchaseOptionId) {
+    throw new Error('order_draft purchase option does not match the canonical purchase option')
+  }
+
+  const draftUnitPrice = stringValue(draft.unitPrice)
+  if (draftUnitPrice && draftUnitPrice !== stringValue(canonical.unitPrice)) {
+    throw new Error('order_draft price does not match the canonical purchase option')
+  }
+
+  const draftCurrency = stringValue(draft.currency).toUpperCase()
+  const canonicalCurrency = stringValue(canonical.currency).toUpperCase()
+  if (draftCurrency && canonicalCurrency && draftCurrency !== canonicalCurrency) {
+    throw new Error('order_draft currency does not match the canonical purchase option')
+  }
+
+  const draftOrderLine = asRecord(draft.orderLine)
+  const draftSku = stringValue(draftOrderLine?.sku)
+  const canonicalSku = stringValue(canonical.orderLine?.sku)
+  if (draftSku && canonicalSku && draftSku !== canonicalSku) {
+    throw new Error('order_draft SKU does not match the canonical purchase option')
+  }
+}
+
+async function loadCanonicalPurchaseOptionForCheckout(
+  previewId: string,
+  previewOptionId: string,
+  purchaseOptionId: string,
+  env: StripeEnv,
+  token: string,
+  fetcher: Fetcher,
+): Promise<NormalizedPurchaseOption | null> {
+  const upstream = await fetcher(
+    `${mgeBaseUrl(env)}/api/v1/preview/${encodeURIComponent(previewId)}/purchase-options/`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+
+  if (!upstream.ok) return null
+
+  const raw = parseJson(await upstream.text())
+  const obj = asRecord(raw) ?? {}
+  const rawOptions = Array.isArray(obj.purchase_options) ? obj.purchase_options : []
+
+  for (const rawOption of rawOptions) {
+    const option = normalizeCanonicalPurchaseOption(rawOption)
+    if (option.previewOptionId !== previewOptionId) continue
+    if (option.purchaseOptionId !== purchaseOptionId) continue
+    if (!option.orderLine || !option.unitPrice) continue
+    return option
+  }
+
+  return null
+}
+
+function normalizeCanonicalPurchaseOption(raw: unknown): NormalizedPurchaseOption {
+  const obj = asRecord(raw) ?? {}
+  const orderLine = asRecord(obj.order_line)
+  const productionSpeed = asRecord(obj.production_speed)
+  const previewOptionId = stringValue(obj.preview_option_id) || stringValue(obj.option_id) || stringValue(obj.id) || stringValue(orderLine?.preview_option_id)
+  const productionSpeedCode = stringValue(productionSpeed?.code) || stringValue(obj.production_speed_code) || null
+  const productionSpeedLabel = stringValue(productionSpeed?.label) || stringValue(obj.production_speed_label) || productionSpeedCode
+  const sku = stringValue(orderLine?.sku)
+
+  return {
+    purchaseOptionId: stringValue(obj.purchase_option_id) || sku || [previewOptionId, productionSpeedCode].filter(Boolean).join(':') || stringValue(obj.id),
+    previewOptionId,
+    product: stringValue(obj.product) || stringValue(obj.product_code) || null,
+    productionSpeedCode,
+    productionSpeedLabel,
+    orderLine,
+    unitPrice: stringValue(obj.unit_price) || stringValue(obj.price) || null,
+    currency: stringValue(obj.currency) || null,
+  }
+}
+
+function mgeBaseUrl(env: StripeEnv): string {
+  return (env.MGEVERYDAY_BASE_URL || DEFAULT_MGEVERYDAY_BASE_URL).replace(/\/+$/, '')
+}
+
+function fallbackCheckoutContext(): {
+  dynamicPrice: boolean
+  productName: string
+  productDescription: string | null
+  quote: RetailPriceQuote
+  metadata: Record<string, string>
+} {
+  return {
+    dynamicPrice: false,
+    productName: 'Custom Paint-by-Number Kit',
+    productDescription: null,
+    quote: calculateRetailPriceQuote(1, 'SGD'),
+    metadata: {},
   }
 }
 

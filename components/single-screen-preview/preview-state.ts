@@ -55,6 +55,7 @@ export interface PreviewState {
 
 export type PreviewEvent =
   | { type: "SELECT_IMAGE"; file: File; sessionToken: string }
+  | { type: "RESTORE_PREVIEW"; state: Pick<PreviewState, "selectedSize" | "dotPreviews" | "finalUrl"> }
   | { type: "TEMP_PREVIEW_READY"; url: string; sessionToken: string }
   | { type: "START_PROCESSING"; sessionToken: string; sizeId?: string }
   | { type: "PROCESSING_SUCCESS"; url: string; sessionToken: string; sizeId?: string; previewId?: string | null; status?: string; orderable?: boolean | null; options?: PreviewOptionChoice[] }
@@ -115,10 +116,10 @@ function resolveActiveUrl(dot: DotPreviewResult): string | null {
 function deriveStatusForSelectedSize(state: PreviewState): PreviewStatus {
   const selectedPreview = getSelectedDotPreview(state)
 
-  if (!state.selectedFile) return "idle"
   if (selectedPreview?.status === "ready") return "final-preview-ready"
   if (selectedPreview?.status === "error") return "error"
   if (selectedPreview?.status === "processing") return "processing"
+  if (!state.selectedFile) return "idle"
   if (state.temporaryUrl) return "temporary-preview-ready"
   return "image-selected"
 }
@@ -139,6 +140,23 @@ export function previewReducer(
         dotPreviews: {},
         error: null,
       }
+
+    case "RESTORE_PREVIEW": {
+      const nextState: PreviewState = {
+        ...initialPreviewState,
+        selectedSize: event.state.selectedSize,
+        selectedFile: null,
+        sessionToken: null,
+        temporaryUrl: null,
+        finalUrl: event.state.finalUrl,
+        dotPreviews: event.state.dotPreviews,
+        error: null,
+      }
+      return {
+        ...nextState,
+        status: deriveStatusForSelectedSize(nextState),
+      }
+    }
 
     case "TEMP_PREVIEW_READY":
       if (state.sessionToken !== event.sessionToken) return state

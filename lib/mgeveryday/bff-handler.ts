@@ -25,7 +25,7 @@ interface NormalizedPreview {
   options: NormalizedPreviewOption[]
 }
 
-interface NormalizedPurchaseOption {
+export interface NormalizedPurchaseOption {
   purchaseOptionId: string
   previewOptionId: string
   product: string | null
@@ -45,6 +45,21 @@ interface NormalizedPurchaseOptionsResponse {
   previewId: string
   status: string
   purchaseOptions: NormalizedPurchaseOption[]
+}
+
+interface NormalizedOrderDraft {
+  orderDraftId: string
+  previewId: string
+  previewOptionId: string
+  purchaseOptionId: string
+  status: string
+  product: string | null
+  selectedSize: string | null
+  productionSpeedCode: string | null
+  productionSpeedLabel: string | null
+  orderLine: JsonRecord | null
+  unitPrice: string | null
+  currency: string | null
 }
 
 const DEFAULT_BASE_URL = 'https://www.mgeveryday.sg'
@@ -69,6 +84,10 @@ export async function handleMgeBffRequest(request: Request, env: Env): Promise<R
 
     if (url.pathname === '/api/mge/image' && request.method === 'GET') {
       return withCors(await proxyPreviewImage(request), request, env)
+    }
+
+    if (url.pathname === '/api/mge/order-draft' && request.method === 'POST') {
+      return withCors(await createOrderDraft(request, env), request, env)
     }
 
     const purchaseOptionsMatch = url.pathname.match(/^\/api\/mge\/preview\/([^/]+)\/purchase-options$/)
@@ -162,6 +181,69 @@ async function getPurchaseOptions(previewId: string, env: Env): Promise<Response
   return normalizeMgePurchaseOptionsResponse(response, token)
 }
 
+
+async function createOrderDraft(request: Request, env: Env): Promise<Response> {
+  const token = requireToken(env)
+  const raw = await request.json().catch(() => null)
+  const body = asRecord(raw)
+  const previewId = normalizePreviewId(String(body.preview_id ?? ''))
+  const previewOptionId = normalizeId(String(body.preview_option_id ?? ''))
+  const purchaseOptionId = normalizeId(String(body.purchase_option_id ?? ''))
+
+  if (!previewId) return json({ error: 'preview_id is required' }, 400)
+  if (!previewOptionId) return json({ error: 'preview_option_id is required' }, 400)
+
+  const canonical = await loadCanonicalPurchaseOption(previewId, previewOptionId, purchaseOptionId, env, token)
+  if (!canonical) {
+    return json({ error: 'Selected MGE purchase option is no longer orderable' }, 409)
+  }
+
+  const draftPayload = {
+    brand_id: env.MGEVERYDAY_BRAND_ID || DEFAULT_BRAND_ID,
+    preview_id: previewId,
+    preview_option_id: previewOptionId,
+    purchase_option_id: canonical.purchaseOptionId,
+    selected_size: pickFirstString([body.selected_size]),
+    product: canonical.product ?? 'DOT',
+    delivery_address: sanitizeAddress(body.delivery_address),
+    order_line: canonical.orderLine,
+    order_lines: canonical.orderLine ? [canonical.orderLine] : undefined,
+    source: 'makeyourcraft_landing',
+  }
+
+  const response = await fetch(`${baseUrl(env)}/api/v1/order-draft/`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(draftPayload),
+  })
+
+  return normalizeMgeOrderDraftResponse(response, canonical, token)
+}
+
+export async function loadCanonicalPurchaseOption(
+  previewId: string,
+  previewOptionId: string,
+  purchaseOptionId: string | null,
+  env: Env,
+  token: string,
+  fetcher: typeof fetch = fetch,
+): Promise<NormalizedPurchaseOption | null> {
+  const response = await fetcher(`${baseUrl(env)}/api/v1/preview/${encodeURIComponent(previewId)}/purchase-options/`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) return null
+  const raw = parseJson(await response.text())
+  const options = normalizePurchaseOptions(raw).purchaseOptions
+  return options.find((option) => {
+    if (option.previewOptionId !== previewOptionId) return false
+    if (purchaseOptionId && option.purchaseOptionId !== purchaseOptionId) return false
+    return Boolean(option.orderLine && option.unitPrice)
+  }) ?? null
+}
+
 async function proxyPreviewImage(request: Request): Promise<Response> {
   const source = new URL(request.url).searchParams.get('url')
   if (!source) {
@@ -249,6 +331,49 @@ export function normalizePurchaseOptions(raw: unknown): NormalizedPurchaseOption
     previewId: String(obj.preview_id ?? obj.id ?? ''),
     status: String(obj.status ?? (purchaseOptions.length ? 'COMPLETED' : 'UNKNOWN')),
     purchaseOptions,
+  }
+}
+
+
+async function normalizeMgeOrderDraftResponse(
+  response: Response,
+  canonical: NormalizedPurchaseOption,
+  secretToRedact?: string,
+): Promise<Response> {
+  const text = await response.text()
+  const raw = parseJson(text)
+
+  if (!response.ok) {
+    return json(
+      {
+        error: 'MGEeveryday order draft request failed',
+        status: response.status,
+        detail: summarizeMgeError(raw, text, secretToRedact),
+      },
+      response.status >= 500 ? 502 : response.status,
+    )
+  }
+
+  return json(normalizeOrderDraft(raw, canonical), response.status === 201 ? 201 : 200)
+}
+
+export function normalizeOrderDraft(raw: unknown, canonical: NormalizedPurchaseOption): NormalizedOrderDraft {
+  const obj = asRecord(raw)
+  const orderLine = asNullableRecord(obj.order_line) ?? canonical.orderLine
+  const previewOptionId = pickFirstString([obj.preview_option_id, canonical.previewOptionId]) ?? canonical.previewOptionId
+  return {
+    orderDraftId: pickFirstString([obj.order_draft_id, obj.draft_id, obj.id]) ?? `${canonical.previewOptionId}:${canonical.purchaseOptionId}`,
+    previewId: pickFirstString([obj.preview_id]) ?? '',
+    previewOptionId,
+    purchaseOptionId: pickFirstString([obj.purchase_option_id, canonical.purchaseOptionId]) ?? canonical.purchaseOptionId,
+    status: pickFirstString([obj.status]) ?? 'DRAFT',
+    product: pickFirstString([obj.product, obj.product_code, canonical.product]),
+    selectedSize: pickFirstString([obj.selected_size]),
+    productionSpeedCode: pickFirstString([obj.production_speed_code, canonical.productionSpeedCode]),
+    productionSpeedLabel: pickFirstString([obj.production_speed_label, canonical.productionSpeedLabel]),
+    orderLine,
+    unitPrice: pickFirstString([obj.unit_price, obj.price, canonical.unitPrice]),
+    currency: pickFirstString([obj.currency, canonical.currency]),
   }
 }
 
@@ -344,8 +469,22 @@ function requireToken(env: Env): string {
 }
 
 function normalizePreviewId(previewId: string): string | null {
-  const decoded = decodeURIComponent(previewId).trim()
-  return /^[a-zA-Z0-9_-]+$/.test(decoded) ? decoded : null
+  return normalizeId(previewId)
+}
+
+function normalizeId(value: string): string | null {
+  const decoded = decodeURIComponent(value).trim()
+  return /^[a-zA-Z0-9_:-]+$/.test(decoded) ? decoded : null
+}
+
+function sanitizeAddress(value: unknown): JsonRecord {
+  const record = asRecord(value)
+  const allowed = ['name', 'email', 'phone', 'line1', 'line2', 'city', 'postal_code', 'country']
+  return Object.fromEntries(
+    allowed
+      .map((key) => [key, pickFirstString([record[key]])] as const)
+      .filter(([, val]) => val),
+  )
 }
 
 function baseUrl(env: Env): string {

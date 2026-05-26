@@ -14,6 +14,51 @@ const env: StripeEnv = {
   STRIPE_PRICE_ID: 'price_123',
   STRIPE_WEBHOOK_SECRET: 'whsec_local',
   EUR_TO_SGD_RATE: '1.46',
+  MGEVERYDAY_API_TOKEN: 'mge_test_token',
+  MGEVERYDAY_BASE_URL: 'https://mge.test',
+  MGEVERYDAY_BRAND_ID: '116',
+}
+
+const canonicalPurchaseOptionsPayload = {
+  preview_id: 'preview_123',
+  status: 'COMPLETED',
+  purchase_options: [
+    {
+      preview_option_id: 'option_123',
+      product: 'DOT',
+      label: 'BLACK / source / Standard',
+      unit_price: '10.72',
+      currency: 'EUR',
+      production_speed: { code: 'STD', label: 'Standard' },
+      order_line: {
+        preview_option_id: 'option_123',
+        sku: 'DOT/VF/40X50/W/BLACK/STD',
+        quantity: 1,
+      },
+    },
+  ],
+}
+
+function orderDraft(overrides: Record<string, unknown> = {}) {
+  return {
+    orderDraftId: 'draft_123',
+    previewId: 'preview_123',
+    previewOptionId: 'option_123',
+    purchaseOptionId: 'DOT/VF/40X50/W/BLACK/STD',
+    status: 'DRAFT',
+    product: 'DOT',
+    selectedSize: '40x50',
+    productionSpeedCode: 'STD',
+    productionSpeedLabel: 'Standard',
+    orderLine: {
+      preview_option_id: 'option_123',
+      sku: 'DOT/VF/40X50/W/BLACK/STD',
+      quantity: 1,
+    },
+    unitPrice: '10.72',
+    currency: 'EUR',
+    ...overrides,
+  }
 }
 
 test('creates a sandbox Checkout Session for the configured fallback price', async () => {
@@ -58,10 +103,17 @@ test('calculates SGD checkout amount from MGE EUR unit cost with margin and GST'
   assert.equal(quote.sourceCurrency, 'EUR')
 })
 
-test('creates a dynamic SGD Checkout Session from the selected MGE purchase option', async () => {
+test('creates a dynamic SGD Checkout Session from the canonical MGE purchase option', async () => {
   const calls: Array<{ url: string; init: RequestInit }> = []
   const fetcher: typeof fetch = async (url, init) => {
     calls.push({ url: String(url), init: init ?? {} })
+    if (String(url).includes('/api/v1/preview/preview_123/purchase-options/')) {
+      return new Response(JSON.stringify(canonicalPurchaseOptionsPayload), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
     return new Response(
       JSON.stringify({
         id: 'cs_test_dynamic',
@@ -78,20 +130,13 @@ test('creates a dynamic SGD Checkout Session from the selected MGE purchase opti
       body: JSON.stringify({
         preview_id: 'preview_123',
         preview_option_id: 'option_123',
+        purchase_option_id: 'DOT/VF/40X50/W/BLACK/STD',
         selected_size: '40x50',
-        purchase_option: {
-          previewOptionId: 'option_123',
-          product: 'DOT',
-          label: 'BLACK / source / Standard',
-          unitPrice: '10.72',
-          currency: 'EUR',
-          productionSpeed: { code: 'STD', label: 'Standard' },
-          orderLine: {
-            preview_option_id: 'option_123',
-            sku: 'DOT/VF/40X50/W/BLACK/STD',
-            quantity: 1,
-          },
-        },
+        order_draft_id: 'draft_123',
+        order_draft: orderDraft({
+          // Tamper with a non-authoritative display-only field to prove Stripe uses canonical server data.
+          selectedSize: 'fake browser size',
+        }),
       }),
     }),
     env,
@@ -99,19 +144,33 @@ test('creates a dynamic SGD Checkout Session from the selected MGE purchase opti
   )
 
   assert.equal(response.status, 200)
-  assert.equal(calls.length, 1)
-  const body = calls[0].init.body as URLSearchParams
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].url, 'https://mge.test/api/v1/preview/preview_123/purchase-options/')
+  assert.equal(new Headers(calls[0].init.headers).get('Authorization'), 'Bearer mge_test_token')
+  assert.equal(calls[1].url, 'https://api.stripe.com/v1/checkout/sessions')
+  const body = calls[1].init.body as URLSearchParams
   assert.equal(body.get('line_items[0][price]'), null)
   assert.equal(body.get('line_items[0][price_data][currency]'), 'sgd')
   assert.equal(body.get('line_items[0][price_data][unit_amount]'), '3499')
   assert.equal(body.get('line_items[0][price_data][product_data][name]'), 'Custom Paint-by-Number Kit')
+  assert.equal(body.get('metadata[order_draft_id]'), 'draft_123')
   assert.equal(body.get('metadata[preview_id]'), 'preview_123')
   assert.equal(body.get('metadata[preview_option_id]'), 'option_123')
+  assert.equal(body.get('metadata[purchase_option_id]'), 'DOT/VF/40X50/W/BLACK/STD')
   assert.equal(body.get('metadata[sku]'), 'DOT/VF/40X50/W/BLACK/STD')
   assert.equal(body.get('metadata[retail_unit_amount_sgd]'), '3499')
 })
 
-test('rejects mismatched selected purchase options', async () => {
+test('rejects tampered order drafts before creating Stripe sessions', async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = []
+  const fetcher: typeof fetch = async (url, init) => {
+    calls.push({ url: String(url), init: init ?? {} })
+    return new Response(JSON.stringify(canonicalPurchaseOptionsPayload), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
   const response = await createStripeCheckoutSession(
     new Request('https://makeyourcraft.com/api/stripe/checkout', {
       method: 'POST',
@@ -119,18 +178,18 @@ test('rejects mismatched selected purchase options', async () => {
       body: JSON.stringify({
         preview_id: 'preview_123',
         preview_option_id: 'option_123',
-        purchase_option: {
-          previewOptionId: 'other_option',
-          unitPrice: '10.72',
-          currency: 'EUR',
-        },
+        purchase_option_id: 'DOT/VF/40X50/W/BLACK/STD',
+        order_draft_id: 'draft_123',
+        order_draft: orderDraft({ unitPrice: '1.00' }),
       }),
     }),
     env,
+    fetcher,
   )
 
   assert.equal(response.status, 500)
-  assert.match(await response.text(), /does not match/i)
+  assert.match(await response.text(), /price does not match/i)
+  assert.equal(calls.length, 1)
 })
 
 test('rejects live Stripe secret keys for sandbox-only checkout', async () => {

@@ -1,9 +1,13 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { createPreviewClient, type BffPurchaseOptionsResult } from "@/lib/mgeveryday/browser-preview"
+import {
+  createPreviewClient,
+  type BffPurchaseOptionsResult,
+} from "@/lib/mgeveryday/browser-preview"
 import { captureEvent } from "@/lib/analytics/posthog"
 import type { DotPreviewResult, FrameSizeOption } from "./preview-state"
+import { persistCheckoutSelection, readStoredCheckoutState } from "./checkout-persistence"
 
 type PurchaseOption = BffPurchaseOptionsResult["purchaseOptions"][number]
 
@@ -19,9 +23,30 @@ type Quote = {
   error: string | null
 }
 
+type DeliveryAddress = {
+  name: string
+  email: string
+  phone: string
+  line1: string
+  line2: string
+  city: string
+  postal_code: string
+  country: string
+}
+
 const DEFAULT_EUR_TO_SGD_RATE = 1.46
 const TARGET_GROSS_MARGIN = 0.5
 const GST_RATE = 0.09
+const DEFAULT_ADDRESS: DeliveryAddress = {
+  name: "",
+  email: "",
+  phone: "",
+  line1: "",
+  line2: "",
+  city: "Singapore",
+  postal_code: "",
+  country: "SG",
+}
 
 export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelProps) {
   const previewId = selectedPreview?.previewId ?? null
@@ -30,7 +55,17 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
   const [selectedPurchaseOptionId, setSelectedPurchaseOptionId] = useState<string | null>(null)
   const [loadingOptions, setLoadingOptions] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState(false)
+  const [showAddress, setShowAddress] = useState(false)
+  const [address, setAddress] = useState<DeliveryAddress>(DEFAULT_ADDRESS)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const restored = readStoredCheckoutState()
+    if (restored?.selectedPurchaseOptionId) {
+      setSelectedPurchaseOptionId(restored.selectedPurchaseOptionId)
+      if (restored.checkoutInProgress) setShowAddress(true)
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -40,6 +75,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
       setSelectedPurchaseOptionId(null)
       setLoadingOptions(false)
       setError(null)
+      setShowAddress(false)
       return
     }
 
@@ -109,6 +145,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
   const handleSelectMode = (option: PurchaseOption) => {
     const nextId = optionIdentity(option)
     setSelectedPurchaseOptionId(nextId)
+    persistCheckoutSelection({ selectedPurchaseOptionId: nextId, checkoutInProgress: showAddress })
     setError(null)
     captureEvent("mge_purchase_option_selected", {
       preview_id: previewId,
@@ -119,15 +156,39 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
     })
   }
 
-  const handleCheckout = async () => {
-    if (!previewId || !selectedPurchaseOption || quote.error) return
-
-    setCheckoutLoading(true)
-    setError(null)
-    captureEvent("stripe_checkout_clicked", {
+  const handleCheckoutIntent = () => {
+    if (!selectedPurchaseOption || quote.error) return
+    setShowAddress(true)
+    persistCheckoutSelection({ selectedPurchaseOptionId: optionIdentity(selectedPurchaseOption), checkoutInProgress: true })
+    captureEvent("checkout_address_step_opened", {
       preview_id: previewId,
       preview_option_id: selectedPurchaseOption.previewOptionId,
       purchase_option_id: optionIdentity(selectedPurchaseOption),
+      selected_size: selectedSize?.id,
+      amount_sgd: quote.amount,
+    })
+  }
+
+  const handleAddressChange = (key: keyof DeliveryAddress, value: string) => {
+    setAddress((current) => ({ ...current, [key]: value }))
+  }
+
+  const handleCheckout = async () => {
+    if (!previewId || !selectedPurchaseOption || quote.error) return
+    const validationError = validateAddress(address)
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+
+    setCheckoutLoading(true)
+    setError(null)
+
+    const purchaseOptionId = optionIdentity(selectedPurchaseOption)
+    captureEvent("stripe_checkout_clicked", {
+      preview_id: previewId,
+      preview_option_id: selectedPurchaseOption.previewOptionId,
+      purchase_option_id: purchaseOptionId,
       selected_size: selectedSize?.id,
       production_speed: selectedPurchaseOption.productionSpeedCode ?? selectedPurchaseOption.productionSpeedLabel,
       product: selectedPurchaseOption.product ?? "DOT",
@@ -135,15 +196,33 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
     })
 
     try {
+      const client = createPreviewClient()
+      if (!client) throw new Error("Checkout is not available in local fallback mode.")
+
+      const orderDraft = await client.createOrderDraft({
+        preview_id: previewId,
+        preview_option_id: selectedPurchaseOption.previewOptionId,
+        purchase_option_id: purchaseOptionId,
+        selected_size: selectedSize?.id ?? null,
+        delivery_address: sanitizeAddressForDraft(address),
+      })
+
+      persistCheckoutSelection({
+        selectedPurchaseOptionId: purchaseOptionId,
+        orderDraftId: orderDraft.orderDraftId,
+        checkoutInProgress: true,
+      })
+
       const response = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          order_draft_id: orderDraft.orderDraftId,
+          order_draft: orderDraft,
+          selected_size: selectedSize?.id,
           preview_id: previewId,
           preview_option_id: selectedPurchaseOption.previewOptionId,
-          selected_size: selectedSize?.id,
-          purchase_option_id: optionIdentity(selectedPurchaseOption),
-          purchase_option: selectedPurchaseOption,
+          purchase_option_id: purchaseOptionId,
         }),
       })
       const payload = await response.json().catch(() => null) as { url?: string; error?: string; detail?: string } | null
@@ -158,7 +237,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
       captureEvent("stripe_checkout_failed", {
         preview_id: previewId,
         preview_option_id: selectedPurchaseOption.previewOptionId,
-        purchase_option_id: optionIdentity(selectedPurchaseOption),
+        purchase_option_id: purchaseOptionId,
         selected_size: selectedSize?.id,
         error_message: message,
       })
@@ -171,51 +250,91 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
 
   return (
     <div className="pointer-events-auto w-full rounded-3xl border border-white/15 bg-black/35 p-3 shadow-2xl shadow-black/30 backdrop-blur-md">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-baseline gap-2">
-            <p className="text-lg font-semibold text-white">
-              {quote.loading ? "Loading…" : quote.error ? "—" : `${quote.currency} ${quote.amount}`}
-            </p>
-            <p className="truncate text-xs text-white/45">{selectedSize?.label ?? "Custom size"}</p>
+      {!showAddress ? (
+        <>
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-2">
+                <p className="text-lg font-semibold text-white">
+                  {quote.loading ? "Loading…" : quote.error ? "—" : `${quote.currency} ${quote.amount}`}
+                </p>
+                <p className="truncate text-xs text-white/45">{selectedSize?.label ?? "Custom size"}</p>
+              </div>
+              <p className="mt-0.5 truncate text-xs text-white/35">
+                {selectedPurchaseOption?.label ?? "Custom paint-by-number kit"}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleCheckoutIntent}
+              disabled={loadingOptions || Boolean(quote.error) || !selectedPurchaseOption}
+              className="shrink-0 rounded-full bg-[#52b788] px-5 py-2.5 text-sm font-semibold text-[#07140f] transition hover:bg-[#74c69d] disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/35"
+            >
+              Checkout
+            </button>
           </div>
-          <p className="mt-0.5 truncate text-xs text-white/35">
-            {selectedPurchaseOption?.label ?? "Custom paint-by-number kit"}
-          </p>
-        </div>
 
-        <button
-          type="button"
-          onClick={handleCheckout}
-          disabled={checkoutLoading || loadingOptions || Boolean(quote.error) || !selectedPurchaseOption}
-          className="shrink-0 rounded-full bg-[#52b788] px-5 py-2.5 text-sm font-semibold text-[#07140f] transition hover:bg-[#74c69d] disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/35"
-        >
-          {checkoutLoading ? "Opening…" : "Checkout"}
-        </button>
-      </div>
+          {visiblePurchaseOptions.length > 1 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {visiblePurchaseOptions.map((option) => {
+                const optionQuote = quoteForOption(option, visiblePurchaseOptions.length)
+                const identity = optionIdentity(option)
+                const active = identity === optionIdentity(selectedPurchaseOption)
+                return (
+                  <button
+                    key={identity}
+                    type="button"
+                    onClick={() => handleSelectMode(option)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                      active
+                        ? "border-white/45 bg-white/18 text-white"
+                        : "border-white/15 bg-black/20 text-white/55 hover:border-white/30 hover:text-white"
+                    }`}
+                  >
+                    {modeLabel(option)}
+                    {!optionQuote.error && <span className="ml-1 text-white/45">SGD {optionQuote.amount}</span>}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-white">Delivery details</p>
+              <p className="text-xs text-white/45">Needed before Stripe so MGE can reserve the kit.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowAddress(false)
+                persistCheckoutSelection({ selectedPurchaseOptionId, checkoutInProgress: false })
+              }}
+              className="rounded-full border border-white/15 px-3 py-1 text-xs font-semibold text-white/70 hover:text-white"
+            >
+              Back
+            </button>
+          </div>
 
-      {visiblePurchaseOptions.length > 1 && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {visiblePurchaseOptions.map((option) => {
-            const optionQuote = quoteForOption(option, visiblePurchaseOptions.length)
-            const identity = optionIdentity(option)
-            const active = identity === optionIdentity(selectedPurchaseOption)
-            return (
-              <button
-                key={identity}
-                type="button"
-                onClick={() => handleSelectMode(option)}
-                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                  active
-                    ? "border-white/45 bg-white/18 text-white"
-                    : "border-white/15 bg-black/20 text-white/55 hover:border-white/30 hover:text-white"
-                }`}
-              >
-                {modeLabel(option)}
-                {!optionQuote.error && <span className="ml-1 text-white/45">SGD {optionQuote.amount}</span>}
-              </button>
-            )
-          })}
+          <div className="grid grid-cols-2 gap-2">
+            <input value={address.name} onChange={(event) => handleAddressChange("name", event.target.value)} placeholder="Name" className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs text-white placeholder:text-white/35 outline-none focus:border-white/35" />
+            <input value={address.email} onChange={(event) => handleAddressChange("email", event.target.value)} placeholder="Email" type="email" className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs text-white placeholder:text-white/35 outline-none focus:border-white/35" />
+            <input value={address.phone} onChange={(event) => handleAddressChange("phone", event.target.value)} placeholder="Phone" className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs text-white placeholder:text-white/35 outline-none focus:border-white/35" />
+            <input value={address.postal_code} onChange={(event) => handleAddressChange("postal_code", event.target.value)} placeholder="Postal code" className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs text-white placeholder:text-white/35 outline-none focus:border-white/35" />
+            <input value={address.line1} onChange={(event) => handleAddressChange("line1", event.target.value)} placeholder="Address line 1" className="col-span-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs text-white placeholder:text-white/35 outline-none focus:border-white/35" />
+          </div>
+
+          <button
+            type="button"
+            onClick={handleCheckout}
+            disabled={checkoutLoading}
+            className="w-full rounded-full bg-[#52b788] px-5 py-2.5 text-sm font-semibold text-[#07140f] transition hover:bg-[#74c69d] disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/35"
+          >
+            {checkoutLoading ? "Creating order…" : `Pay ${quote.currency} ${quote.amount}`}
+          </button>
         </div>
       )}
 
@@ -257,10 +376,28 @@ function modeLabel(option: PurchaseOption): string {
   return option.productionSpeedLabel || option.productionSpeedCode || option.label?.split("/").at(-1)?.trim() || "Option"
 }
 
+function validateAddress(address: DeliveryAddress): string | null {
+  if (!address.name.trim()) return "Please enter your name."
+  if (!/^\S+@\S+\.\S+$/.test(address.email.trim())) return "Please enter a valid email."
+  if (!address.phone.trim()) return "Please enter your phone number."
+  if (!address.line1.trim()) return "Please enter your delivery address."
+  if (!address.postal_code.trim()) return "Please enter your postal code."
+  return null
+}
+
+function sanitizeAddressForDraft(address: DeliveryAddress): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(address)
+      .map(([key, value]) => [key, value.trim()] as const)
+      .filter(([, value]) => value),
+  )
+}
+
 function formatCheckoutError(payload: { error?: string; detail?: string } | null, status: number): string {
   const message = payload?.detail || payload?.error || `Checkout failed (${status})`
   if (/STRIPE_SECRET_KEY is not configured/i.test(message)) return "Checkout is not configured yet."
   if (/Stripe sandbox checkout requires/i.test(message)) return "Checkout is still in Stripe test-mode setup."
+  if (/order_draft/i.test(message)) return "Could not confirm the order draft. Please try again."
   return message
 }
 

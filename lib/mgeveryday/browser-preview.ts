@@ -82,6 +82,29 @@ export interface BffPurchaseOptionsResult {
   }>
 }
 
+export interface BffOrderDraftResult {
+  orderDraftId: string
+  previewId: string
+  previewOptionId: string
+  purchaseOptionId: string
+  status: string
+  product: string | null
+  selectedSize: string | null
+  productionSpeedCode: string | null
+  productionSpeedLabel: string | null
+  orderLine: Record<string, unknown> | null
+  unitPrice: string | null
+  currency: string | null
+}
+
+export interface BffOrderDraftInput {
+  preview_id: string
+  preview_option_id: string
+  purchase_option_id?: string | null
+  selected_size?: string | null
+  delivery_address: Record<string, string>
+}
+
 export interface BffError {
   error: string
   status?: number
@@ -106,6 +129,8 @@ export interface BffPreviewClient {
   getPreview(previewId: string): Promise<BffPreviewStatusResult>
   /** Get orderable purchase options for a completed/partial preview */
   getPurchaseOptions(previewId: string): Promise<BffPurchaseOptionsResult>
+  /** Create an MGE order draft after address capture and before Stripe */
+  createOrderDraft(input: BffOrderDraftInput): Promise<BffOrderDraftResult>
 }
 
 export function createPreviewClient(baseUrl?: string): BffPreviewClient | null {
@@ -162,6 +187,19 @@ export class PreviewClientImpl implements BffPreviewClient {
     }
     const data = await res.json() as BffPurchaseOptionsResult
     return proxiedPurchaseOptionsResult(data, this.base)
+  }
+
+  async createOrderDraft(input: BffOrderDraftInput): Promise<BffOrderDraftResult> {
+    const res = await fetch(`${this.base}/api/mge/order-draft`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+    if (!res.ok) {
+      const err = await readBffError(res)
+      throw new Error(formatBffError(err, `Order draft creation failed: ${res.status}`))
+    }
+    return await res.json() as BffOrderDraftResult
   }
 
   async pollPreview(previewId: string, options: PollOptions = {}): Promise<BffPreviewCreateResult> {

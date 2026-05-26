@@ -6,8 +6,10 @@ import {
   initialPreviewState,
   deriveSceneModel,
   deriveGuidedModel,
+  type DotPreviewResult,
   type FrameSizeOption,
   type PreviewOptionChoice,
+  type PreviewState,
 } from "./preview-state"
 import {
   prepareArtworkForFrame,
@@ -15,6 +17,11 @@ import {
 import { captureEvent } from "@/lib/analytics/posthog"
 import { createPreviewClient, type BffPreviewCreateResult } from "@/lib/mgeveryday/browser-preview"
 import { ACCEPTED_MIME_TYPES, DEFAULT_SIZE_ID, UX_COPY } from "./constants"
+import {
+  clearStoredCheckoutState,
+  persistPreviewState,
+  restoreStoredPreviewState,
+} from "./checkout-persistence"
 
 type PreviewFlowResult = Omit<BffPreviewCreateResult, 'previewId'> & {
   previewId: string | null
@@ -194,6 +201,8 @@ export function usePreviewFlow() {
 
   const handleSelectImage = useCallback(
     (file: File) => {
+      clearStoredCheckoutState()
+
       if (!ACCEPTED_MIME_TYPES.includes(file.type as (typeof ACCEPTED_MIME_TYPES)[number])) {
         captureEvent('preview_file_rejected', {
           file_type: file.type || 'unknown',
@@ -238,6 +247,7 @@ export function usePreviewFlow() {
       selected_size: state.selectedSize?.id,
       status: state.status,
     })
+    clearStoredCheckoutState()
     revokePreviewUrls(state.temporaryUrl, state.finalUrl)
     dispatch({ type: "RESET" })
   }, [revokePreviewUrls, state.finalUrl, state.selectedSize?.id, state.status, state.temporaryUrl])
@@ -268,6 +278,20 @@ export function usePreviewFlow() {
       preview_option_id: optionId,
     })
   }, [])
+
+  useEffect(() => {
+    const restored = restoreStoredPreviewState()
+    if (restored) {
+      dispatch({ type: "RESTORE_PREVIEW", state: restored })
+      captureEvent('checkout_preview_restored', {
+        selected_size: restored.selectedSize?.id,
+      })
+    }
+  }, [])
+
+  useEffect(() => {
+    persistPreviewState(state)
+  }, [state])
 
   useEffect(() => {
     return () => {
