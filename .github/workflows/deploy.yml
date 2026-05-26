@@ -14,6 +14,8 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       MGEVERYDAY_API_TOKEN: ${{ secrets.MGEVERYDAY_API_TOKEN }}
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
       PROJECT_NAME: hermes-painting-landing
       BUILD_DIR: .next/prod
       NEXT_PUBLIC_MGE_BFF_BASE_URL: ${{ vars.NEXT_PUBLIC_MGE_BFF_BASE_URL }}
@@ -38,8 +40,14 @@ jobs:
       - name: Ensure Pages project exists
         run: npx wrangler pages project create "$PROJECT_NAME" --production-branch main || true
 
-      - name: Configure Pages Function secret
+      - name: Configure MGE Pages Function secret
         run: printf "%s" "$MGEVERYDAY_API_TOKEN" | npx wrangler pages secret put MGEVERYDAY_API_TOKEN --project-name="$PROJECT_NAME"
+
+      - name: Configure Stripe Pages Function secrets
+        if: ${{ env.STRIPE_SECRET_KEY != '' && env.STRIPE_WEBHOOK_SECRET != '' }}
+        run: |
+          printf "%s" "$STRIPE_SECRET_KEY" | npx wrangler pages secret put STRIPE_SECRET_KEY --project-name="$PROJECT_NAME"
+          printf "%s" "$STRIPE_WEBHOOK_SECRET" | npx wrangler pages secret put STRIPE_WEBHOOK_SECRET --project-name="$PROJECT_NAME"
 
       - name: Deploy to Cloudflare Pages
         run: npx wrangler pages deploy "$BUILD_DIR" --project-name="$PROJECT_NAME" --branch=main
