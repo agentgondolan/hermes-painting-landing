@@ -23,15 +23,22 @@ test('normalizes MGE purchase options into browser-safe camelCase payload', asyn
   assert.equal(normalized.purchaseOptions.length, 2)
 
   const [standard, express] = normalized.purchaseOptions
+  assert.equal(standard.purchaseOptionId, 'DOT/VF/40X50/W/BLACK/STD')
   assert.equal(standard.previewOptionId, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
   assert.equal(standard.product, 'DOT')
   assert.equal(standard.label, 'BLACK / source / Standard')
+  assert.equal(standard.productionSpeedCode, 'STD')
+  assert.equal(standard.productionSpeedLabel, 'Standard')
   assert.equal(standard.orderLine?.sku, 'DOT/VF/40X50/W/BLACK/STD')
   assert.equal(standard.orderLine?.quantity, 1)
   assert.equal(standard.unitPrice, '10.72')
   assert.equal(standard.currency, 'EUR')
   assert.equal(standard.previewUrl, '[REDACTED_URL]')
 
+  assert.equal(express.purchaseOptionId, 'DOT/VF/40X50/W/BLACK/EXP')
+  assert.equal(express.previewOptionId, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
+  assert.equal(express.productionSpeedCode, 'EXP')
+  assert.equal(express.productionSpeedLabel, 'Express')
   assert.equal(express.orderLine?.sku, 'DOT/VF/40X50/W/BLACK/EXP')
   assert.equal(express.unitPrice, '14.72')
 })

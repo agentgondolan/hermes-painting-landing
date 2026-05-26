@@ -26,6 +26,7 @@ interface NormalizedPreview {
 }
 
 interface NormalizedPurchaseOption {
+  purchaseOptionId: string
   previewOptionId: string
   product: string | null
   label: string | null
@@ -33,6 +34,8 @@ interface NormalizedPurchaseOption {
   previewUrl: string | null
   mockupUrl: string | null
   productionSpeed: JsonRecord | null
+  productionSpeedCode: string | null
+  productionSpeedLabel: string | null
   orderLine: JsonRecord | null
   unitPrice: string | null
   currency: string | null
@@ -252,15 +255,23 @@ export function normalizePurchaseOptions(raw: unknown): NormalizedPurchaseOption
 function normalizePurchaseOption(raw: unknown): NormalizedPurchaseOption {
   const obj = asRecord(raw)
   const orderLine = asNullableRecord(obj.order_line)
+  const previewOptionId = String(obj.preview_option_id ?? obj.option_id ?? obj.id ?? orderLine?.preview_option_id ?? '')
+  const productionSpeed = asNullableRecord(obj.production_speed)
+  const productionSpeedCode = pickFirstString([productionSpeed?.code, obj.production_speed_code])
+  const productionSpeedLabel = pickFirstString([productionSpeed?.label, obj.production_speed_label, productionSpeedCode])
+  const sku = pickFirstString([orderLine?.sku])
 
   return {
-    previewOptionId: String(obj.preview_option_id ?? obj.option_id ?? obj.id ?? orderLine?.preview_option_id ?? ''),
+    purchaseOptionId: pickFirstString([obj.purchase_option_id, sku, [previewOptionId, productionSpeedCode].filter(Boolean).join(':'), obj.id]) ?? previewOptionId,
+    previewOptionId,
     product: pickFirstString([obj.product, obj.product_code]),
     label: pickFirstString([obj.label, obj.name]),
     description: pickFirstString([obj.description]),
     previewUrl: pickFirstString([obj.preview_url, obj.image_url, obj.preview_image_url]),
     mockupUrl: pickFirstString([obj.mockup_url, obj.mockup_image_url]),
-    productionSpeed: asNullableRecord(obj.production_speed),
+    productionSpeed,
+    productionSpeedCode,
+    productionSpeedLabel,
     orderLine,
     unitPrice: pickFirstString([obj.unit_price, obj.price]),
     currency: pickFirstString([obj.currency]),

@@ -66,6 +66,7 @@ export interface BffPurchaseOptionsResult {
   previewId: string
   status: string
   purchaseOptions: Array<{
+    purchaseOptionId: string
     previewOptionId: string
     product: string | null
     label: string | null
@@ -73,6 +74,8 @@ export interface BffPurchaseOptionsResult {
     previewUrl: string | null
     mockupUrl: string | null
     productionSpeed: Record<string, unknown> | null
+    productionSpeedCode: string | null
+    productionSpeedLabel: string | null
     orderLine: Record<string, unknown> | null
     unitPrice: string | null
     currency: string | null

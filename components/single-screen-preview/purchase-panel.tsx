@@ -27,6 +27,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
   const previewId = selectedPreview?.previewId ?? null
   const selectedPreviewOptionId = selectedPreview?.selectedOptionId ?? null
   const [purchaseOptions, setPurchaseOptions] = useState<PurchaseOption[]>([])
+  const [selectedPurchaseOptionId, setSelectedPurchaseOptionId] = useState<string | null>(null)
   const [loadingOptions, setLoadingOptions] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -36,6 +37,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
 
     if (!previewId || selectedPreview?.status !== "ready") {
       setPurchaseOptions([])
+      setSelectedPurchaseOptionId(null)
       setLoadingOptions(false)
       setError(null)
       return
@@ -44,6 +46,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
     const client = createPreviewClient()
     if (!client) {
       setPurchaseOptions([])
+      setSelectedPurchaseOptionId(null)
       setError("Checkout is not available in local fallback mode.")
       return
     }
@@ -55,6 +58,11 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
       (result) => {
         if (cancelled) return
         setPurchaseOptions(result.purchaseOptions)
+        setSelectedPurchaseOptionId((current) => {
+          if (current && result.purchaseOptions.some((option) => optionIdentity(option) === current)) return current
+          const matchingPreviewOptions = result.purchaseOptions.filter((option) => !selectedPreviewOptionId || option.previewOptionId === selectedPreviewOptionId)
+          return optionIdentity(matchingPreviewOptions[0] ?? result.purchaseOptions[0] ?? null)
+        })
         captureEvent("mge_purchase_options_loaded", {
           preview_id: previewId,
           option_count: result.purchaseOptions.length,
@@ -65,6 +73,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
         if (cancelled) return
         const message = err instanceof Error ? err.message : "Could not load purchase options"
         setPurchaseOptions([])
+        setSelectedPurchaseOptionId(null)
         setError(message)
         captureEvent("mge_purchase_options_failed", {
           preview_id: previewId,
@@ -79,45 +88,48 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
     return () => {
       cancelled = true
     }
-  }, [previewId, selectedPreview?.status, selectedSize?.id])
+  }, [previewId, selectedPreview?.status, selectedPreviewOptionId, selectedSize?.id])
+
+  const visiblePurchaseOptions = useMemo(() => {
+    const matchingPreviewOptions = purchaseOptions.filter((option) => !selectedPreviewOptionId || option.previewOptionId === selectedPreviewOptionId)
+    return matchingPreviewOptions.length ? matchingPreviewOptions : purchaseOptions
+  }, [purchaseOptions, selectedPreviewOptionId])
 
   const selectedPurchaseOption = useMemo(() => {
-    if (!selectedPreviewOptionId) return purchaseOptions[0] ?? null
-    return purchaseOptions.find((option) => option.previewOptionId === selectedPreviewOptionId) ?? purchaseOptions[0] ?? null
-  }, [purchaseOptions, selectedPreviewOptionId])
+    if (!visiblePurchaseOptions.length) return null
+    if (!selectedPurchaseOptionId) return visiblePurchaseOptions[0]
+    return visiblePurchaseOptions.find((option) => optionIdentity(option) === selectedPurchaseOptionId) ?? visiblePurchaseOptions[0]
+  }, [visiblePurchaseOptions, selectedPurchaseOptionId])
 
   const quote = useMemo<Quote>(() => {
     if (loadingOptions) return { amount: "", currency: "SGD", loading: true, error: null }
-    if (!selectedPurchaseOption) {
-      return {
-        amount: "",
-        currency: "SGD",
-        loading: false,
-        error: purchaseOptions.length === 0 ? "Waiting for order options…" : "No matching order option.",
-      }
-    }
+    return quoteForOption(selectedPurchaseOption, visiblePurchaseOptions.length)
+  }, [loadingOptions, selectedPurchaseOption, visiblePurchaseOptions.length])
 
-    const sourceAmount = Number.parseFloat(selectedPurchaseOption.unitPrice ?? "")
-    if (!Number.isFinite(sourceAmount) || sourceAmount <= 0) {
-      return { amount: "", currency: "SGD", loading: false, error: "Missing production cost." }
-    }
-
-    const sourceCurrency = (selectedPurchaseOption.currency ?? "EUR").toUpperCase()
-    const costSgd = sourceCurrency === "SGD" ? sourceAmount : sourceAmount * DEFAULT_EUR_TO_SGD_RATE
-    const total = (costSgd / TARGET_GROSS_MARGIN) * (1 + GST_RATE)
-    const cents = roundUpToNinetyNineCents(total)
-    return { amount: (cents / 100).toFixed(2), currency: "SGD", loading: false, error: null }
-  }, [loadingOptions, purchaseOptions.length, selectedPurchaseOption])
+  const handleSelectMode = (option: PurchaseOption) => {
+    const nextId = optionIdentity(option)
+    setSelectedPurchaseOptionId(nextId)
+    setError(null)
+    captureEvent("mge_purchase_option_selected", {
+      preview_id: previewId,
+      preview_option_id: option.previewOptionId,
+      purchase_option_id: nextId,
+      production_speed: option.productionSpeedCode ?? option.productionSpeedLabel,
+      selected_size: selectedSize?.id,
+    })
+  }
 
   const handleCheckout = async () => {
-    if (!previewId || !selectedPreviewOptionId || !selectedPurchaseOption || quote.error) return
+    if (!previewId || !selectedPurchaseOption || quote.error) return
 
     setCheckoutLoading(true)
     setError(null)
     captureEvent("stripe_checkout_clicked", {
       preview_id: previewId,
-      preview_option_id: selectedPreviewOptionId,
+      preview_option_id: selectedPurchaseOption.previewOptionId,
+      purchase_option_id: optionIdentity(selectedPurchaseOption),
       selected_size: selectedSize?.id,
+      production_speed: selectedPurchaseOption.productionSpeedCode ?? selectedPurchaseOption.productionSpeedLabel,
       product: selectedPurchaseOption.product ?? "DOT",
       amount_sgd: quote.amount,
     })
@@ -128,14 +140,15 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           preview_id: previewId,
-          preview_option_id: selectedPreviewOptionId,
+          preview_option_id: selectedPurchaseOption.previewOptionId,
           selected_size: selectedSize?.id,
+          purchase_option_id: optionIdentity(selectedPurchaseOption),
           purchase_option: selectedPurchaseOption,
         }),
       })
       const payload = await response.json().catch(() => null) as { url?: string; error?: string; detail?: string } | null
       if (!response.ok || !payload?.url) {
-        throw new Error(payload?.detail || payload?.error || `Checkout failed (${response.status})`)
+        throw new Error(formatCheckoutError(payload, response.status))
       }
       window.location.assign(payload.url)
     } catch (err) {
@@ -144,7 +157,8 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
       setCheckoutLoading(false)
       captureEvent("stripe_checkout_failed", {
         preview_id: previewId,
-        preview_option_id: selectedPreviewOptionId,
+        preview_option_id: selectedPurchaseOption.previewOptionId,
+        purchase_option_id: optionIdentity(selectedPurchaseOption),
         selected_size: selectedSize?.id,
         error_message: message,
       })
@@ -181,11 +195,74 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
         </button>
       </div>
 
+      {visiblePurchaseOptions.length > 1 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {visiblePurchaseOptions.map((option) => {
+            const optionQuote = quoteForOption(option, visiblePurchaseOptions.length)
+            const identity = optionIdentity(option)
+            const active = identity === optionIdentity(selectedPurchaseOption)
+            return (
+              <button
+                key={identity}
+                type="button"
+                onClick={() => handleSelectMode(option)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                  active
+                    ? "border-white/45 bg-white/18 text-white"
+                    : "border-white/15 bg-black/20 text-white/55 hover:border-white/30 hover:text-white"
+                }`}
+              >
+                {modeLabel(option)}
+                {!optionQuote.error && <span className="ml-1 text-white/45">SGD {optionQuote.amount}</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {(error || quote.error) && (
         <p className="mt-2 text-xs text-amber-200/80">{error || quote.error}</p>
       )}
     </div>
   )
+}
+
+function quoteForOption(option: PurchaseOption | null, optionCount: number): Quote {
+  if (!option) {
+    return {
+      amount: "",
+      currency: "SGD",
+      loading: false,
+      error: optionCount === 0 ? "Waiting for order options…" : "No matching order option.",
+    }
+  }
+
+  const sourceAmount = Number.parseFloat(option.unitPrice ?? "")
+  if (!Number.isFinite(sourceAmount) || sourceAmount <= 0) {
+    return { amount: "", currency: "SGD", loading: false, error: "Missing production cost." }
+  }
+
+  const sourceCurrency = (option.currency ?? "EUR").toUpperCase()
+  const costSgd = sourceCurrency === "SGD" ? sourceAmount : sourceAmount * DEFAULT_EUR_TO_SGD_RATE
+  const total = (costSgd / TARGET_GROSS_MARGIN) * (1 + GST_RATE)
+  const cents = roundUpToNinetyNineCents(total)
+  return { amount: (cents / 100).toFixed(2), currency: "SGD", loading: false, error: null }
+}
+
+function optionIdentity(option: PurchaseOption | null): string | null {
+  if (!option) return null
+  return option.purchaseOptionId || `${option.previewOptionId}:${option.productionSpeedCode ?? option.productionSpeedLabel ?? option.orderLine?.sku ?? option.unitPrice ?? "option"}`
+}
+
+function modeLabel(option: PurchaseOption): string {
+  return option.productionSpeedLabel || option.productionSpeedCode || option.label?.split("/").at(-1)?.trim() || "Option"
+}
+
+function formatCheckoutError(payload: { error?: string; detail?: string } | null, status: number): string {
+  const message = payload?.detail || payload?.error || `Checkout failed (${status})`
+  if (/STRIPE_SECRET_KEY is not configured/i.test(message)) return "Checkout is not configured yet."
+  if (/Stripe sandbox checkout requires/i.test(message)) return "Checkout is still in Stripe test-mode setup."
+  return message
 }
 
 function roundUpToNinetyNineCents(amount: number): number {
