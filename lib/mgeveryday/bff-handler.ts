@@ -206,7 +206,7 @@ async function createOrderDraft(request: Request, env: Env): Promise<Response> {
     selected_size: pickFirstString([body.selected_size]),
     product: canonical.product ?? 'DOT',
     shipping_address: sanitizeShippingAddress(body.delivery_address),
-    line_items: buildOrderDraftLineItems(canonical),
+    line_items: canonical.orderLine ? [canonical.orderLine] : undefined,
     source: 'makeyourcraft_landing',
   }
 
@@ -374,20 +374,6 @@ export function normalizeOrderDraft(raw: unknown, canonical: NormalizedPurchaseO
     unitPrice: pickFirstString([obj.unit_price, obj.price, canonical.unitPrice]),
     currency: pickFirstString([obj.currency, canonical.currency]),
   }
-}
-
-function buildOrderDraftLineItems(canonical: NormalizedPurchaseOption): JsonRecord[] | undefined {
-  if (!canonical.orderLine) return undefined
-
-  const lineItem: JsonRecord = { ...canonical.orderLine }
-  const previewAssetUrl = pickFirstString([canonical.previewUrl])
-
-  if (previewAssetUrl && 'preview_option_id' in lineItem && !lineItem.asset_url && !lineItem.asset_token) {
-    delete lineItem.preview_option_id
-    lineItem.asset_url = previewAssetUrl
-  }
-
-  return [lineItem]
 }
 
 function normalizePurchaseOption(raw: unknown): NormalizedPurchaseOption {
