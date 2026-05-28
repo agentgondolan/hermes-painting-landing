@@ -196,6 +196,9 @@ async function createOrderDraft(request: Request, env: Env): Promise<Response> {
   if (!previewOptionId) return json({ error: 'preview_option_id is required' }, 400)
   if (!sku) return json({ error: 'sku is required' }, 400)
 
+  const shippingAddress = sanitizeShippingAddress(body.delivery_address)
+  if (!shippingAddress.phone) return json({ error: 'delivery_address.phone is required' }, 400)
+
   const canonical = await loadCanonicalPurchaseOption(previewId, previewOptionId, sku, env, token)
   if (!canonical) {
     return json({ error: 'Selected MGE purchase option is no longer orderable' }, 409)
@@ -207,7 +210,7 @@ async function createOrderDraft(request: Request, env: Env): Promise<Response> {
     preview_option_id: previewOptionId,
     selected_size: pickFirstString([body.selected_size]),
     product: canonical.product ?? 'DOT',
-    shipping_address: sanitizeShippingAddress(body.delivery_address),
+    shipping_address: shippingAddress,
     line_items: canonical.orderLine ? [canonical.orderLine] : undefined,
     source: 'makeyourcraft_landing',
   }

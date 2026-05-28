@@ -157,6 +157,7 @@ test('order-draft BFF posts to documented plural MGE order-drafts endpoint', asy
           delivery_address: {
             name: 'Test Customer',
             email: 'test@example.com',
+            phone: '+65 8123 4567',
             line1: '1 Test Street',
             city: 'Singapore',
             postal_code: '018956',
@@ -184,6 +185,7 @@ test('order-draft BFF posts to documented plural MGE order-drafts endpoint', asy
     assert.deepEqual(upstreamBody.shipping_address, {
       name: 'Test Customer',
       email: 'test@example.com',
+      phone: '+65 8123 4567',
       street: '1 Test Street',
       city: 'Singapore',
       zip: '018956',
@@ -195,6 +197,46 @@ test('order-draft BFF posts to documented plural MGE order-drafts endpoint', asy
     assert.equal('order_lines' in upstreamBody, false)
     assert.equal('line1' in upstreamBody.shipping_address, false)
     assert.equal('postal_code' in upstreamBody.shipping_address, false)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('order-draft BFF rejects missing delivery phone before calling MGE', async () => {
+  const originalFetch = globalThis.fetch
+  let called = false
+  globalThis.fetch = (async () => {
+    called = true
+    return new Response('{}')
+  }) as typeof fetch
+
+  try {
+    const response = await handleMgeBffRequest(
+      new Request('https://makeyourcraft.com/api/mge/order-draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          preview_id: 'preview-123',
+          preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+          sku: 'DOT/VF/40X50/W/BLACK/STD',
+          selected_size: '40x50',
+          delivery_address: {
+            name: 'Test Customer',
+            email: 'test@example.com',
+            line1: '1 Test Street',
+            city: 'Singapore',
+            postal_code: '018956',
+            country: 'SG',
+          },
+        }),
+      }),
+      env,
+    )
+
+    assert.equal(response.status, 400)
+    const payload = await response.json() as { error?: string }
+    assert.match(payload.error ?? '', /phone/i)
+    assert.equal(called, false)
   } finally {
     globalThis.fetch = originalFetch
   }

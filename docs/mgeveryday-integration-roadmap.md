@@ -128,6 +128,7 @@ Free-tier fit as of 2026-05-19: Cloudflare Workers/Pages Functions include a fre
 - `POST /order-drafts/` requires `brand_id`.
 - `line_items[]` uses `OrderLineItemCreate`; `sku` is required.
 - Preview-backed orders use `preview_option_id` from `purchase_options[].order_line`.
+- `shipping_address.phone` is mandatory for MGE delivery/order draft validation; the checkout UI and BFF must reject draft creation before calling MGE when phone is missing.
 - Draft asset endpoints exist for direct-image draft items and return `asset_token`; the preview-backed checkout path does not need a separate asset upload.
 
 **Scope:**
