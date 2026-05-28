@@ -105,6 +105,9 @@ export async function createStripeCheckoutSession(
     body.set('cancel_url', `${origin}/checkout/cancel`)
     body.set('allow_promotion_codes', 'true')
     body.set('automatic_tax[enabled]', 'false')
+    body.set('shipping_address_collection[allowed_countries][0]', 'SG')
+    body.set('billing_address_collection', 'required')
+    body.set('phone_number_collection[enabled]', 'true')
     body.set('metadata[source]', 'makeyourcraft_landing')
     body.set('metadata[product]', checkoutContext.metadata.product ?? 'DOT')
 
@@ -261,19 +264,20 @@ async function readCheckoutContext(
   const source = raw as CheckoutRequestBody
   const draft = source.order_draft
   const orderDraftId = stringValue(source.order_draft_id)
+  const draftRecord = draft && typeof draft === 'object' ? draft : null
 
-  if (!orderDraftId || !draft || typeof draft !== 'object') {
-    throw new Error('order_draft_id and order_draft are required for checkout')
+  if ((orderDraftId && !draftRecord) || (!orderDraftId && draftRecord)) {
+    throw new Error('order_draft_id and order_draft must be provided together')
   }
 
-  const draftOrderDraftId = stringValue(draft.orderDraftId)
-  if (draftOrderDraftId && draftOrderDraftId !== orderDraftId) {
+  const draftOrderDraftId = draftRecord ? stringValue(draftRecord.orderDraftId) : ''
+  if (draftRecord && draftOrderDraftId && draftOrderDraftId !== orderDraftId) {
     throw new Error('order_draft_id does not match the order draft')
   }
 
-  const previewId = stringValue(source.preview_id) || stringValue(draft.previewId)
-  const previewOptionId = stringValue(source.preview_option_id) || stringValue(draft.previewOptionId)
-  const sku = stringValue(source.sku) || stringValue(draft.sku) || stringValue(asRecord(draft.orderLine)?.sku) || stringValue(source.purchase_option_id) || stringValue(draft.purchaseOptionId)
+  const previewId = stringValue(source.preview_id) || stringValue(draftRecord?.previewId)
+  const previewOptionId = stringValue(source.preview_option_id) || stringValue(draftRecord?.previewOptionId)
+  const sku = stringValue(source.sku) || stringValue(draftRecord?.sku) || stringValue(asRecord(draftRecord?.orderLine)?.sku) || stringValue(source.purchase_option_id) || stringValue(draftRecord?.purchaseOptionId)
 
   if (!previewId) throw new Error('preview_id is required for dynamic checkout')
   if (!previewOptionId) throw new Error('preview_option_id is required for dynamic checkout')
@@ -282,18 +286,20 @@ async function readCheckoutContext(
   const token = requireValue(env.MGEVERYDAY_API_TOKEN, 'MGEVERYDAY_API_TOKEN')
   const canonical = await loadCanonicalPurchaseOptionForCheckout(previewId, previewOptionId, sku, env, token, fetcher)
   if (!canonical) {
-    throw new Error('order_draft does not match an orderable MGE purchase option')
+    throw new Error('Selected MGE purchase option is no longer orderable')
   }
 
-  validateDraftMatchesCanonical(draft, canonical)
+  if (draftRecord) {
+    validateDraftMatchesCanonical(draftRecord, canonical)
+  }
 
   const exchangeRate = parseOptionalPositiveNumber(env.EUR_TO_SGD_RATE, DEFAULT_EUR_TO_SGD_RATE)
   const quote = calculateRetailPriceQuote(canonical.unitPrice ?? '', canonical.currency, exchangeRate)
   const orderLine = canonical.orderLine
   const canonicalSku = stringValue(orderLine?.sku) || stringValue(canonical.sku)
-  const selectedSize = stringValue(source.selected_size) || stringValue(draft.selectedSize)
-  const speedCode = canonical.productionSpeedCode || stringValue(draft.productionSpeedCode)
-  const speedLabel = canonical.productionSpeedLabel || stringValue(draft.productionSpeedLabel)
+  const selectedSize = stringValue(source.selected_size) || stringValue(draftRecord?.selectedSize)
+  const speedCode = canonical.productionSpeedCode || stringValue(draftRecord?.productionSpeedCode)
+  const speedLabel = canonical.productionSpeedLabel || stringValue(draftRecord?.productionSpeedLabel)
 
   return {
     dynamicPrice: true,
@@ -307,8 +313,9 @@ async function readCheckoutContext(
       selected_size: selectedSize,
       preview_id: previewId,
       preview_option_id: previewOptionId,
+      purchase_option_id: source.purchase_option_id || canonical.purchaseOptionId,
       distinct_id: source.distinct_id,
-      product: canonical.product ?? stringValue(draft.product),
+      product: canonical.product ?? stringValue(draftRecord?.product),
       sku: canonicalSku,
       production_speed: speedCode || speedLabel,
       source_currency: quote.sourceCurrency,
