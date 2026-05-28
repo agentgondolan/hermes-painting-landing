@@ -68,6 +68,7 @@ export interface BffPurchaseOptionsResult {
   purchaseOptions: Array<{
     purchaseOptionId: string
     previewOptionId: string
+    sku: string | null
     product: string | null
     label: string | null
     description: string | null
@@ -87,6 +88,7 @@ export interface BffOrderDraftResult {
   previewId: string
   previewOptionId: string
   purchaseOptionId: string
+  sku: string | null
   status: string
   product: string | null
   selectedSize: string | null
@@ -100,7 +102,7 @@ export interface BffOrderDraftResult {
 export interface BffOrderDraftInput {
   preview_id: string
   preview_option_id: string
-  purchase_option_id?: string | null
+  sku: string
   selected_size?: string | null
   delivery_address: Record<string, string>
 }

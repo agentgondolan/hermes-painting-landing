@@ -25,6 +25,7 @@ test('normalizes MGE purchase options into browser-safe camelCase payload', asyn
   const [standard, express] = normalized.purchaseOptions
   assert.equal(standard.purchaseOptionId, 'DOT/VF/40X50/W/BLACK/STD')
   assert.equal(standard.previewOptionId, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
+  assert.equal(standard.sku, 'DOT/VF/40X50/W/BLACK/STD')
   assert.equal(standard.product, 'DOT')
   assert.equal(standard.label, 'BLACK / source / Standard')
   assert.equal(standard.productionSpeedCode, 'STD')
@@ -151,7 +152,7 @@ test('order-draft BFF posts to documented plural MGE order-drafts endpoint', asy
         body: JSON.stringify({
           preview_id: 'preview-123',
           preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-          purchase_option_id: 'DOT/VF/40X50/W/BLACK/STD',
+          sku: 'DOT/VF/40X50/W/BLACK/STD',
           selected_size: '40x50',
           delivery_address: {
             name: 'Test Customer',
@@ -179,7 +180,7 @@ test('order-draft BFF posts to documented plural MGE order-drafts endpoint', asy
     assert.equal(upstreamBody.brand_id, '116')
     assert.equal(upstreamBody.preview_id, 'preview-123')
     assert.equal(upstreamBody.preview_option_id, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
-    assert.equal(upstreamBody.purchase_option_id, 'DOT/VF/40X50/W/BLACK/STD')
+    assert.equal('purchase_option_id' in upstreamBody, false)
     assert.deepEqual(upstreamBody.shipping_address, {
       name: 'Test Customer',
       email: 'test@example.com',

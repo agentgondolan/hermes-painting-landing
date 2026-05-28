@@ -1,6 +1,7 @@
 type NormalizedPurchaseOption = {
   purchaseOptionId: string
   previewOptionId: string
+  sku: string | null
   product: string | null
   productionSpeedCode: string | null
   productionSpeedLabel: string | null
@@ -39,6 +40,7 @@ type CheckoutOrderDraft = {
   previewId?: unknown
   previewOptionId?: unknown
   purchaseOptionId?: unknown
+  sku?: unknown
   status?: unknown
   product?: unknown
   selectedSize?: unknown
@@ -55,6 +57,7 @@ type CheckoutRequestBody = {
   preview_option_id?: unknown
   distinct_id?: unknown
   purchase_option_id?: unknown
+  sku?: unknown
   order_draft_id?: unknown
   order_draft?: CheckoutOrderDraft
 }
@@ -270,14 +273,14 @@ async function readCheckoutContext(
 
   const previewId = stringValue(source.preview_id) || stringValue(draft.previewId)
   const previewOptionId = stringValue(source.preview_option_id) || stringValue(draft.previewOptionId)
-  const purchaseOptionId = stringValue(source.purchase_option_id) || stringValue(draft.purchaseOptionId)
+  const sku = stringValue(source.sku) || stringValue(draft.sku) || stringValue(asRecord(draft.orderLine)?.sku) || stringValue(source.purchase_option_id) || stringValue(draft.purchaseOptionId)
 
   if (!previewId) throw new Error('preview_id is required for dynamic checkout')
   if (!previewOptionId) throw new Error('preview_option_id is required for dynamic checkout')
-  if (!purchaseOptionId) throw new Error('purchase_option_id is required for dynamic checkout')
+  if (!sku) throw new Error('sku is required for dynamic checkout')
 
   const token = requireValue(env.MGEVERYDAY_API_TOKEN, 'MGEVERYDAY_API_TOKEN')
-  const canonical = await loadCanonicalPurchaseOptionForCheckout(previewId, previewOptionId, purchaseOptionId, env, token, fetcher)
+  const canonical = await loadCanonicalPurchaseOptionForCheckout(previewId, previewOptionId, sku, env, token, fetcher)
   if (!canonical) {
     throw new Error('order_draft does not match an orderable MGE purchase option')
   }
@@ -287,7 +290,7 @@ async function readCheckoutContext(
   const exchangeRate = parseOptionalPositiveNumber(env.EUR_TO_SGD_RATE, DEFAULT_EUR_TO_SGD_RATE)
   const quote = calculateRetailPriceQuote(canonical.unitPrice ?? '', canonical.currency, exchangeRate)
   const orderLine = canonical.orderLine
-  const sku = stringValue(orderLine?.sku)
+  const canonicalSku = stringValue(orderLine?.sku) || stringValue(canonical.sku)
   const selectedSize = stringValue(source.selected_size) || stringValue(draft.selectedSize)
   const speedCode = canonical.productionSpeedCode || stringValue(draft.productionSpeedCode)
   const speedLabel = canonical.productionSpeedLabel || stringValue(draft.productionSpeedLabel)
@@ -304,10 +307,9 @@ async function readCheckoutContext(
       selected_size: selectedSize,
       preview_id: previewId,
       preview_option_id: previewOptionId,
-      purchase_option_id: purchaseOptionId,
       distinct_id: source.distinct_id,
       product: canonical.product ?? stringValue(draft.product),
-      sku,
+      sku: canonicalSku,
       production_speed: speedCode || speedLabel,
       source_currency: quote.sourceCurrency,
       source_unit_price: quote.sourceAmount.toFixed(2),
@@ -351,7 +353,7 @@ function validateDraftMatchesCanonical(draft: CheckoutOrderDraft, canonical: Nor
 async function loadCanonicalPurchaseOptionForCheckout(
   previewId: string,
   previewOptionId: string,
-  purchaseOptionId: string,
+  sku: string,
   env: StripeEnv,
   token: string,
   fetcher: Fetcher,
@@ -370,7 +372,7 @@ async function loadCanonicalPurchaseOptionForCheckout(
   for (const rawOption of rawOptions) {
     const option = normalizeCanonicalPurchaseOption(rawOption)
     if (option.previewOptionId !== previewOptionId) continue
-    if (option.purchaseOptionId !== purchaseOptionId) continue
+    if (option.sku !== sku) continue
     if (!option.orderLine || !option.unitPrice) continue
     return option
   }
@@ -390,6 +392,7 @@ function normalizeCanonicalPurchaseOption(raw: unknown): NormalizedPurchaseOptio
   return {
     purchaseOptionId: stringValue(obj.purchase_option_id) || sku || [previewOptionId, productionSpeedCode].filter(Boolean).join(':') || stringValue(obj.id),
     previewOptionId,
+    sku: sku || null,
     product: stringValue(obj.product) || stringValue(obj.product_code) || null,
     productionSpeedCode,
     productionSpeedLabel,

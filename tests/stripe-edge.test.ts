@@ -45,6 +45,7 @@ function orderDraft(overrides: Record<string, unknown> = {}) {
     previewId: 'preview_123',
     previewOptionId: 'option_123',
     purchaseOptionId: 'DOT/VF/40X50/W/BLACK/STD',
+    sku: 'DOT/VF/40X50/W/BLACK/STD',
     status: 'DRAFT',
     product: 'DOT',
     selectedSize: '40x50',
@@ -130,7 +131,7 @@ test('creates a dynamic SGD Checkout Session from the canonical MGE purchase opt
       body: JSON.stringify({
         preview_id: 'preview_123',
         preview_option_id: 'option_123',
-        purchase_option_id: 'DOT/VF/40X50/W/BLACK/STD',
+        sku: 'DOT/VF/40X50/W/BLACK/STD',
         selected_size: '40x50',
         order_draft_id: 'draft_123',
         order_draft: orderDraft({
@@ -156,7 +157,7 @@ test('creates a dynamic SGD Checkout Session from the canonical MGE purchase opt
   assert.equal(body.get('metadata[order_draft_id]'), 'draft_123')
   assert.equal(body.get('metadata[preview_id]'), 'preview_123')
   assert.equal(body.get('metadata[preview_option_id]'), 'option_123')
-  assert.equal(body.get('metadata[purchase_option_id]'), 'DOT/VF/40X50/W/BLACK/STD')
+  assert.equal(body.get('metadata[purchase_option_id]'), null)
   assert.equal(body.get('metadata[sku]'), 'DOT/VF/40X50/W/BLACK/STD')
   assert.equal(body.get('metadata[retail_unit_amount_sgd]'), '3499')
 })
@@ -178,7 +179,7 @@ test('rejects tampered order drafts before creating Stripe sessions', async () =
       body: JSON.stringify({
         preview_id: 'preview_123',
         preview_option_id: 'option_123',
-        purchase_option_id: 'DOT/VF/40X50/W/BLACK/STD',
+        sku: 'DOT/VF/40X50/W/BLACK/STD',
         order_draft_id: 'draft_123',
         order_draft: orderDraft({ unitPrice: '1.00' }),
       }),

@@ -48,7 +48,7 @@ Free-tier fit as of 2026-05-19: Cloudflare Workers/Pages Functions include a fre
 
 ## Phase 1 — DOT preview integration: multi-size previews on 3D canvas
 
-**Status:** In implementation. The live site has a server-side MGE preview BFF and can create/poll real DOT previews. The UI phase now prioritizes the default frame size first, keeps the cropped uploaded image on the 3D canvas while MGE generates the DOT preview, then swaps the canvas texture to MGE `preview_url` when ready. MGE already returns the desired clean `preview_url`; mockup output is not a blocker.
+**Status:** Done / live-verified on 2026-05-28. The live site has a server-side MGE preview BFF, creates and polls real DOT previews, exposes purchase-ready preview options, and uses MGE `preview_url` as the clean generated image source. Default-size preview generation and the preview → purchase-options path were verified against the live Cloudflare Pages deployment.
 
 **Purpose:** From one uploaded image, generate DOT previews for the selectable frame sizes and show the selected size-specific preview on the 3D canvas.
 
@@ -112,6 +112,8 @@ Free-tier fit as of 2026-05-19: Cloudflare Workers/Pages Functions include a fre
 
 ## Phase 3 — Order draft creation
 
+**Status:** Done / live-verified on 2026-05-28 for preview-backed DOT drafts. Live BFF creates MGE order drafts from canonical purchase options. Direct MGE validation returned `valid: true` for `DOT/VF/40X50/W/BLACK/STD`.
+
 **Purpose:** Convert a selected preview option into a server-side MGEeveryday cart/draft.
 
 **MGE API endpoints:**
@@ -143,6 +145,8 @@ Free-tier fit as of 2026-05-19: Cloudflare Workers/Pages Functions include a fre
 
 ## Phase 4 — Fake payment/admin testing gate
 
+**Status:** Not done. The current live flow has Stripe test-mode checkout, but no separate server-side admin/fake-payment gate. Final MGE submit is still blocked from the public UI because webhook-driven submit/idempotency is not wired yet.
+
 **Purpose:** Let Matej test the full order flow without real money or public users accidentally submitting.
 
 **Scope:**
@@ -159,6 +163,8 @@ Free-tier fit as of 2026-05-19: Cloudflare Workers/Pages Functions include a fre
 ---
 
 ## Phase 5 — Submit order
+
+**Status:** Supplier API verified manually on 2026-05-28, app flow not complete. A real MGE order was submitted from a validated draft through `POST /api/v1/order-drafts/{id}/submit/`; the live app does not yet submit automatically after Stripe payment.
 
 **Purpose:** Create a real MGEeveryday order from the validated draft.
 
@@ -182,6 +188,8 @@ Free-tier fit as of 2026-05-19: Cloudflare Workers/Pages Functions include a fre
 
 ## Phase 6 — Makeyourcraft account + transactional emails
 
+**Status:** Not done. No customer account/order-status area or transactional email flow is implemented yet.
+
 **Purpose:** Give users a customer account area and order emails.
 
 **Scope:**
@@ -198,6 +206,8 @@ Free-tier fit as of 2026-05-19: Cloudflare Workers/Pages Functions include a fre
 ---
 
 ## Phase 7 — Real payment, Singapore first
+
+**Status:** Partially done. Live Stripe Checkout session creation works with dynamic `price_data` from MGE purchase options and redirects to Stripe Sandbox. Browser payment completion was not fully verified from the agent session, and the Stripe webhook currently verifies/acknowledges events but does not yet submit the MGE order exactly once.
 
 **Purpose:** Replace fake payment with real payment suitable for Singapore DOT test.
 

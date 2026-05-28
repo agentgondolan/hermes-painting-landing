@@ -28,6 +28,7 @@ interface NormalizedPreview {
 export interface NormalizedPurchaseOption {
   purchaseOptionId: string
   previewOptionId: string
+  sku: string | null
   product: string | null
   label: string | null
   description: string | null
@@ -52,6 +53,7 @@ interface NormalizedOrderDraft {
   previewId: string
   previewOptionId: string
   purchaseOptionId: string
+  sku: string | null
   status: string
   product: string | null
   selectedSize: string | null
@@ -188,12 +190,13 @@ async function createOrderDraft(request: Request, env: Env): Promise<Response> {
   const body = asRecord(raw)
   const previewId = normalizePreviewId(String(body.preview_id ?? ''))
   const previewOptionId = normalizeId(String(body.preview_option_id ?? ''))
-  const purchaseOptionId = normalizeId(String(body.purchase_option_id ?? ''))
+  const sku = normalizeSku(String(body.sku ?? body.purchase_option_id ?? ''))
 
   if (!previewId) return json({ error: 'preview_id is required' }, 400)
   if (!previewOptionId) return json({ error: 'preview_option_id is required' }, 400)
+  if (!sku) return json({ error: 'sku is required' }, 400)
 
-  const canonical = await loadCanonicalPurchaseOption(previewId, previewOptionId, purchaseOptionId, env, token)
+  const canonical = await loadCanonicalPurchaseOption(previewId, previewOptionId, sku, env, token)
   if (!canonical) {
     return json({ error: 'Selected MGE purchase option is no longer orderable' }, 409)
   }
@@ -202,7 +205,6 @@ async function createOrderDraft(request: Request, env: Env): Promise<Response> {
     brand_id: env.MGEVERYDAY_BRAND_ID || DEFAULT_BRAND_ID,
     preview_id: previewId,
     preview_option_id: previewOptionId,
-    purchase_option_id: canonical.purchaseOptionId,
     selected_size: pickFirstString([body.selected_size]),
     product: canonical.product ?? 'DOT',
     shipping_address: sanitizeShippingAddress(body.delivery_address),
@@ -225,7 +227,7 @@ async function createOrderDraft(request: Request, env: Env): Promise<Response> {
 export async function loadCanonicalPurchaseOption(
   previewId: string,
   previewOptionId: string,
-  purchaseOptionId: string | null,
+  sku: string,
   env: Env,
   token: string,
   fetcher: typeof fetch = fetch,
@@ -238,7 +240,7 @@ export async function loadCanonicalPurchaseOption(
   const options = normalizePurchaseOptions(raw).purchaseOptions
   return options.find((option) => {
     if (option.previewOptionId !== previewOptionId) return false
-    if (purchaseOptionId && option.purchaseOptionId !== purchaseOptionId) return false
+    if (option.sku !== sku) return false
     return Boolean(option.orderLine && option.unitPrice)
   }) ?? null
 }
@@ -365,6 +367,7 @@ export function normalizeOrderDraft(raw: unknown, canonical: NormalizedPurchaseO
     previewId: pickFirstString([obj.preview_id]) ?? '',
     previewOptionId,
     purchaseOptionId: pickFirstString([obj.purchase_option_id, canonical.purchaseOptionId]) ?? canonical.purchaseOptionId,
+    sku: pickFirstString([obj.sku, orderLine?.sku, canonical.sku]),
     status: pickFirstString([obj.status]) ?? 'DRAFT',
     product: pickFirstString([obj.product, obj.product_code, canonical.product]),
     selectedSize: pickFirstString([obj.selected_size]),
@@ -388,6 +391,7 @@ function normalizePurchaseOption(raw: unknown): NormalizedPurchaseOption {
   return {
     purchaseOptionId: pickFirstString([obj.purchase_option_id, sku, [previewOptionId, productionSpeedCode].filter(Boolean).join(':'), obj.id]) ?? previewOptionId,
     previewOptionId,
+    sku,
     product: pickFirstString([obj.product, obj.product_code]),
     label: pickFirstString([obj.label, obj.name]),
     description: pickFirstString([obj.description]),
@@ -474,6 +478,11 @@ function normalizePreviewId(previewId: string): string | null {
 function normalizeId(value: string): string | null {
   const decoded = decodeURIComponent(value).trim()
   return /^[a-zA-Z0-9_:-]+$/.test(decoded) ? decoded : null
+}
+
+function normalizeSku(value: string): string | null {
+  const decoded = decodeURIComponent(value).trim()
+  return /^[a-zA-Z0-9_./:-]+$/.test(decoded) ? decoded : null
 }
 
 function sanitizeShippingAddress(value: unknown): JsonRecord {
