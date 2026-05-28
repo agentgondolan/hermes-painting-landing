@@ -202,7 +202,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
       const orderDraft = await client.createOrderDraft({
         preview_id: previewId,
         preview_option_id: selectedPurchaseOption.previewOptionId,
-        purchase_option_id: purchaseOptionId,
+        sku: optionSku(selectedPurchaseOption),
         selected_size: selectedSize?.id ?? null,
         delivery_address: sanitizeAddressForDraft(address),
       })
@@ -222,7 +222,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
           selected_size: selectedSize?.id,
           preview_id: previewId,
           preview_option_id: selectedPurchaseOption.previewOptionId,
-          purchase_option_id: purchaseOptionId,
+          sku: optionSku(selectedPurchaseOption),
         }),
       })
       const payload = await response.json().catch(() => null) as { url?: string; error?: string; detail?: string } | null
@@ -249,8 +249,8 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
   }
 
   const panelClassName = showAddress
-    ? "pointer-events-auto fixed inset-x-3 bottom-3 z-50 mx-auto max-h-[calc(100dvh-1.5rem)] max-w-md overflow-y-auto rounded-[2rem] border border-white/15 bg-black/82 p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] shadow-2xl shadow-black/50 backdrop-blur-xl"
-    : "pointer-events-auto w-full rounded-3xl border border-white/15 bg-black/35 p-3 shadow-2xl shadow-black/30 backdrop-blur-md"
+    ? "w-full"
+    : "w-full rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-3"
 
   const closeAddressStep = () => {
     setShowAddress(false)
@@ -258,16 +258,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
   }
 
   return (
-    <>
-      {showAddress && (
-        <button
-          type="button"
-          aria-label="Close delivery details"
-          onClick={closeAddressStep}
-          className="fixed inset-0 z-40 cursor-default bg-black/35 backdrop-blur-[2px]"
-        />
-      )}
-      <div className={panelClassName}>
+    <div className={panelClassName}>
       {!showAddress ? (
         <>
           <div className="flex items-center justify-between gap-3">
@@ -356,8 +347,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
       {(error || quote.error) && (
         <p className="mt-2 text-xs text-amber-200/80">{error || quote.error}</p>
       )}
-      </div>
-    </>
+    </div>
   )
 }
 
@@ -386,6 +376,10 @@ function quoteForOption(option: PurchaseOption | null, optionCount: number): Quo
 function optionIdentity(option: PurchaseOption | null): string | null {
   if (!option) return null
   return option.purchaseOptionId || `${option.previewOptionId}:${option.productionSpeedCode ?? option.productionSpeedLabel ?? option.orderLine?.sku ?? option.unitPrice ?? "option"}`
+}
+
+function optionSku(option: PurchaseOption): string {
+  return typeof option.sku === "string" && option.sku ? option.sku : String(option.orderLine?.sku ?? option.purchaseOptionId)
 }
 
 function modeLabel(option: PurchaseOption): string {

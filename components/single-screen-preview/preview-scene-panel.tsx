@@ -17,6 +17,8 @@ export function PreviewScenePanel({ sceneModel }: PreviewScenePanelProps) {
           previewKind={sceneModel.previewKind}
           selectedSize={sceneModel.selectedSize}
           isProcessing={sceneModel.isProcessing}
+          presentationScale={0.82}
+          presentationOffsetY={0.82}
         />
       </Suspense>
     </div>

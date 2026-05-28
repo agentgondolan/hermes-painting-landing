@@ -26,6 +26,8 @@ type ProductSceneCanvasProps = {
   previewKind?: "none" | "temporary" | "final"
   selectedSize?: { id: string; label: string; widthCm: number; heightCm: number } | null
   isProcessing?: boolean
+  presentationScale?: number
+  presentationOffsetY?: number
 }
 
 type CanvasDimensions = {
@@ -861,7 +863,15 @@ function StageFloor() {
   )
 }
 
-function ProductRig({ reducedMotion = false, rotationY = 0, artworkTextureUrl, frameSizeId = DEFAULT_FRAME_SIZE_ID, orientation = "vertical" }: ProductSceneCanvasProps) {
+function ProductRig({
+  reducedMotion = false,
+  rotationY = 0,
+  artworkTextureUrl,
+  frameSizeId = DEFAULT_FRAME_SIZE_ID,
+  orientation = "vertical",
+  presentationScale = 1,
+  presentationOffsetY = 0,
+}: ProductSceneCanvasProps) {
   const group = useRef<THREE.Group>(null)
   const dimensions = useCanvasDimensions(frameSizeId, orientation)
   const baseTiltX = 0
@@ -885,7 +895,7 @@ function ProductRig({ reducedMotion = false, rotationY = 0, artworkTextureUrl, f
   })
 
   return (
-    <>
+    <group position={[0, presentationOffsetY, 0]} scale={presentationScale}>
       <StageFloor />
 
       <group ref={group} position={[0, basePositionY, basePositionZ]} rotation={[baseTiltX, rotationY, 0]}>
@@ -893,7 +903,7 @@ function ProductRig({ reducedMotion = false, rotationY = 0, artworkTextureUrl, f
           <Easel artworkTextureUrl={artworkTextureUrl} frameSizeId={frameSizeId} orientation={orientation} />
         </group>
       </group>
-    </>
+    </group>
   )
 }
 
