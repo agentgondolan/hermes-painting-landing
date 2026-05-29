@@ -1,16 +1,12 @@
 import type { Metadata } from 'next'
-import { Inter_Tight, Outfit } from 'next/font/google'
+import { Outfit } from 'next/font/google'
 import { AnalyticsProvider } from '@/components/analytics-provider'
 import './globals.css'
-
-const interTight = Inter_Tight({
-  subsets: ['latin'],
-  variable: '--font-inter-tight',
-})
 
 const outfit = Outfit({
   subsets: ['latin'],
   variable: '--font-outfit',
+  display: 'swap',
 })
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://dottingo.sg'
@@ -27,9 +23,9 @@ export const metadata: Metadata = {
     canonical: '/',
   },
   icons: {
-    icon: [{ url: '/favicon.svg', type: 'image/svg+xml' }],
-    shortcut: ['/favicon.svg'],
-    apple: ['/favicon.svg'],
+    icon: [{ url: '/favicon.png', type: 'image/png' }],
+    shortcut: ['/favicon.png'],
+    apple: ['/apple-touch-icon.png'],
   },
   openGraph: {
     title,
@@ -61,7 +57,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${interTight.variable} ${outfit.variable}`}>
+      <body className={outfit.variable}>
         <AnalyticsProvider>{children}</AnalyticsProvider>
       </body>
     </html>

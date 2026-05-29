@@ -17,7 +17,7 @@
 }
 
 @theme inline {
-  --font-sans: var(--font-inter-tight);
+  --font-sans: var(--font-outfit);
   --font-display: var(--font-outfit);
   --text-display-xl: clamp(3.8rem, 7vw, 7.5rem);
   --text-display-sm: clamp(2rem, 3vw, 3.8rem);

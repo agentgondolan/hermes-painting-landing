@@ -34,7 +34,12 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
   const [selectedPurchaseOptionId, setSelectedPurchaseOptionId] = useState<string | null>(null)
   const [loadingOptions, setLoadingOptions] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState(false)
+  const [checkoutComingSoon, setCheckoutComingSoon] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setCheckoutComingSoon(/(^|\.)dottingo\.sg$/i.test(window.location.hostname))
+  }, [])
 
   useEffect(() => {
     const restored = readStoredCheckoutState()
@@ -132,6 +137,10 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
   }
 
   const handleCheckout = async () => {
+    if (checkoutComingSoon) {
+      setError("Checkout coming soon.")
+      return
+    }
     if (!previewId || !selectedPurchaseOption || quote.error) return
 
     setCheckoutLoading(true)
@@ -209,10 +218,10 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
             <button
               type="button"
               onClick={handleCheckout}
-              disabled={checkoutLoading || loadingOptions || Boolean(quote.error) || !selectedPurchaseOption}
+              disabled={checkoutLoading || loadingOptions || Boolean(quote.error) || !selectedPurchaseOption || checkoutComingSoon}
               className="shrink-0 rounded-full bg-[#9432c1] px-5 py-2.5 text-sm font-extrabold text-white shadow-[0_14px_34px_rgba(148,50,193,0.28)] transition hover:bg-[#7f28aa] disabled:cursor-not-allowed disabled:bg-[#2e2d2c]/10 disabled:text-[#2e2d2c]/35"
             >
-              {checkoutLoading ? "Opening Stripe…" : "Checkout"}
+              {checkoutComingSoon ? "Coming soon" : checkoutLoading ? "Opening Stripe…" : "Checkout"}
             </button>
           </div>
 
