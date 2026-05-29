@@ -212,7 +212,7 @@ async function createOrderDraft(request: Request, env: Env): Promise<Response> {
     product: canonical.product ?? 'DOT',
     shipping_address: shippingAddress,
     line_items: canonical.orderLine ? [canonical.orderLine] : undefined,
-    source: 'makeyourcraft_landing',
+    source: 'dottingo_landing',
   }
 
   const response = await fetch(`${baseUrl(env)}/api/v1/order-drafts/`, {

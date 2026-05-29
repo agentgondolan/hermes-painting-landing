@@ -108,7 +108,8 @@ function withBaseProperties(properties: AnalyticsProperties) {
     $current_url: properties.$current_url ?? (typeof window !== 'undefined' ? window.location.href : undefined),
     $referrer: properties.$referrer ?? (typeof document !== 'undefined' ? document.referrer || null : undefined),
     product: properties.product ?? 'paint_by_numbers',
-    site: 'makeyourcraft_landing',
+    site: 'dottingo_landing',
+    brand_key: 'dottingo',
     funnel: properties.funnel ?? 'photo_to_preview_to_order',
     app_version: process.env.NEXT_PUBLIC_APP_VERSION,
   })
@@ -140,7 +141,7 @@ function captureViaPostHogApi(eventName: string, properties: AnalyticsProperties
 }
 
 function getOrCreateDistinctId() {
-  const storageKey = 'makeyourcraft_posthog_distinct_id'
+  const storageKey = 'dottingo_posthog_distinct_id'
   const persisted = window.localStorage.getItem(storageKey)
   if (persisted) return persisted
 

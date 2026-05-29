@@ -1,7 +1,7 @@
 import Link from 'next/link'
 
 export const metadata = {
-  title: 'Checkout cancelled | Makeyourcraft',
+  title: 'Checkout cancelled | Dottingo',
   description: 'Return to your custom paint-by-numbers preview.',
 }
 

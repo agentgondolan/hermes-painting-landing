@@ -1,6 +1,6 @@
 import { SingleScreenPreviewShell } from "@/components/single-screen-preview/single-screen-preview-shell"
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://painting.makeyourcraft.com"
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://dottingo.sg"
 
 const structuredData = {
   "@context": "https://schema.org",
@@ -8,12 +8,12 @@ const structuredData = {
     {
       "@type": ["Organization", "OnlineStore"],
       "@id": `${siteUrl}/#organization`,
-      name: "Makeyourcraft",
+      name: "Dottingo",
       url: siteUrl,
       logo: `${siteUrl}/favicon.svg`,
       description:
-        "Makeyourcraft creates personalized paint-by-numbers kits from customer photos.",
-      sameAs: ["https://makeyourcraft.com"],
+        "Dottingo creates personalized paint-by-numbers kits from customer photos.",
+      sameAs: ["https://dottingo.sg"],
     },
     {
       "@type": "Service",
@@ -42,7 +42,7 @@ export default function Home() {
       <section className="sr-only" aria-labelledby="seo-heading">
         <h1 id="seo-heading">Custom paint by numbers from your photo</h1>
         <p>
-          Makeyourcraft turns favorite photos into personalized paint-by-numbers
+          Dottingo turns favorite photos into personalized paint-by-numbers
           kits. Upload your picture, preview the custom artwork, and create a
           meaningful handmade gift for family, couples, pet lovers, or yourself.
         </p>

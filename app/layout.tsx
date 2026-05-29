@@ -13,8 +13,8 @@ const playfair = Playfair_Display({
   variable: '--font-playfair',
 })
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://painting.makeyourcraft.com'
-const title = 'Custom Paint by Numbers from Your Photo | Makeyourcraft'
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://dottingo.sg'
+const title = 'Custom Paint by Numbers from Your Photo | Dottingo'
 const description =
   'Turn your favorite photo into a personalized paint-by-numbers kit. Upload a picture, preview your custom artwork, and create a meaningful handmade gift.'
 const ogImage = '/opengraph-image.png'
@@ -35,14 +35,14 @@ export const metadata: Metadata = {
     title,
     description,
     url: '/',
-    siteName: 'Makeyourcraft',
+    siteName: 'Dottingo',
     type: 'website',
     images: [
       {
         url: ogImage,
         width: 1200,
         height: 630,
-        alt: 'Makeyourcraft custom paint-by-numbers kit preview',
+        alt: 'Dottingo custom paint-by-numbers kit preview',
       },
     ],
   },

@@ -20,6 +20,11 @@ jobs:
       STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
       PROJECT_NAME: hermes-painting-landing
       BUILD_DIR: .next/prod
+      NEXT_PUBLIC_SITE_URL: https://dottingo.sg
+      NEXT_PUBLIC_BRAND_KEY: dottingo
+      CLOUDFLARE_ZONE_NAME: dottingo.sg
+      CLOUDFLARE_PAGES_TARGET: hermes-painting-landing.pages.dev
+      CLOUDFLARE_PAGES_DOMAINS: dottingo.sg,www.dottingo.sg
       NEXT_PUBLIC_MGE_BFF_BASE_URL: ${{ vars.NEXT_PUBLIC_MGE_BFF_BASE_URL }}
       NEXT_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
       NEXT_PUBLIC_POSTHOG_HOST: ${{ vars.NEXT_PUBLIC_POSTHOG_HOST }}
@@ -55,3 +60,6 @@ jobs:
 
       - name: Deploy to Cloudflare Pages
         run: npx wrangler pages deploy "$BUILD_DIR" --project-name="$PROJECT_NAME" --branch=main
+
+      - name: Configure Dottingo custom domains
+        run: node scripts/setup-cloudflare-pages-domain.mjs

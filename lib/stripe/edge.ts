@@ -108,7 +108,8 @@ export async function createStripeCheckoutSession(
     body.set('shipping_address_collection[allowed_countries][0]', 'SG')
     body.set('billing_address_collection', 'required')
     body.set('phone_number_collection[enabled]', 'true')
-    body.set('metadata[source]', 'makeyourcraft_landing')
+    body.set('metadata[source]', 'dottingo_landing')
+    body.set('metadata[brand_key]', 'dottingo')
     body.set('metadata[product]', checkoutContext.metadata.product ?? 'DOT')
 
     if (checkoutContext.dynamicPrice) {

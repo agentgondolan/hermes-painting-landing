@@ -1,7 +1,7 @@
 import Link from 'next/link'
 
 export const metadata = {
-  title: 'Order confirmed | Makeyourcraft',
+  title: 'Order confirmed | Dottingo',
   description: 'Your custom paint-by-numbers order was received.',
 }
 
@@ -16,7 +16,7 @@ export default function CheckoutSuccessPage() {
           Your kit is on its way to production.
         </h1>
         <p className="mt-6 max-w-xl text-base leading-7 text-black/65 md:text-lg">
-          Thanks for ordering from Makeyourcraft. We have received your checkout
+          Thanks for ordering from Dottingo. We have received your checkout
           and will continue preparing your personalized paint-by-numbers kit.
         </p>
         <Link

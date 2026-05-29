@@ -3,7 +3,7 @@
 import type { DotPreviewResult, FrameSizeOption, PreviewState } from "./preview-state"
 
 const STORAGE_VERSION = 1
-const CHECKOUT_STATE_KEY = "makeyourcraft.checkout.restore.v1"
+const CHECKOUT_STATE_KEY = "dottingo.checkout.restore.v1"
 const CHECKOUT_TTL_MS = 1000 * 60 * 60 * 24
 
 type StoredPreview = Pick<PreviewState, "selectedSize" | "dotPreviews" | "finalUrl">
