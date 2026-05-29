@@ -94,10 +94,21 @@ async function ensurePagesDomain(domain) {
   console.log(`Pages domain added: ${domain} (${created.result?.status || 'pending'})`)
 }
 
-const zoneId = await getZoneId()
-console.log(`Using Cloudflare zone ${zoneName} (${zoneId})`)
+let zoneId = null
+try {
+  zoneId = await getZoneId()
+  console.log(`Using Cloudflare zone ${zoneName} (${zoneId})`)
+} catch (error) {
+  console.log(`DNS setup skipped: ${error.message}`)
+}
 
 for (const domain of domains) {
-  await ensureDnsRecord(zoneId, domain)
   await ensurePagesDomain(domain)
+
+  if (!zoneId) continue
+  try {
+    await ensureDnsRecord(zoneId, domain)
+  } catch (error) {
+    console.log(`DNS setup skipped for ${domain}: ${error.message}`)
+  }
 }
