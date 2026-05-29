@@ -39,7 +39,8 @@ type CanvasDimensions = {
 function StudioLighting() {
   return (
     <>
-      <color attach="background" args={['#faf8ff']} />
+      {/* Keep the WebGL canvas transparent so the CSS/logo layer can show through
+          empty wall space while the easel/canvas meshes still occlude it. */}
       <fog attach="fog" args={['#faf8ff', 13, 28]} />
       <ambientLight intensity={1.1} color="#ffffff" />
       <hemisphereLight intensity={0.82} color="#ffffff" groundColor="#d7d7d7" />
