@@ -37,13 +37,15 @@ html {
 }
 
 body {
+  --font-sans: var(--font-outfit);
+  --font-display: var(--font-outfit);
   margin: 0;
   min-height: 100vh;
   background:
     radial-gradient(circle at 50% -10%, rgba(148, 50, 193, 0.16), transparent 34rem),
     linear-gradient(180deg, #fff 0%, var(--page) 58%, #f4e8fb 100%);
   color: var(--ink);
-  font-family: var(--font-sans), sans-serif;
+  font-family: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
 }
 
 a {
