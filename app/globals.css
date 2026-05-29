@@ -1,20 +1,24 @@
 @import "tailwindcss";
 
 :root {
-  --page: #f6f1e8;
-  --surface: #f8f4ec;
-  --ink: #111111;
-  --accent: #d7a15f;
-  --accent-soft: #ead8bf;
+  --page: #faf8ff;
+  --surface: #ffffff;
+  --ink: #2e2d2c;
+  --brand-purple: #9432c1;
+  --brand-purple-dark: #6f1a9a;
+  --brand-purple-soft: #f0dcfa;
+  --brand-lilac: #c778e7;
+  --accent: #9432c1;
+  --accent-soft: #f0dcfa;
   --content-max: 1280px;
   --radius-xl: 32px;
   --radius-lg: 24px;
-  --shadow-card: 0 24px 80px rgba(17, 17, 17, 0.12);
+  --shadow-card: 0 24px 80px rgba(46, 45, 44, 0.12);
 }
 
 @theme inline {
-  --font-sans: var(--font-inter);
-  --font-display: var(--font-playfair);
+  --font-sans: var(--font-inter-tight);
+  --font-display: var(--font-outfit);
   --text-display-xl: clamp(3.8rem, 7vw, 7.5rem);
   --text-display-sm: clamp(2rem, 3vw, 3.8rem);
   --text-body-lg: clamp(1.02rem, 1rem + 0.32vw, 1.35rem);
@@ -35,7 +39,9 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--page);
+  background:
+    radial-gradient(circle at 50% -10%, rgba(148, 50, 193, 0.16), transparent 34rem),
+    linear-gradient(180deg, #fff 0%, var(--page) 58%, #f4e8fb 100%);
   color: var(--ink);
   font-family: var(--font-sans), sans-serif;
 }
@@ -122,7 +128,19 @@ img {
 }
 
 ::selection {
-  background: rgba(215, 161, 95, 0.35);
+  background: rgba(148, 50, 193, 0.26);
+}
+
+.dottingo-wordmark {
+  width: clamp(9rem, 19vw, 16rem);
+  height: auto;
+}
+
+.dottingo-brand-glow {
+  background:
+    radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.2) 21%, transparent 34%),
+    radial-gradient(circle at 48% 48%, rgba(148, 50, 193, 0.3), transparent 42%),
+    linear-gradient(135deg, rgba(148, 50, 193, 0.24), rgba(255, 255, 255, 0.02));
 }
 
 @media (max-width: 640px) {

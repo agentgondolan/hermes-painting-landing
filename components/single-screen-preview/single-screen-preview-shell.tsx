@@ -33,7 +33,7 @@ export function SingleScreenPreviewShell() {
 
       {/* Bottom Modal Zone */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 sm:px-4">
-        <div className="pointer-events-auto mx-auto max-h-[min(62dvh,34rem)] max-w-md overflow-y-auto rounded-[2rem] border border-white/15 bg-black/82 p-3 shadow-2xl shadow-black/50 backdrop-blur-xl sm:p-4">
+        <div className="pointer-events-auto mx-auto max-h-[min(62dvh,34rem)] max-w-md overflow-y-auto rounded-[2rem] border border-[#9432c1]/15 bg-white/82 p-3 text-[#2e2d2c] shadow-[0_28px_80px_rgba(148,50,193,0.22)] backdrop-blur-xl sm:p-4">
           <div className="flex min-h-[168px] flex-col items-center justify-center gap-3">
             <PurchasePanel selectedSize={state.selectedSize} selectedPreview={selectedPreview ?? null} />
             <GuidedControls

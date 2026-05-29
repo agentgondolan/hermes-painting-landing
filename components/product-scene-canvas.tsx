@@ -39,8 +39,8 @@ type CanvasDimensions = {
 function StudioLighting() {
   return (
     <>
-      <color attach="background" args={['#0e0b09']} />
-      <fog attach="fog" args={['#0e0b09', 13, 28]} />
+      <color attach="background" args={['#faf8ff']} />
+      <fog attach="fog" args={['#faf8ff', 13, 28]} />
       <ambientLight intensity={1.1} color="#ffffff" />
       <hemisphereLight intensity={0.82} color="#ffffff" groundColor="#d7d7d7" />
       <directionalLight
@@ -857,7 +857,7 @@ function StageFloor() {
       </mesh>
       <mesh rotation={floorRotation} position={[floorPosition[0], floorPosition[1] + 0.0015, floorPosition[2]]} receiveShadow>
         <circleGeometry args={[7.7, 96]} />
-        <shadowMaterial transparent opacity={0.26} />
+        <shadowMaterial transparent color="#9432c1" opacity={0.16} />
       </mesh>
     </group>
   )

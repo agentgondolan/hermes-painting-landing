@@ -90,9 +90,18 @@ export function GuidedControls({
 
       {/* Upload */}
       {guidedModel.showUpload && (
+        <div className="flex max-w-[22rem] flex-col items-center gap-1 text-center">
+          <p className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-[#9432c1]/70">Dottingo custom kit</p>
+          <h1 className="text-balance text-2xl font-black leading-[0.95] tracking-[-0.04em] text-[#2e2d2c] sm:text-3xl">
+            Turn a photo into paint-by-numbers.
+          </h1>
+        </div>
+      )}
+
+      {guidedModel.showUpload && (
         <button
           onClick={() => triggerUpload('initial_upload')}
-          className="rounded-full bg-white/10 border border-white/20 px-6 py-3 text-sm font-medium text-white transition hover:bg-white/20"
+          className="rounded-full border border-[#9432c1]/15 bg-[#9432c1] px-6 py-3 text-sm font-extrabold text-white shadow-[0_14px_34px_rgba(148,50,193,0.28)] transition hover:bg-[#7f28aa]"
         >
           {UX_COPY.upload}
         </button>
@@ -102,7 +111,7 @@ export function GuidedControls({
       {guidedModel.showReplace && (
         <button
           onClick={() => triggerUpload('replace_photo')}
-          className="text-xs text-white/30 underline hover:text-white/60"
+          className="text-xs font-semibold text-[#9432c1]/55 underline hover:text-[#9432c1]"
         >
           {UX_COPY.replaceImage}
         </button>
@@ -117,8 +126,8 @@ export function GuidedControls({
               onClick={() => handleSetSize(opt)}
               className={`rounded-full border px-4 py-1.5 text-sm font-medium transition ${
                 selectedSize?.id === opt.id
-                  ? "bg-white/20 border-white/40 text-white"
-                  : "border-white/20 text-white/70 hover:bg-white/10 hover:text-white"
+                  ? "border-[#9432c1] bg-[#9432c1] text-white shadow-[0_10px_26px_rgba(148,50,193,0.22)]"
+                  : "border-[#9432c1]/18 bg-white/60 text-[#2e2d2c]/70 hover:bg-[#f0dcfa] hover:text-[#9432c1]"
               }`}
             >
               {opt.label}
@@ -132,7 +141,7 @@ export function GuidedControls({
         <div className="flex flex-col items-center gap-2">
           <button
             onClick={handleBuyClick}
-            className="rounded-full bg-[#2d6a4f] border-none px-8 py-2.5 text-sm font-semibold text-white transition hover:bg-[#40916c]"
+            className="rounded-full border-none bg-[#9432c1] px-8 py-2.5 text-sm font-extrabold text-white shadow-[0_14px_34px_rgba(148,50,193,0.28)] transition hover:bg-[#7f28aa]"
           >
             {UX_COPY.buyCta}
           </button>
@@ -142,10 +151,10 @@ export function GuidedControls({
       {/* Error */}
       {guidedModel.showError && (
         <div className="flex flex-col items-center gap-2">
-          <p className="text-xs text-red-300/80">{guidedModel.helperText}</p>
+          <p className="text-xs text-[#b42318]">{guidedModel.helperText}</p>
           <button
             onClick={handleRetry}
-            className="text-xs text-white/50 underline hover:text-white/80"
+            className="text-xs font-semibold text-[#9432c1]/65 underline hover:text-[#9432c1]"
           >
             {UX_COPY.retry}
           </button>
@@ -154,7 +163,7 @@ export function GuidedControls({
 
       {/* Helper text when idle */}
       {guidedModel.showUpload && (
-        <p className="text-xs text-white/20">{guidedModel.helperText}</p>
+        <p className="text-xs font-medium text-[#2e2d2c]/42">{guidedModel.helperText}</p>
       )}
     </div>
   )

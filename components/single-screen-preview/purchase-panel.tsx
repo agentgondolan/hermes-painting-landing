@@ -188,7 +188,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
     return null
   }
 
-  const panelClassName = "w-full rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-3"
+  const panelClassName = "w-full rounded-[1.5rem] border border-[#9432c1]/12 bg-white/72 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]"
 
   return (
     <div className={panelClassName}>
@@ -196,12 +196,12 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-baseline gap-2">
-                <p className="text-lg font-semibold text-white">
+                <p className="text-lg font-extrabold text-[#2e2d2c]">
                   {quote.loading ? "Loading…" : quote.error ? "—" : `${quote.currency} ${quote.amount}`}
                 </p>
-                <p className="truncate text-xs text-white/45">{selectedSize?.label ?? "Custom size"}</p>
+                <p className="truncate text-xs font-semibold text-[#9432c1]/70">{selectedSize?.label ?? "Custom size"}</p>
               </div>
-              <p className="mt-0.5 truncate text-xs text-white/35">
+              <p className="mt-0.5 truncate text-xs font-medium text-[#2e2d2c]/48">
                 {selectedPurchaseOption?.label ?? "Custom paint-by-number kit"}
               </p>
             </div>
@@ -210,7 +210,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
               type="button"
               onClick={handleCheckout}
               disabled={checkoutLoading || loadingOptions || Boolean(quote.error) || !selectedPurchaseOption}
-              className="shrink-0 rounded-full bg-[#52b788] px-5 py-2.5 text-sm font-semibold text-[#07140f] transition hover:bg-[#74c69d] disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/35"
+              className="shrink-0 rounded-full bg-[#9432c1] px-5 py-2.5 text-sm font-extrabold text-white shadow-[0_14px_34px_rgba(148,50,193,0.28)] transition hover:bg-[#7f28aa] disabled:cursor-not-allowed disabled:bg-[#2e2d2c]/10 disabled:text-[#2e2d2c]/35"
             >
               {checkoutLoading ? "Opening Stripe…" : "Checkout"}
             </button>
@@ -229,12 +229,12 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
                     onClick={() => handleSelectMode(option)}
                     className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                       active
-                        ? "border-white/45 bg-white/18 text-white"
-                        : "border-white/15 bg-black/20 text-white/55 hover:border-white/30 hover:text-white"
+                        ? "border-[#9432c1] bg-[#9432c1] text-white"
+                        : "border-[#9432c1]/16 bg-white/62 text-[#2e2d2c]/58 hover:border-[#9432c1]/32 hover:text-[#9432c1]"
                     }`}
                   >
                     {modeLabel(option)}
-                    {!optionQuote.error && <span className="ml-1 text-white/45">SGD {optionQuote.amount}</span>}
+                    {!optionQuote.error && <span className="ml-1 text-current/60">SGD {optionQuote.amount}</span>}
                   </button>
                 )
               })}
@@ -243,7 +243,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
         </>
 
       {(error || quote.error) && (
-        <p className="mt-2 text-xs text-amber-200/80">{error || quote.error}</p>
+        <p className="mt-2 text-xs font-medium text-[#8a4a00]">{error || quote.error}</p>
       )}
     </div>
   )
