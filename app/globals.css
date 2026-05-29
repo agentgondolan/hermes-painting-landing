@@ -132,7 +132,7 @@ img {
 }
 
 .dottingo-wordmark {
-  width: clamp(9rem, 19vw, 16rem);
+  width: clamp(7.75rem, 16vw, 13.5rem);
   height: auto;
 }
 

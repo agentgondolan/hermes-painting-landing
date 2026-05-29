@@ -16,7 +16,7 @@ export function LayoutFrame({ children }: LayoutFrameProps) {
         <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#f0dcfa] via-[#faf8ff]/70 to-transparent" />
       </div>
 
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-40 flex items-start justify-between px-4 pt-[calc(env(safe-area-inset-top)+1rem)] sm:px-8 sm:pt-8">
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between px-4 pt-[calc(env(safe-area-inset-top)+1rem)] sm:px-8 sm:pt-8">
         <img
           src="/brand/dottingo/dottingo-logo-purple.svg"
           alt="Dottingo"

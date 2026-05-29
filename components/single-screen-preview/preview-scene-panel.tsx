@@ -10,7 +10,7 @@ interface PreviewScenePanelProps {
 
 export function PreviewScenePanel({ sceneModel }: PreviewScenePanelProps) {
   return (
-    <div className="absolute inset-0 flex items-center justify-center">
+    <div className="absolute inset-0 z-20 flex items-center justify-center">
       <Suspense fallback={<div className="text-white/30 text-sm">Loading scene…</div>}>
         <ProductSceneCanvas
           imageSrc={sceneModel.imageSrc}
