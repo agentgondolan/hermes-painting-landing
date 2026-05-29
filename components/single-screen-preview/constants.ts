@@ -7,8 +7,8 @@ export const DEFAULT_SIZE_ID = '40x50' as const
 export const MAX_FILE_SIZE_MB = 10
 
 export const UX_COPY = {
-  upload: 'Upload a photo',
-  uploadHelper: 'Upload a photo to begin',
+  upload: 'Upload your photo',
+  uploadHelper: '',
   preparing: 'Preparing preview…',
   processing: 'Transforming your image…',
   ready: 'Your preview is ready',

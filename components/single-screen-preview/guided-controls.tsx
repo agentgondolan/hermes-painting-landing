@@ -93,7 +93,7 @@ export function GuidedControls({
         <div className="flex max-w-[22rem] flex-col items-center gap-1 text-center">
           <p className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-[#9432c1]/70">Dottingo custom kit</p>
           <h1 className="text-balance text-2xl font-black leading-[0.95] tracking-[-0.04em] text-[#2e2d2c] sm:text-3xl">
-            Turn a photo into paint-by-numbers.
+            Turn your favorite photo into calming dot art.
           </h1>
         </div>
       )}
@@ -161,10 +161,6 @@ export function GuidedControls({
         </div>
       )}
 
-      {/* Helper text when idle */}
-      {guidedModel.showUpload && (
-        <p className="text-xs font-medium text-[#2e2d2c]/42">{guidedModel.helperText}</p>
-      )}
     </div>
   )
 }

@@ -22,9 +22,6 @@ export function LayoutFrame({ children }: LayoutFrameProps) {
           alt="Dottingo"
           className="dottingo-wordmark drop-shadow-[0_12px_28px_rgba(148,50,193,0.18)]"
         />
-        <div className="hidden rounded-full border border-[#9432c1]/15 bg-white/70 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#9432c1] shadow-[0_14px_42px_rgba(148,50,193,0.14)] backdrop-blur-md sm:block">
-          Paint your photo
-        </div>
       </header>
 
       {children}

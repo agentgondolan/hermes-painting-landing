@@ -12,21 +12,21 @@ const structuredData = {
       url: siteUrl,
       logo: `${siteUrl}/favicon.svg`,
       description:
-        "Dottingo creates personalized paint-by-numbers kits from customer photos.",
+        "Dottingo creates personalized dot art kits from customer photos.",
       sameAs: ["https://dottingo.sg"],
     },
     {
       "@type": "Service",
-      "@id": `${siteUrl}/#custom-paint-by-numbers-service`,
-      name: "Custom paint by numbers from your photo",
-      serviceType: "Personalized paint-by-numbers kit",
+      "@id": `${siteUrl}/#custom-dot-art-service`,
+      name: "Custom dot art from your photo",
+      serviceType: "Personalized dot art kit",
       provider: {
         "@id": `${siteUrl}/#organization`,
       },
       areaServed: "Worldwide",
       url: siteUrl,
       description:
-        "Upload a photo, preview it as custom artwork, and order a personalized paint-by-numbers kit for a handmade gift.",
+        "Upload a photo, preview it as custom dot artwork, and order a personalized dot art kit for a mindful handmade gift.",
       offers: {
         "@type": "Offer",
         availability: "https://schema.org/InStock",
@@ -40,15 +40,15 @@ export default function Home() {
   return (
     <>
       <section className="sr-only" aria-labelledby="seo-heading">
-        <h1 id="seo-heading">Custom paint by numbers from your photo</h1>
+        <h1 id="seo-heading">Custom dot art from your photo</h1>
         <p>
-          Dottingo turns favorite photos into personalized paint-by-numbers
+          Dottingo turns favorite photos into personalized dot art
           kits. Upload your picture, preview the custom artwork, and create a
           meaningful handmade gift for family, couples, pet lovers, or yourself.
         </p>
         <p>
-          Each kit is designed to make painting approachable: a numbered canvas,
-          matching colors, and a personal image transformed into a relaxing craft
+          Each kit is designed to make creativity approachable: a custom dot canvas,
+          matching markers, and a personal image transformed into a relaxing craft
           experience.
         </p>
       </section>
