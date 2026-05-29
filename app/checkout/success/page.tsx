@@ -21,7 +21,7 @@ export default function CheckoutSuccessPage() {
         </p>
         <Link
           href="/"
-          className="mt-8 rounded-full bg-black px-6 py-3 text-sm font-semibold text-white transition hover:bg-black/85"
+          className="mt-8 rounded-full border border-black/15 bg-white/80 px-6 py-3 text-sm font-semibold text-black shadow-sm transition hover:bg-white"
         >
           Back to preview
         </Link>
