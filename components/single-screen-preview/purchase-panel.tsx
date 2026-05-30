@@ -8,6 +8,11 @@ import {
 import { captureEvent } from "@/lib/analytics/posthog"
 import type { DotPreviewResult, FrameSizeOption } from "./preview-state"
 import { persistCheckoutSelection, readStoredCheckoutState } from "./checkout-persistence"
+import {
+  consumeMagicTokenFromUrl,
+  readVerifiedIdentity,
+  requestDesignMagicLink,
+} from "@/lib/identity/browser"
 
 type PurchaseOption = BffPurchaseOptionsResult["purchaseOptions"][number]
 
@@ -23,6 +28,13 @@ type Quote = {
   error: string | null
 }
 
+type VerifiedIdentity = {
+  email: string
+  previewId: string
+  identityToken: string
+  expiresAt: number
+}
+
 const DEFAULT_EUR_TO_SGD_RATE = 1.46
 const TARGET_GROSS_MARGIN = 0.5
 const GST_RATE = 0.09
@@ -35,11 +47,38 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
   const [loadingOptions, setLoadingOptions] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState(false)
   const [checkoutComingSoon, setCheckoutComingSoon] = useState(false)
+  const [email, setEmail] = useState("")
+  const [identity, setIdentity] = useState<VerifiedIdentity | null>(null)
+  const [magicLinkLoading, setMagicLinkLoading] = useState(false)
+  const [magicLinkStatus, setMagicLinkStatus] = useState<string | null>(null)
+  const [magicLinkFallback, setMagicLinkFallback] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     setCheckoutComingSoon(/(^|\.)dottingo\.sg$/i.test(window.location.hostname))
+    consumeMagicTokenFromUrl().then(
+      (verified) => {
+        if (!verified) return
+        setIdentity(verified)
+        setEmail(verified.email)
+        setMagicLinkStatus("Email verified. Your design is saved to this email.")
+        captureEvent("magic_link_verified", {
+          preview_id: verified.previewId,
+        })
+      },
+      (err) => {
+        const message = err instanceof Error ? err.message : "Magic link verification failed"
+        setMagicLinkStatus(message)
+        captureEvent("magic_link_verification_failed", { error_message: message })
+      },
+    )
   }, [])
+
+  useEffect(() => {
+    const stored = readVerifiedIdentity(previewId)
+    setIdentity(stored)
+    if (stored?.email) setEmail(stored.email)
+  }, [previewId])
 
   useEffect(() => {
     const restored = readStoredCheckoutState()
@@ -136,12 +175,47 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
     })
   }
 
+  const handleRequestMagicLink = async () => {
+    if (!previewId) return
+    setMagicLinkLoading(true)
+    setMagicLinkStatus(null)
+    setMagicLinkFallback(null)
+    setError(null)
+
+    try {
+      const result = await requestDesignMagicLink(email, previewId)
+      setMagicLinkStatus(
+        result.delivery === "email_sent"
+          ? "Magic link sent. Open it from your email to save this design."
+          : "Email delivery is not configured yet. Use the test link below for now.",
+      )
+      setMagicLinkFallback(result.magicLink ?? null)
+      captureEvent("magic_link_requested", {
+        preview_id: previewId,
+        delivery: result.delivery,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not send magic link"
+      setMagicLinkStatus(message)
+      captureEvent("magic_link_request_failed", {
+        preview_id: previewId,
+        error_message: message,
+      })
+    } finally {
+      setMagicLinkLoading(false)
+    }
+  }
+
   const handleCheckout = async () => {
     if (checkoutComingSoon) {
       setError("Checkout coming soon.")
       return
     }
     if (!previewId || !selectedPurchaseOption || quote.error) return
+    if (!identity || identity.previewId !== previewId) {
+      setError("Verify your email before checkout so your order can be recovered later.")
+      return
+    }
 
     setCheckoutLoading(true)
     setError(null)
@@ -172,6 +246,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
           preview_option_id: selectedPurchaseOption.previewOptionId,
           purchase_option_id: purchaseOptionId,
           sku: optionSku(selectedPurchaseOption),
+          identity_token: identity.identityToken,
         }),
       })
       const payload = await response.json().catch(() => null) as { url?: string; error?: string; detail?: string } | null
@@ -198,6 +273,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
   }
 
   const panelClassName = "w-full rounded-[1.5rem] border border-[#9432c1]/12 bg-white/72 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]"
+  const isVerifiedForPreview = Boolean(identity && identity.previewId === previewId)
 
   return (
     <div className={panelClassName}>
@@ -218,12 +294,47 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
             <button
               type="button"
               onClick={handleCheckout}
-              disabled={checkoutLoading || loadingOptions || Boolean(quote.error) || !selectedPurchaseOption || checkoutComingSoon}
+              disabled={checkoutLoading || loadingOptions || Boolean(quote.error) || !selectedPurchaseOption || checkoutComingSoon || !isVerifiedForPreview}
               className="shrink-0 rounded-full bg-[#9432c1] px-5 py-2.5 text-sm font-extrabold text-white shadow-[0_14px_34px_rgba(148,50,193,0.28)] transition hover:bg-[#7f28aa] disabled:cursor-not-allowed disabled:bg-[#2e2d2c]/10 disabled:text-[#2e2d2c]/35"
             >
               {checkoutComingSoon ? "Coming soon" : checkoutLoading ? "Opening Stripe…" : "Checkout"}
             </button>
           </div>
+
+          {!isVerifiedForPreview && (
+            <div className="mt-3 rounded-[1.25rem] border border-[#9432c1]/12 bg-white/62 p-3">
+              <p className="text-xs font-extrabold text-[#2e2d2c]">Save your design and continue later.</p>
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="you@example.com"
+                  className="min-w-0 flex-1 rounded-full border border-[#9432c1]/15 bg-white px-3 py-2 text-sm font-semibold text-[#2e2d2c] outline-none transition placeholder:text-[#2e2d2c]/35 focus:border-[#9432c1]/45"
+                />
+                <button
+                  type="button"
+                  onClick={handleRequestMagicLink}
+                  disabled={magicLinkLoading || !email.trim()}
+                  className="rounded-full bg-[#2e2d2c] px-4 py-2 text-xs font-extrabold text-white transition hover:bg-[#111] disabled:cursor-not-allowed disabled:bg-[#2e2d2c]/15 disabled:text-[#2e2d2c]/35"
+                >
+                  {magicLinkLoading ? "Sending…" : "Send link"}
+                </button>
+              </div>
+              {magicLinkStatus && <p className="mt-2 text-xs font-medium text-[#2e2d2c]/58">{magicLinkStatus}</p>}
+              {magicLinkFallback && (
+                <a className="mt-2 block break-all text-xs font-bold text-[#9432c1] underline" href={magicLinkFallback}>
+                  Open test magic link
+                </a>
+              )}
+            </div>
+          )}
+
+          {isVerifiedForPreview && (
+            <p className="mt-2 text-xs font-bold text-[#2f7d32]">Verified: {identity?.email}</p>
+          )}
 
           {visiblePurchaseOptions.length > 1 && (
             <div className="mt-3 flex flex-wrap gap-2">

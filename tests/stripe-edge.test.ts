@@ -8,6 +8,7 @@ import {
   signStripeWebhookPayloadForTest,
   type StripeEnv,
 } from '../lib/stripe/edge.ts'
+import { createIdentitySessionToken } from '../lib/identity/edge.ts'
 
 const env: StripeEnv = {
   STRIPE_SECRET_KEY: 'sk_test_local',
@@ -17,6 +18,7 @@ const env: StripeEnv = {
   MGEVERYDAY_API_TOKEN: 'mge_test_token',
   MGEVERYDAY_BASE_URL: 'https://mge.test',
   MGEVERYDAY_BRAND_ID: '116',
+  MAGIC_LINK_SECRET: 'test_magic_link_secret_minimum_24_chars',
 }
 
 const canonicalPurchaseOptionsPayload = {
@@ -37,6 +39,10 @@ const canonicalPurchaseOptionsPayload = {
       },
     },
   ],
+}
+
+async function identityToken(previewId = 'preview_123', email = 'buyer@example.com') {
+  return createIdentitySessionToken({ email, previewId }, env)
 }
 
 function orderDraft(overrides: Record<string, unknown> = {}) {
@@ -137,6 +143,7 @@ test('creates a dynamic Checkout Session directly and lets Stripe collect delive
         purchase_option_id: 'DOT/VF/40X50/W/BLACK/STD',
         sku: 'DOT/VF/40X50/W/BLACK/STD',
         selected_size: '40x50',
+        identity_token: await identityToken(),
       }),
     }),
     env,
@@ -157,6 +164,8 @@ test('creates a dynamic Checkout Session directly and lets Stripe collect delive
   assert.equal(body.get('metadata[preview_option_id]'), 'option_123')
   assert.equal(body.get('metadata[purchase_option_id]'), 'DOT/VF/40X50/W/BLACK/STD')
   assert.equal(body.get('metadata[sku]'), 'DOT/VF/40X50/W/BLACK/STD')
+  assert.equal(body.get('metadata[verified_email]'), 'buyer@example.com')
+  assert.equal(body.get('customer_email'), 'buyer@example.com')
 })
 
 test('creates a dynamic SGD Checkout Session from the canonical MGE purchase option', async () => {
@@ -188,6 +197,7 @@ test('creates a dynamic SGD Checkout Session from the canonical MGE purchase opt
         preview_option_id: 'option_123',
         sku: 'DOT/VF/40X50/W/BLACK/STD',
         selected_size: '40x50',
+        identity_token: await identityToken(),
         order_draft_id: 'draft_123',
         order_draft: orderDraft({
           // Tamper with a non-authoritative display-only field to prove Stripe uses canonical server data.
@@ -214,6 +224,8 @@ test('creates a dynamic SGD Checkout Session from the canonical MGE purchase opt
   assert.equal(body.get('metadata[preview_option_id]'), 'option_123')
   assert.equal(body.get('metadata[purchase_option_id]'), 'DOT/VF/40X50/W/BLACK/STD')
   assert.equal(body.get('metadata[sku]'), 'DOT/VF/40X50/W/BLACK/STD')
+  assert.equal(body.get('metadata[verified_email]'), 'buyer@example.com')
+  assert.equal(body.get('customer_email'), 'buyer@example.com')
   assert.equal(body.get('metadata[retail_unit_amount_sgd]'), '3499')
 })
 
@@ -235,6 +247,7 @@ test('rejects tampered order drafts before creating Stripe sessions', async () =
         preview_id: 'preview_123',
         preview_option_id: 'option_123',
         sku: 'DOT/VF/40X50/W/BLACK/STD',
+        identity_token: await identityToken(),
         order_draft_id: 'draft_123',
         order_draft: orderDraft({ unitPrice: '1.00' }),
       }),
@@ -273,7 +286,7 @@ test('verifies Stripe webhook signatures before accepting events', async () => {
   )
 
   assert.equal(response.status, 200)
-  assert.deepEqual(await response.json(), { received: true, event: 'checkout.session.completed' })
+  assert.deepEqual(await response.json(), { received: true, event: 'checkout.session.completed', magicLinkDelivery: 'not_applicable' })
 })
 
 test('rejects Stripe webhooks with invalid signatures', async () => {

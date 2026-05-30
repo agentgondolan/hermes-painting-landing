@@ -1,3 +1,5 @@
+import { verifyIdentitySessionToken, sendContinuationMagicLink } from '../identity/edge.ts'
+
 type NormalizedPurchaseOption = {
   purchaseOptionId: string
   previewOptionId: string
@@ -19,6 +21,10 @@ export interface StripeEnv {
   MGEVERYDAY_API_TOKEN?: string
   MGEVERYDAY_BASE_URL?: string
   MGEVERYDAY_BRAND_ID?: string
+  MAGIC_LINK_SECRET?: string
+  MAGIC_LINK_FROM?: string
+  RESEND_API_KEY?: string
+  APP_BASE_URL?: string
 }
 
 type Fetcher = typeof fetch
@@ -32,7 +38,13 @@ type StripeCheckoutSession = {
 type StripeWebhookEvent = {
   id?: string
   type?: string
-  data?: unknown
+  data?: {
+    object?: {
+      metadata?: Record<string, unknown>
+      customer_details?: { email?: unknown }
+      customer_email?: unknown
+    }
+  }
 }
 
 type CheckoutOrderDraft = {
@@ -60,6 +72,7 @@ type CheckoutRequestBody = {
   sku?: unknown
   order_draft_id?: unknown
   order_draft?: CheckoutOrderDraft
+  identity_token?: unknown
 }
 
 export type RetailPriceQuote = {
@@ -108,6 +121,9 @@ export async function createStripeCheckoutSession(
     body.set('shipping_address_collection[allowed_countries][0]', 'SG')
     body.set('billing_address_collection', 'required')
     body.set('phone_number_collection[enabled]', 'true')
+    if (checkoutContext.metadata.verified_email) {
+      body.set('customer_email', checkoutContext.metadata.verified_email)
+    }
     body.set('metadata[source]', 'dottingo_landing')
     body.set('metadata[brand_key]', 'dottingo')
     body.set('metadata[product]', checkoutContext.metadata.product ?? 'DOT')
@@ -194,7 +210,18 @@ export async function handleStripeWebhook(request: Request, env: StripeEnv): Pro
       return json({ error: 'Invalid Stripe webhook event payload' }, 400)
     }
 
-    return json({ received: true, event: event.type })
+    let magicLinkDelivery: 'email_sent' | 'email_not_configured' | 'not_applicable' = 'not_applicable'
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data?.object
+      const metadata = session?.metadata ?? {}
+      const email = stringValue(metadata.verified_email) || stringValue(session?.customer_details?.email) || stringValue(session?.customer_email)
+      const previewId = stringValue(metadata.preview_id)
+      if (email && previewId) {
+        magicLinkDelivery = await sendContinuationMagicLink(request, env, { email, previewId })
+      }
+    }
+
+    return json({ received: true, event: event.type, magicLinkDelivery })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Stripe webhook failed'
     return json({ error: message }, 400)
@@ -284,6 +311,11 @@ async function readCheckoutContext(
   if (!previewOptionId) throw new Error('preview_option_id is required for dynamic checkout')
   if (!sku) throw new Error('sku is required for dynamic checkout')
 
+  const identity = await verifyIdentitySessionToken(stringValue(source.identity_token), env)
+  if (identity.previewId !== previewId) {
+    throw new Error('Verified email does not own this preview')
+  }
+
   const token = requireValue(env.MGEVERYDAY_API_TOKEN, 'MGEVERYDAY_API_TOKEN')
   const canonical = await loadCanonicalPurchaseOptionForCheckout(previewId, previewOptionId, sku, env, token, fetcher)
   if (!canonical) {
@@ -316,6 +348,7 @@ async function readCheckoutContext(
       preview_option_id: previewOptionId,
       purchase_option_id: source.purchase_option_id || canonical.purchaseOptionId,
       distinct_id: source.distinct_id,
+      verified_email: identity.email,
       product: canonical.product ?? stringValue(draftRecord?.product),
       sku: canonicalSku,
       production_speed: speedCode || speedLabel,

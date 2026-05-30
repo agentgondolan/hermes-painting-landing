@@ -18,6 +18,10 @@ jobs:
       MGEVERYDAY_API_TOKEN: ${{ secrets.MGEVERYDAY_API_TOKEN }}
       STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
       STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+      MAGIC_LINK_SECRET: ${{ secrets.MAGIC_LINK_SECRET }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      MAGIC_LINK_FROM: ${{ vars.MAGIC_LINK_FROM }}
+      APP_BASE_URL: https://hermes-painting-landing.pages.dev
       PROJECT_NAME: hermes-painting-landing
       BUILD_DIR: .next/prod
       NEXT_PUBLIC_SITE_URL: https://dottingo.sg
@@ -57,6 +61,21 @@ jobs:
       - name: Configure Stripe webhook secret
         if: ${{ env.STRIPE_WEBHOOK_SECRET != '' }}
         run: printf "%s" "$STRIPE_WEBHOOK_SECRET" | npx wrangler pages secret put STRIPE_WEBHOOK_SECRET --project-name="$PROJECT_NAME"
+
+      - name: Configure magic link secret
+        if: ${{ env.MAGIC_LINK_SECRET != '' }}
+        run: printf "%s" "$MAGIC_LINK_SECRET" | npx wrangler pages secret put MAGIC_LINK_SECRET --project-name="$PROJECT_NAME"
+
+      - name: Configure Resend API key
+        if: ${{ env.RESEND_API_KEY != '' }}
+        run: printf "%s" "$RESEND_API_KEY" | npx wrangler pages secret put RESEND_API_KEY --project-name="$PROJECT_NAME"
+
+      - name: Configure identity vars
+        run: |
+          printf "%s" "$APP_BASE_URL" | npx wrangler pages secret put APP_BASE_URL --project-name="$PROJECT_NAME"
+          if [ -n "$MAGIC_LINK_FROM" ]; then
+            printf "%s" "$MAGIC_LINK_FROM" | npx wrangler pages secret put MAGIC_LINK_FROM --project-name="$PROJECT_NAME"
+          fi
 
       - name: Deploy to Cloudflare Pages
         run: npx wrangler pages deploy "$BUILD_DIR" --project-name="$PROJECT_NAME" --branch=main
