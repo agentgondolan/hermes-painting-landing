@@ -9,7 +9,7 @@ type StoredIdentity = {
 
 type MagicLinkResponse = {
   ok?: boolean
-  delivery?: 'email_sent' | 'email_not_configured'
+  delivery?: 'email_sent' | 'accepted'
   magicLink?: string
   error?: string
 }
@@ -48,13 +48,17 @@ export function clearVerifiedIdentity() {
 }
 
 export async function requestDesignMagicLink(email: string, previewId: string): Promise<MagicLinkResponse> {
+  const url = new URL(window.location.href)
+  url.searchParams.delete('magic_token')
+  const continuePath = `${url.pathname}${url.search}${url.hash}` || '/'
+
   const response = await fetch('/api/identity/request-magic-link', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       email,
       preview_id: previewId,
-      continue_path: window.location.pathname || '/',
+      continue_path: continuePath,
     }),
   })
   const payload = await response.json().catch(() => null) as MagicLinkResponse | null

@@ -187,7 +187,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
       setMagicLinkStatus(
         result.delivery === "email_sent"
           ? "Magic link sent. Open it from your email to save this design."
-          : "Email delivery is not configured yet. Use the test link below for now.",
+          : "Magic link accepted. Check your email to save this design.",
       )
       setMagicLinkFallback(result.magicLink ?? null)
       captureEvent("magic_link_requested", {

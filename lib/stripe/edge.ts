@@ -210,7 +210,7 @@ export async function handleStripeWebhook(request: Request, env: StripeEnv): Pro
       return json({ error: 'Invalid Stripe webhook event payload' }, 400)
     }
 
-    let magicLinkDelivery: 'email_sent' | 'email_not_configured' | 'not_applicable' = 'not_applicable'
+    let magicLinkDelivery: 'email_sent' | 'accepted' | 'not_applicable' = 'not_applicable'
     if (event.type === 'checkout.session.completed') {
       const session = event.data?.object
       const metadata = session?.metadata ?? {}

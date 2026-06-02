@@ -4,6 +4,9 @@ export interface IdentityEnv {
   RESEND_API_KEY?: string
   APP_BASE_URL?: string
   ALLOWED_ORIGIN?: string
+  MGEVERYDAY_API_TOKEN?: string
+  MGEVERYDAY_BASE_URL?: string
+  MGEVERYDAY_BRAND_ID?: string
 }
 
 export type VerifiedIdentity = {
@@ -27,6 +30,8 @@ type SendMagicLinkRequest = {
 
 const MAGIC_LINK_TTL_SECONDS = 30 * 60
 const IDENTITY_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
+const DEFAULT_MGEVERYDAY_BASE_URL = 'https://www.mgeveryday.sg'
+const DEFAULT_MGEVERYDAY_BRAND_ID = '64'
 const RESEND_API_URL = 'https://api.resend.com/emails'
 
 export async function requestMagicLink(
@@ -46,17 +51,13 @@ export async function requestMagicLink(
     if (!email) return withCors(json({ error: 'A valid email is required' }, 400), request, env)
     if (!previewId) return withCors(json({ error: 'preview_id is required' }, 400), request, env)
 
-    const magicToken = await createMagicToken({ email, previewId }, env)
-    const magicLink = buildMagicLink(request, env, magicToken, continuePath)
-    const delivery = await sendMagicLinkEmail(email, magicLink, env, fetcher)
+    const upstream = await requestMgeMagicLink({ email, previewId, continuePath }, env, fetcher)
 
     return withCors(
       json({
         ok: true,
-        delivery,
-        expiresInSeconds: MAGIC_LINK_TTL_SECONDS,
-        // Local/dev fallback so the flow remains testable before email provider secrets are configured.
-        magicLink: delivery === 'email_sent' ? undefined : magicLink,
+        delivery: upstream.status === 'sent' ? 'email_sent' : 'accepted',
+        expiresInSeconds: upstream.expiresInSeconds || MAGIC_LINK_TTL_SECONDS,
       }),
       request,
       env,
@@ -74,14 +75,17 @@ export async function verifyMagicLinkRequest(request: Request, env: IdentityEnv)
   try {
     const body = await request.json().catch(() => null) as { token?: unknown } | null
     const token = typeof body?.token === 'string' ? body.token : ''
-    const identity = await verifyMagicToken(token, env, 'magic_link')
-    const identityToken = await createIdentitySessionToken(identity, env)
+    const mgeIdentity = await verifyMgeMagicLink(token, env)
+    const identityToken = await createIdentitySessionToken(
+      { email: mgeIdentity.email, previewId: mgeIdentity.previewId },
+      env,
+    )
 
     return withCors(
       json({
         ok: true,
-        email: identity.email,
-        previewId: identity.previewId,
+        email: mgeIdentity.email,
+        previewId: mgeIdentity.previewId,
         identityToken,
         expiresInSeconds: IDENTITY_SESSION_TTL_SECONDS,
       }),
@@ -133,10 +137,89 @@ export async function sendContinuationMagicLink(
   env: IdentityEnv,
   identity: Pick<VerifiedIdentity, 'email' | 'previewId'>,
   fetcher: typeof fetch = fetch,
-): Promise<'email_sent' | 'email_not_configured'> {
-  const magicToken = await createMagicToken(identity, env)
-  const magicLink = buildMagicLink(request, env, magicToken, '/')
-  return sendMagicLinkEmail(identity.email, magicLink, env, fetcher)
+): Promise<'email_sent' | 'accepted'> {
+  const continuePath = normalizeContinuePath(new URL(request.url).pathname || '/')
+  const upstream = await requestMgeMagicLink({
+    email: identity.email,
+    previewId: identity.previewId,
+    continuePath,
+  }, env, fetcher)
+  return upstream.status === 'sent' ? 'email_sent' : 'accepted'
+}
+
+type MgeMagicLinkRequestResult = {
+  status: string
+  expiresInSeconds: number
+}
+
+type MgeMagicLinkIdentity = Pick<VerifiedIdentity, 'email' | 'previewId'> & {
+  expiresInSeconds: number
+}
+
+async function requestMgeMagicLink(
+  identity: Pick<VerifiedIdentity, 'email' | 'previewId'> & { continuePath: string },
+  env: IdentityEnv,
+  fetcher: typeof fetch,
+): Promise<MgeMagicLinkRequestResult> {
+  const response = await fetcher(`${mgeBaseUrl(env)}/api/internal/v1/identity/magic-link/request/`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${requireMgeToken(env)}`,
+      'Content-Type': 'application/json',
+      'Idempotency-Key': await idempotencyKey(identity.email, identity.previewId),
+    },
+    body: JSON.stringify({
+      brand_id: mgeBrandId(env),
+      email: normalizeEmail(identity.email),
+      preview_id: normalizeId(identity.previewId),
+      continue_path: normalizeContinuePath(identity.continuePath),
+    }),
+  })
+  const payload = parseJson(await response.text())
+  if (!response.ok) {
+    throw new Error(mgeErrorMessage(payload, 'MGE rejected the magic link request'))
+  }
+
+  const record = asRecord(payload)
+  return {
+    status: stringValue(record?.status) || 'accepted',
+    expiresInSeconds: numberValue(record?.expires_in_seconds) || MAGIC_LINK_TTL_SECONDS,
+  }
+}
+
+async function verifyMgeMagicLink(token: string, env: IdentityEnv): Promise<MgeMagicLinkIdentity> {
+  if (!token) throw new Error('Magic link token is required')
+  const response = await fetch(`${mgeBaseUrl(env)}/api/internal/v1/identity/magic-link/verify/`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${requireMgeToken(env)}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      brand_id: mgeBrandId(env),
+      token,
+    }),
+  })
+  const payload = parseJson(await response.text())
+  if (!response.ok) {
+    throw new Error(mgeErrorMessage(payload, 'Magic link verification failed'))
+  }
+
+  const record = asRecord(payload)
+  const email = normalizeEmail(record?.email)
+  const previewId = normalizeId(record?.preview_id)
+  if (!email || !previewId) throw new Error('MGE magic link response is incomplete')
+
+  return {
+    email,
+    previewId,
+    expiresInSeconds: numberValue(record?.expires_in_seconds) || IDENTITY_SESSION_TTL_SECONDS,
+  }
+}
+
+async function idempotencyKey(email: string, previewId: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${normalizeEmail(email)}:${normalizeId(previewId)}`))
+  return `magic-link-${bytesToHex(new Uint8Array(digest)).slice(0, 32)}`
 }
 
 async function verifyMagicToken(token: string, env: IdentityEnv, type: MagicLinkPayload['typ']): Promise<VerifiedIdentity> {
@@ -211,6 +294,52 @@ function buildMagicLink(request: Request, env: IdentityEnv, token: string, conti
 function requestOrigin(request: Request): string {
   const url = new URL(request.url)
   return `${url.protocol}//${url.host}`
+}
+
+function mgeBaseUrl(env: IdentityEnv): string {
+  return (env.MGEVERYDAY_BASE_URL || DEFAULT_MGEVERYDAY_BASE_URL).replace(/\/+$/, '')
+}
+
+function mgeBrandId(env: IdentityEnv): number {
+  const parsed = Number.parseInt(env.MGEVERYDAY_BRAND_ID || DEFAULT_MGEVERYDAY_BRAND_ID, 10)
+  if (!Number.isFinite(parsed) || parsed < 1) throw new Error('MGEVERYDAY_BRAND_ID is invalid')
+  return parsed
+}
+
+function requireMgeToken(env: IdentityEnv): string {
+  if (!env.MGEVERYDAY_API_TOKEN) throw new Error('MGEVERYDAY_API_TOKEN is not configured')
+  return env.MGEVERYDAY_API_TOKEN
+}
+
+function parseJson(value: string): unknown {
+  if (!value.trim()) return null
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' || typeof value === 'number' ? String(value).trim() : ''
+}
+
+function numberValue(value: unknown): number {
+  const parsed = typeof value === 'number' ? value : Number.parseInt(stringValue(value), 10)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function mgeErrorMessage(payload: unknown, fallback: string): string {
+  const record = asRecord(payload)
+  return stringValue(record?.error) || stringValue(record?.detail) || fallback
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 function normalizeContinuePath(value: unknown): string {

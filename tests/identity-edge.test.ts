@@ -13,54 +13,90 @@ const env: IdentityEnv = {
   MAGIC_LINK_SECRET: 'test_magic_link_secret_minimum_24_chars',
   ALLOWED_ORIGIN: '*',
   APP_BASE_URL: 'https://dottingo.test',
+  MGEVERYDAY_API_TOKEN: 'test_mge_token',
+  MGEVERYDAY_BASE_URL: 'https://mge.test',
+  MGEVERYDAY_BRAND_ID: '64',
 }
 
-test('requestMagicLink creates a preview-scoped fallback link when email is not configured', async () => {
+test('requestMagicLink proxies preview ownership to the MGE internal magic-link API', async () => {
+  let upstreamRequestUrl = ''
+  let upstreamAuthorization = ''
+  let upstreamIdempotencyKey = ''
+  let upstreamBody: Record<string, unknown> | null = null
   const response = await requestMagicLink(
     new Request('https://dottingo.test/api/identity/request-magic-link', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'Buyer@Example.com', preview_id: 'preview_123' }),
+      body: JSON.stringify({ email: 'Buyer@Example.com', preview_id: '11111111-1111-1111-1111-111111111111', continue_path: '/checkout?step=identity' }),
     }),
     env,
+    async (request, init) => {
+      const upstreamRequest = request instanceof Request ? request : new Request(request, init)
+      upstreamRequestUrl = upstreamRequest.url
+      upstreamAuthorization = upstreamRequest.headers.get('Authorization') || ''
+      upstreamIdempotencyKey = upstreamRequest.headers.get('Idempotency-Key') || ''
+      upstreamBody = await upstreamRequest.json() as Record<string, unknown>
+      return new Response(JSON.stringify({ ok: true, status: 'sent', expires_in_seconds: 1800 }), { status: 202 })
+    },
   )
 
   assert.equal(response.status, 200)
-  const payload = await response.json() as { delivery: string; magicLink: string }
-  assert.equal(payload.delivery, 'email_not_configured')
-  assert.match(payload.magicLink, /^https:\/\/dottingo\.test\/?\?magic_token=/)
+  const payload = await response.json() as { delivery: string; expiresInSeconds: number; magicLink?: string }
+  assert.equal(payload.delivery, 'email_sent')
+  assert.equal(payload.expiresInSeconds, 1800)
+  assert.equal(payload.magicLink, undefined)
+
+  assert.ok(upstreamRequestUrl)
+  assert.equal(upstreamRequestUrl, 'https://mge.test/api/internal/v1/identity/magic-link/request/')
+  assert.equal(upstreamAuthorization, 'Bearer test_mge_token')
+  assert.ok(upstreamIdempotencyKey.startsWith('magic-link-'))
+  assert.deepEqual(upstreamBody, {
+    brand_id: 64,
+    email: 'buyer@example.com',
+    preview_id: '11111111-1111-1111-1111-111111111111',
+    continue_path: '/checkout?step=identity',
+  })
 })
 
-test('verifyMagicLinkRequest exchanges a magic link for a checkout identity session', async () => {
-  const requested = await requestMagicLink(
-    new Request('https://dottingo.test/api/identity/request-magic-link', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'buyer@example.com', preview_id: 'preview_123' }),
-    }),
-    env,
-  )
-  const requestedPayload = await requested.json() as { magicLink: string }
-  const token = new URL(requestedPayload.magicLink).searchParams.get('magic_token')
-  assert.ok(token)
+test('verifyMagicLinkRequest consumes the MGE token and creates a preview-scoped checkout identity session', async () => {
+  const originalFetch = globalThis.fetch
+  try {
+    globalThis.fetch = (async (request: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof request === 'string' || request instanceof URL ? request.toString() : request.url
+      assert.equal(url, 'https://mge.test/api/internal/v1/identity/magic-link/verify/')
+      assert.equal(init?.method, 'POST')
+      assert.equal((init?.headers as Record<string, string>).Authorization, 'Bearer test_mge_token')
+      assert.deepEqual(JSON.parse(String(init?.body)), { brand_id: 64, token: 'mge-token-123' })
+      return new Response(JSON.stringify({
+        ok: true,
+        email: 'buyer@example.com',
+        preview_id: '11111111-1111-1111-1111-111111111111',
+        identity_token: 'opaque-mge-identity-token',
+        continue_path: '/checkout',
+        expires_in_seconds: 1800,
+      }))
+    }) as typeof fetch
 
-  const verified = await verifyMagicLinkRequest(
-    new Request('https://dottingo.test/api/identity/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token }),
-    }),
-    env,
-  )
+    const verified = await verifyMagicLinkRequest(
+      new Request('https://dottingo.test/api/identity/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: 'mge-token-123' }),
+      }),
+      env,
+    )
 
-  assert.equal(verified.status, 200)
-  const payload = await verified.json() as { email: string; previewId: string; identityToken: string }
-  assert.equal(payload.email, 'buyer@example.com')
-  assert.equal(payload.previewId, 'preview_123')
+    assert.equal(verified.status, 200)
+    const payload = await verified.json() as { email: string; previewId: string; identityToken: string }
+    assert.equal(payload.email, 'buyer@example.com')
+    assert.equal(payload.previewId, '11111111-1111-1111-1111-111111111111')
 
-  const session = await verifyIdentitySessionToken(payload.identityToken, env)
-  assert.equal(session.email, 'buyer@example.com')
-  assert.equal(session.previewId, 'preview_123')
+    const session = await verifyIdentitySessionToken(payload.identityToken, env)
+    assert.equal(session.email, 'buyer@example.com')
+    assert.equal(session.previewId, '11111111-1111-1111-1111-111111111111')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
 
 test('identity session tokens are preview scoped', async () => {
