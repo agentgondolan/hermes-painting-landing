@@ -8,7 +8,7 @@ compatibility_date = "2025-04-28"
 
 [vars]
 MGEVERYDAY_BASE_URL = "https://www.mgeveryday.sg"
-MGEVERYDAY_BRAND_ID = "116"
+MGEVERYDAY_BRAND_ID = "64"
 ALLOWED_ORIGIN = "https://hermes-painting-landing.pages.dev"
 
 [triggers]

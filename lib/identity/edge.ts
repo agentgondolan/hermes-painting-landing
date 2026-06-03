@@ -31,7 +31,7 @@ type SendMagicLinkRequest = {
 const MAGIC_LINK_TTL_SECONDS = 30 * 60
 const IDENTITY_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
 const DEFAULT_MGEVERYDAY_BASE_URL = 'https://www.mgeveryday.sg'
-const DEFAULT_MGEVERYDAY_BRAND_ID = '64'
+const DOTTINGO_BRAND_ID = 64
 const RESEND_API_URL = 'https://api.resend.com/emails'
 
 export async function requestMagicLink(
@@ -185,7 +185,7 @@ async function requestMgeMagicLink(
       'Idempotency-Key': await idempotencyKey(identity.email, identity.previewId),
     },
     body: JSON.stringify({
-      brand_id: mgeBrandId(env),
+      brand_id: mgeBrandId(),
       email: normalizeEmail(identity.email),
       preview_id: normalizeId(identity.previewId),
       continue_path: normalizeContinuePath(identity.continuePath),
@@ -212,7 +212,7 @@ async function verifyMgeMagicLink(token: string, env: IdentityEnv): Promise<MgeM
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      brand_id: mgeBrandId(env),
+      brand_id: mgeBrandId(),
       token,
     }),
   })
@@ -316,10 +316,8 @@ function mgeBaseUrl(env: IdentityEnv): string {
   return (env.MGEVERYDAY_BASE_URL || DEFAULT_MGEVERYDAY_BASE_URL).replace(/\/+$/, '')
 }
 
-function mgeBrandId(env: IdentityEnv): number {
-  const parsed = Number.parseInt(env.MGEVERYDAY_BRAND_ID || DEFAULT_MGEVERYDAY_BRAND_ID, 10)
-  if (!Number.isFinite(parsed) || parsed < 1) throw new Error('MGEVERYDAY_BRAND_ID is invalid')
-  return parsed
+function mgeBrandId(): number {
+  return DOTTINGO_BRAND_ID
 }
 
 function requireMgeToken(env: IdentityEnv): string {

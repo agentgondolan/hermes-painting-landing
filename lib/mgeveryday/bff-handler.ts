@@ -65,7 +65,7 @@ interface NormalizedOrderDraft {
 }
 
 const DEFAULT_BASE_URL = 'https://www.mgeveryday.sg'
-const DEFAULT_BRAND_ID = '64'
+const DOTTINGO_BRAND_ID = '64'
 const PREVIEW_READY_STATUSES = new Set(['COMPLETED', 'PARTIAL', 'READY'])
 
 export async function handleMgeBffRequest(request: Request, env: Env): Promise<Response> {
@@ -125,7 +125,7 @@ async function createPreview(request: Request, env: Env): Promise<Response> {
   const preferredSize = normalizePreferredSize(incoming.get('preferredSize'))
   const clientCropped = normalizeBoolean(incoming.get('clientCropped'))
   const body = new FormData()
-  body.set('brand_id', env.MGEVERYDAY_BRAND_ID || DEFAULT_BRAND_ID)
+  body.set('brand_id', DOTTINGO_BRAND_ID)
   body.set('image', image, image.name || 'upload')
   body.append('products', 'DOT')
   body.set('comparison_count', '1')
@@ -205,7 +205,7 @@ async function createOrderDraft(request: Request, env: Env): Promise<Response> {
   }
 
   const draftPayload = {
-    brand_id: env.MGEVERYDAY_BRAND_ID || DEFAULT_BRAND_ID,
+    brand_id: DOTTINGO_BRAND_ID,
     preview_id: previewId,
     preview_option_id: previewOptionId,
     selected_size: pickFirstString([body.selected_size]),

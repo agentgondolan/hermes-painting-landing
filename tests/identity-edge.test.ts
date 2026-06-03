@@ -15,7 +15,7 @@ const env: IdentityEnv = {
   APP_BASE_URL: 'https://dottingo.test',
   MGEVERYDAY_API_TOKEN: 'test_mge_token',
   MGEVERYDAY_BASE_URL: 'https://mge.test',
-  MGEVERYDAY_BRAND_ID: '64',
+  MGEVERYDAY_BRAND_ID: '116',
 }
 
 test('requestMagicLink proxies preview ownership to the MGE internal magic-link API when email is sent upstream', async () => {

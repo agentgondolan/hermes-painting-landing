@@ -78,6 +78,40 @@ test('purchase-options BFF proxies to MGE with server-side token and hides autho
   }
 })
 
+test('preview BFF always uses Dottingo brand 64 even if legacy B2B env brand is configured', async () => {
+  const calls: Array<{ url: string; init: RequestInit; body: FormData }> = []
+  const originalFetch = globalThis.fetch
+
+  globalThis.fetch = (async (url, init) => {
+    const body = init?.body as FormData
+    calls.push({ url: String(url), init: init ?? {}, body })
+    return new Response(JSON.stringify({ id: 'preview-123', status: 'COMPLETED' }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }) as typeof fetch
+
+  try {
+    const form = new FormData()
+    form.set('image', new File(['fake-image'], 'art.png', { type: 'image/png' }))
+
+    const response = await handleMgeBffRequest(
+      new Request('https://makeyourcraft.com/api/mge/preview', {
+        method: 'POST',
+        body: form,
+      }),
+      env,
+    )
+
+    assert.equal(response.status, 201)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].url, 'https://mge.example.test/api/v1/preview/')
+    assert.equal(calls[0].body.get('brand_id'), '64')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('purchase-options BFF rejects invalid preview IDs before calling MGE', async () => {
   const originalFetch = globalThis.fetch
   let called = false
@@ -178,7 +212,7 @@ test('order-draft BFF posts to documented plural MGE order-drafts endpoint', asy
     assert.equal(headers.get('Content-Type'), 'application/json')
 
     const upstreamBody = JSON.parse(String(calls[1].init.body))
-    assert.equal(upstreamBody.brand_id, '116')
+    assert.equal(upstreamBody.brand_id, '64')
     assert.equal(upstreamBody.preview_id, 'preview-123')
     assert.equal(upstreamBody.preview_option_id, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
     assert.equal('purchase_option_id' in upstreamBody, false)
