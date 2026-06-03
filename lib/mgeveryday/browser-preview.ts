@@ -144,7 +144,11 @@ export function createPreviewClient(baseUrl?: string): BffPreviewClient | null {
 }
 
 export class PreviewClientImpl implements BffPreviewClient {
-  constructor(private readonly base: string) {}
+  private readonly base: string
+
+  constructor(base: string) {
+    this.base = base
+  }
 
   async createPreview(file: File, preferredSize?: string, clientCropped = false): Promise<BffPreviewCreateResult> {
     const form = new FormData()
@@ -276,7 +280,7 @@ function proxiedImageUrl(imageUrl: string | null, base: string): string | null {
  * MGE may expose the first image before all requested preview options are done,
  * so do not stop polling only because imageUrl exists.
  */
-function isTerminalPreview(result: { status: string; imageUrl: string | null }): boolean {
+export function isTerminalPreview(result: { status: string; imageUrl: string | null }): boolean {
   const s = result.status.toUpperCase()
   return s === 'COMPLETED' || s === 'PARTIAL' || s === 'READY'
 }

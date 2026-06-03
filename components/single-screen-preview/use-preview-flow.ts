@@ -15,7 +15,7 @@ import {
   prepareArtworkForFrame,
 } from "@/lib/image-processing"
 import { captureEvent } from "@/lib/analytics/posthog"
-import { createPreviewClient, type BffPreviewCreateResult } from "@/lib/mgeveryday/browser-preview"
+import { createPreviewClient, isTerminalPreview, type BffPreviewCreateResult } from "@/lib/mgeveryday/browser-preview"
 import { ACCEPTED_MIME_TYPES, DEFAULT_SIZE_ID, UX_COPY } from "./constants"
 import {
   clearStoredCheckoutState,
@@ -92,7 +92,7 @@ export function usePreviewFlow() {
             ? previewClient
                 .createPreview(preparedArtwork.file, preferredSizeId.toUpperCase(), true)
                 .then((created) =>
-                  created.imageUrl
+                  isTerminalPreview(created)
                     ? created
                     : previewClient.pollPreview(created.previewId),
                 )
