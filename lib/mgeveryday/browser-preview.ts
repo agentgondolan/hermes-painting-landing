@@ -131,6 +131,8 @@ export interface BffPreviewClient {
   getPreview(previewId: string): Promise<BffPreviewStatusResult>
   /** Get orderable purchase options for a completed/partial preview */
   getPurchaseOptions(previewId: string): Promise<BffPurchaseOptionsResult>
+  /** Poll until MGE exposes orderable purchase options for a completed/partial preview */
+  pollPurchaseOptions(previewId: string, options?: PollOptions): Promise<BffPurchaseOptionsResult>
   /** Create an MGE order draft after address capture and before Stripe */
   createOrderDraft(input: BffOrderDraftInput): Promise<BffOrderDraftResult>
 }
@@ -193,6 +195,29 @@ export class PreviewClientImpl implements BffPreviewClient {
     }
     const data = await res.json() as BffPurchaseOptionsResult
     return proxiedPurchaseOptionsResult(data, this.base)
+  }
+
+  async pollPurchaseOptions(previewId: string, options: PollOptions = {}): Promise<BffPurchaseOptionsResult> {
+    const { maxWaitMs = 120_000, intervalMs = POLL_INTERVAL_MS, signal } = options
+    const started = Date.now()
+
+    while (Date.now() - started <= maxWaitMs) {
+      if (signal?.aborted) {
+        throw new Error('Purchase option polling aborted')
+      }
+
+      const state = await this.getPurchaseOptions(previewId)
+      if (state.purchaseOptions.length > 0) {
+        return state
+      }
+      if (isTerminalFailure(state.status)) {
+        throw new Error(`MGE preview ended with no order options (${state.status}).`)
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, intervalMs))
+    }
+
+    throw new Error('Order options are still being generated. Please try again in a moment.')
   }
 
   async createOrderDraft(input: BffOrderDraftInput): Promise<BffOrderDraftResult> {
@@ -283,6 +308,11 @@ function proxiedImageUrl(imageUrl: string | null, base: string): string | null {
 export function isTerminalPreview(result: { status: string; imageUrl: string | null }): boolean {
   const s = result.status.toUpperCase()
   return s === 'COMPLETED' || s === 'PARTIAL' || s === 'READY'
+}
+
+function isTerminalFailure(status: string): boolean {
+  const s = status.toUpperCase()
+  return s === 'FAILED' || s === 'CANCELLED' || s === 'CANCELED' || s === 'ERROR'
 }
 
 function formatBffError(error: BffError, fallback: string): string {

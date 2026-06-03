@@ -109,7 +109,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
     setLoadingOptions(true)
     setError(null)
 
-    client.getPurchaseOptions(previewId).then(
+    client.pollPurchaseOptions(previewId).then(
       (result) => {
         if (cancelled) return
         setPurchaseOptions(result.purchaseOptions)

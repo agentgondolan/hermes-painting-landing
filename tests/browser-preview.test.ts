@@ -49,3 +49,49 @@ test('preview client keeps polling when create response has imageUrl but non-ter
     globalThis.fetch = originalFetch
   }
 })
+
+test('preview client polls purchase options until MGE exposes orderable options', async () => {
+  const originalFetch = globalThis.fetch
+  const calls: string[] = []
+
+  globalThis.fetch = (async (url) => {
+    calls.push(String(url))
+    const purchaseOptions = calls.length < 3 ? [] : [{
+      purchaseOptionId: 'DOT/VF/40X50/W/BLACK/STD',
+      previewOptionId: 'option-123',
+      sku: 'DOT/VF/40X50/W/BLACK/STD',
+      product: 'DOT',
+      label: 'Standard',
+      description: null,
+      previewUrl: null,
+      mockupUrl: null,
+      productionSpeed: { code: 'STD', label: 'Standard' },
+      productionSpeedCode: 'STD',
+      productionSpeedLabel: 'Standard',
+      orderLine: { sku: 'DOT/VF/40X50/W/BLACK/STD', quantity: 1 },
+      unitPrice: '10.72',
+      currency: 'EUR',
+    }]
+
+    return new Response(JSON.stringify({
+      previewId: 'preview-123',
+      status: 'COMPLETED',
+      purchaseOptions,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const client = new PreviewClientImpl('')
+    const final = await client.pollPurchaseOptions('preview-123', { intervalMs: 0, maxWaitMs: 10 })
+
+    assert.equal(final.purchaseOptions.length, 1)
+    assert.equal(calls.length, 3)
+    assert.deepEqual(calls, [
+      '/api/mge/preview/preview-123/purchase-options',
+      '/api/mge/preview/preview-123/purchase-options',
+      '/api/mge/preview/preview-123/purchase-options',
+    ])
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
