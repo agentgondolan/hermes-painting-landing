@@ -7,7 +7,7 @@ export interface MgeEverydayConfig {
 }
 
 const DEFAULT_BASE_URL = 'https://www.mgeveryday.sg'
-const DEFAULT_BRAND_ID = 116
+const DEFAULT_BRAND_ID = 64
 
 export function getMgeEverydayConfig(env: NodeJS.ProcessEnv = process.env): MgeEverydayConfig {
   const apiToken = env.MGEVERYDAY_API_TOKEN

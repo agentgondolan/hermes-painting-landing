@@ -65,7 +65,7 @@ interface NormalizedOrderDraft {
 }
 
 const DEFAULT_BASE_URL = 'https://www.mgeveryday.sg'
-const DEFAULT_BRAND_ID = '116'
+const DEFAULT_BRAND_ID = '64'
 const PREVIEW_READY_STATUSES = new Set(['COMPLETED', 'PARTIAL', 'READY'])
 
 export async function handleMgeBffRequest(request: Request, env: Env): Promise<Response> {
