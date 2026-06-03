@@ -1,7 +1,21 @@
 import * as assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { isTerminalPreview, PreviewClientImpl } from '../lib/mgeveryday/browser-preview.ts'
+import { isTerminalPreview, PreviewClientImpl, resolveBffBaseUrl } from '../lib/mgeveryday/browser-preview.ts'
+
+test('preview client defaults to same-origin BFF when public env is absent', () => {
+  const originalProcess = globalThis.process
+
+  try {
+    // Simulate the browser bundle when Cloudflare Pages did not inline NEXT_PUBLIC_MGE_BFF_BASE_URL.
+    // The live site must still call same-origin Pages Functions instead of silently falling back local-only.
+    // @ts-expect-error test-only mutation of Node global
+    globalThis.process = undefined
+    assert.equal(resolveBffBaseUrl(), '')
+  } finally {
+    globalThis.process = originalProcess
+  }
+})
 
 test('preview readiness ignores early image URLs while MGE is still processing', () => {
   assert.equal(isTerminalPreview({ status: 'PROCESSING', imageUrl: 'https://mge.example.test/early.jpg' }), false)
@@ -82,7 +96,7 @@ test('preview client polls purchase options until MGE exposes orderable options'
 
   try {
     const client = new PreviewClientImpl('')
-    const final = await client.pollPurchaseOptions('preview-123', { intervalMs: 0, maxWaitMs: 10 })
+    const final = await client.pollPurchaseOptions('preview-123', { intervalMs: 0, maxWaitMs: 100 })
 
     assert.equal(final.purchaseOptions.length, 1)
     assert.equal(calls.length, 3)

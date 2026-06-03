@@ -13,6 +13,7 @@
  */
 
 const DEFAULT_BFF_BASE = ''
+const DEFAULT_BFF_ENV_VALUE = 'same-origin'
 const POLL_INTERVAL_MS = 2_000
 const SAME_ORIGIN_BFF = 'same-origin'
 
@@ -21,8 +22,8 @@ const SAME_ORIGIN_BFF = 'same-origin'
  */
 export function resolveBffBaseUrl(): string | null {
   const url = typeof process !== 'undefined' && process.env
-    ? (process.env.NEXT_PUBLIC_MGE_BFF_BASE_URL ?? '').trim()
-    : DEFAULT_BFF_BASE
+    ? (process.env.NEXT_PUBLIC_MGE_BFF_BASE_URL ?? DEFAULT_BFF_ENV_VALUE).trim()
+    : DEFAULT_BFF_ENV_VALUE
   if (!url) {
     return null
   }
