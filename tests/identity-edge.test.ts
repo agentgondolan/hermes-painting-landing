@@ -101,6 +101,73 @@ test('accepted MGE magic-link requests do not expose a fallback link to the brow
   assert.equal(payload.magicLink, undefined)
 })
 
+test('requestMagicLink checks internal email status before reporting confirmed delivery', async () => {
+  const calls: Array<{ url: string; body: Record<string, unknown> }> = []
+
+  const response = await requestMagicLink(
+    new Request('https://dottingo.test/api/identity/request-magic-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'Buyer@Example.com', preview_id: 'preview_status', continue_path: '/?size=40x50' }),
+    }),
+    env,
+    async (request, init) => {
+      const upstreamRequest = request instanceof Request ? request : new Request(request, init)
+      calls.push({
+        url: upstreamRequest.url,
+        body: await upstreamRequest.json() as Record<string, unknown>,
+      })
+
+      if (upstreamRequest.url.endsWith('/magic-link/request/')) {
+        return new Response(JSON.stringify({ ok: true, status: 'accepted', request_id: 'ml_123', expires_in_seconds: 1800 }), { status: 202 })
+      }
+
+      return new Response(JSON.stringify({ ok: true, status: 'sent' }), { status: 200 })
+    },
+  )
+
+  assert.equal(response.status, 200)
+  const payload = await response.json() as { delivery: string; emailStatus?: string; magicLink?: string }
+  assert.equal(payload.delivery, 'email_sent')
+  assert.equal(payload.emailStatus, 'sent')
+  assert.equal(payload.magicLink, undefined)
+
+  assert.deepEqual(calls.map((call) => call.url), [
+    'https://mge.test/api/internal/v1/identity/magic-link/request/',
+    'https://mge.test/api/internal/v1/identity/magic-link/status/',
+  ])
+  assert.deepEqual(calls[1].body, {
+    brand_id: 64,
+    email: 'buyer@example.com',
+    preview_id: 'preview_status',
+    request_id: 'ml_123',
+  })
+})
+
+test('requestMagicLink keeps delivery unconfirmed when internal email status is not sent yet', async () => {
+  const response = await requestMagicLink(
+    new Request('https://dottingo.test/api/identity/request-magic-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'Buyer@Example.com', preview_id: 'preview_status_pending', continue_path: '/?size=40x50' }),
+    }),
+    env,
+    async (request, init) => {
+      const upstreamRequest = request instanceof Request ? request : new Request(request, init)
+      if (upstreamRequest.url.endsWith('/magic-link/request/')) {
+        return new Response(JSON.stringify({ ok: true, status: 'accepted', request_id: 'ml_queued', expires_in_seconds: 1800 }), { status: 202 })
+      }
+      return new Response(JSON.stringify({ ok: true, status: 'queued' }), { status: 200 })
+    },
+  )
+
+  assert.equal(response.status, 200)
+  const payload = await response.json() as { delivery: string; emailStatus?: string; magicLink?: string }
+  assert.equal(payload.delivery, 'accepted')
+  assert.equal(payload.emailStatus, 'queued')
+  assert.equal(payload.magicLink, undefined)
+})
+
 test('MGE email-sent status aliases are normalized as confirmed email delivery', async () => {
   for (const status of ['sent', 'email_sent', 'delivered', 'succeeded']) {
     const response = await requestMagicLink(

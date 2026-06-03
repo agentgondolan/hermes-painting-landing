@@ -52,12 +52,16 @@ export async function requestMagicLink(
     if (!previewId) return withCors(json({ error: 'preview_id is required' }, 400), request, env)
 
     const upstream = await requestMgeMagicLink({ email, previewId, continuePath }, env, fetcher)
-    const delivery = normalizeMagicLinkDelivery(upstream.status)
+    const emailStatus = upstream.requestId && normalizeMagicLinkDelivery(upstream.status) !== 'email_sent'
+      ? await checkMgeMagicLinkStatus({ email, previewId, requestId: upstream.requestId }, env, fetcher)
+      : upstream.status
+    const delivery = normalizeMagicLinkDelivery(emailStatus)
 
     return withCors(
       json({
         ok: true,
         delivery,
+        emailStatus,
         expiresInSeconds: upstream.expiresInSeconds || MAGIC_LINK_TTL_SECONDS,
       }),
       request,
@@ -161,6 +165,7 @@ export async function sendContinuationMagicLink(
 
 type MgeMagicLinkRequestResult = {
   status: string
+  requestId?: string
   expiresInSeconds: number
 }
 
@@ -199,8 +204,33 @@ async function requestMgeMagicLink(
   const record = asRecord(payload)
   return {
     status: stringValue(record?.status) || 'accepted',
+    requestId: stringValue(record?.request_id) || stringValue(record?.id),
     expiresInSeconds: numberValue(record?.expires_in_seconds) || MAGIC_LINK_TTL_SECONDS,
   }
+}
+
+async function checkMgeMagicLinkStatus(
+  identity: Pick<VerifiedIdentity, 'email' | 'previewId'> & { requestId: string },
+  env: IdentityEnv,
+  fetcher: typeof fetch,
+): Promise<string> {
+  const response = await fetcher(`${mgeBaseUrl(env)}/api/internal/v1/identity/magic-link/status/`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${requireMgeToken(env)}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      brand_id: mgeBrandId(),
+      email: normalizeEmail(identity.email),
+      preview_id: normalizeId(identity.previewId),
+      request_id: normalizeId(identity.requestId),
+    }),
+  })
+  const payload = parseJson(await response.text())
+  if (!response.ok) return 'accepted'
+  const record = asRecord(payload)
+  return stringValue(record?.status) || 'accepted'
 }
 
 async function verifyMgeMagicLink(token: string, env: IdentityEnv): Promise<MgeMagicLinkIdentity> {
