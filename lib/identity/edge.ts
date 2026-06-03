@@ -52,12 +52,17 @@ export async function requestMagicLink(
     if (!previewId) return withCors(json({ error: 'preview_id is required' }, 400), request, env)
 
     const upstream = await requestMgeMagicLink({ email, previewId, continuePath }, env, fetcher)
+    const delivery = upstream.status === 'sent' ? 'email_sent' : 'accepted'
+    const magicLink = delivery === 'accepted'
+      ? buildMagicLink(request, env, await createMagicToken({ email, previewId }, env), continuePath)
+      : undefined
 
     return withCors(
       json({
         ok: true,
-        delivery: upstream.status === 'sent' ? 'email_sent' : 'accepted',
+        delivery,
         expiresInSeconds: upstream.expiresInSeconds || MAGIC_LINK_TTL_SECONDS,
+        ...(magicLink ? { magicLink } : {}),
       }),
       request,
       env,
@@ -75,17 +80,28 @@ export async function verifyMagicLinkRequest(request: Request, env: IdentityEnv)
   try {
     const body = await request.json().catch(() => null) as { token?: unknown } | null
     const token = typeof body?.token === 'string' ? body.token : ''
-    const mgeIdentity = await verifyMgeMagicLink(token, env)
+    let identity: Pick<VerifiedIdentity, 'email' | 'previewId'>
+
+    try {
+      identity = await verifyMgeMagicLink(token, env)
+    } catch (mgeError) {
+      try {
+        identity = await verifyMagicToken(token, env, 'magic_link')
+      } catch {
+        throw mgeError
+      }
+    }
+
     const identityToken = await createIdentitySessionToken(
-      { email: mgeIdentity.email, previewId: mgeIdentity.previewId },
+      { email: identity.email, previewId: identity.previewId },
       env,
     )
 
     return withCors(
       json({
         ok: true,
-        email: mgeIdentity.email,
-        previewId: mgeIdentity.previewId,
+        email: identity.email,
+        previewId: identity.previewId,
         identityToken,
         expiresInSeconds: IDENTITY_SESSION_TTL_SECONDS,
       }),

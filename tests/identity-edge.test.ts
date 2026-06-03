@@ -18,7 +18,7 @@ const env: IdentityEnv = {
   MGEVERYDAY_BRAND_ID: '64',
 }
 
-test('requestMagicLink proxies preview ownership to the MGE internal magic-link API', async () => {
+test('requestMagicLink proxies preview ownership to the MGE internal magic-link API when email is sent upstream', async () => {
   let upstreamRequestUrl = ''
   let upstreamAuthorization = ''
   let upstreamIdempotencyKey = ''
@@ -56,6 +56,49 @@ test('requestMagicLink proxies preview ownership to the MGE internal magic-link 
     preview_id: '11111111-1111-1111-1111-111111111111',
     continue_path: '/checkout?step=identity',
   })
+})
+
+test('accepted MGE magic-link requests return and verify a local fallback link', async () => {
+  const response = await requestMagicLink(
+    new Request('https://dottingo.test/api/identity/request-magic-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'Buyer@Example.com', preview_id: 'preview_accepted', continue_path: '/?size=40x50' }),
+    }),
+    env,
+    async () => new Response(JSON.stringify({ ok: true, status: 'accepted', expires_in_seconds: 1800 }), { status: 202 }),
+  )
+
+  assert.equal(response.status, 200)
+  const payload = await response.json() as { delivery: string; magicLink?: string }
+  assert.equal(payload.delivery, 'accepted')
+  assert.ok(payload.magicLink)
+
+  const magicToken = new URL(payload.magicLink).searchParams.get('magic_token')
+  assert.ok(magicToken)
+
+  const originalFetch = globalThis.fetch
+  try {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ detail: 'Unknown MGE token' }), { status: 400 })) as typeof fetch
+    const verified = await verifyMagicLinkRequest(
+      new Request('https://dottingo.test/api/identity/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: magicToken }),
+      }),
+      env,
+    )
+
+    assert.equal(verified.status, 200)
+    const verifiedPayload = await verified.json() as { email: string; previewId: string; identityToken: string }
+    assert.equal(verifiedPayload.email, 'buyer@example.com')
+    assert.equal(verifiedPayload.previewId, 'preview_accepted')
+    const session = await verifyIdentitySessionToken(verifiedPayload.identityToken, env)
+    assert.equal(session.email, 'buyer@example.com')
+    assert.equal(session.previewId, 'preview_accepted')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
 
 test('verifyMagicLinkRequest consumes the MGE token and creates a preview-scoped checkout identity session', async () => {
