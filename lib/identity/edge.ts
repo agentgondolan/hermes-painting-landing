@@ -182,7 +182,7 @@ async function requestMgeMagicLink(
     headers: {
       Authorization: `Bearer ${requireMgeToken(env)}`,
       'Content-Type': 'application/json',
-      'Idempotency-Key': await idempotencyKey(identity.email, identity.previewId),
+      'Idempotency-Key': await idempotencyKey(identity.email, identity.previewId, identity.continuePath),
     },
     body: JSON.stringify({
       brand_id: mgeBrandId(),
@@ -233,8 +233,12 @@ async function verifyMgeMagicLink(token: string, env: IdentityEnv): Promise<MgeM
   }
 }
 
-async function idempotencyKey(email: string, previewId: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${normalizeEmail(email)}:${normalizeId(previewId)}`))
+async function idempotencyKey(email: string, previewId: string, continuePath: string): Promise<string> {
+  const retryNonce = crypto.randomUUID()
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(`${normalizeEmail(email)}:${normalizeId(previewId)}:${normalizeContinuePath(continuePath)}:${retryNonce}`),
+  )
   return `magic-link-${bytesToHex(new Uint8Array(digest)).slice(0, 32)}`
 }
 

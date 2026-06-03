@@ -58,6 +58,32 @@ test('requestMagicLink proxies preview ownership to the MGE internal magic-link 
   })
 })
 
+test('repeated magic-link requests generate fresh upstream idempotency keys', async () => {
+  const idempotencyKeys: string[] = []
+
+  const sendRequest = () => requestMagicLink(
+    new Request('https://dottingo.test/api/identity/request-magic-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'Buyer@Example.com', preview_id: '11111111-1111-1111-1111-111111111111', continue_path: '/checkout?step=identity' }),
+    }),
+    env,
+    async (request, init) => {
+      const upstreamRequest = request instanceof Request ? request : new Request(request, init)
+      idempotencyKeys.push(upstreamRequest.headers.get('Idempotency-Key') || '')
+      return new Response(JSON.stringify({ ok: true, status: 'sent', expires_in_seconds: 1800 }), { status: 202 })
+    },
+  )
+
+  await sendRequest()
+  await sendRequest()
+
+  assert.equal(idempotencyKeys.length, 2)
+  assert.ok(idempotencyKeys[0].startsWith('magic-link-'))
+  assert.ok(idempotencyKeys[1].startsWith('magic-link-'))
+  assert.notEqual(idempotencyKeys[0], idempotencyKeys[1])
+})
+
 test('accepted MGE magic-link requests return and verify a local fallback link', async () => {
   const response = await requestMagicLink(
     new Request('https://dottingo.test/api/identity/request-magic-link', {
