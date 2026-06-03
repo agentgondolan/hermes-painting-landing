@@ -84,7 +84,7 @@ test('repeated magic-link requests generate fresh upstream idempotency keys', as
   assert.notEqual(idempotencyKeys[0], idempotencyKeys[1])
 })
 
-test('accepted MGE magic-link requests return and verify a local fallback link', async () => {
+test('accepted MGE magic-link requests do not expose a fallback link to the browser', async () => {
   const response = await requestMagicLink(
     new Request('https://dottingo.test/api/identity/request-magic-link', {
       method: 'POST',
@@ -98,32 +98,25 @@ test('accepted MGE magic-link requests return and verify a local fallback link',
   assert.equal(response.status, 200)
   const payload = await response.json() as { delivery: string; magicLink?: string }
   assert.equal(payload.delivery, 'accepted')
-  assert.ok(payload.magicLink)
+  assert.equal(payload.magicLink, undefined)
+})
 
-  const magicToken = new URL(payload.magicLink).searchParams.get('magic_token')
-  assert.ok(magicToken)
-
-  const originalFetch = globalThis.fetch
-  try {
-    globalThis.fetch = (async () => new Response(JSON.stringify({ detail: 'Unknown MGE token' }), { status: 400 })) as typeof fetch
-    const verified = await verifyMagicLinkRequest(
-      new Request('https://dottingo.test/api/identity/verify', {
+test('MGE email-sent status aliases are normalized as confirmed email delivery', async () => {
+  for (const status of ['sent', 'email_sent', 'delivered', 'succeeded']) {
+    const response = await requestMagicLink(
+      new Request('https://dottingo.test/api/identity/request-magic-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: magicToken }),
+        body: JSON.stringify({ email: 'Buyer@Example.com', preview_id: `preview_${status}`, continue_path: '/?size=40x50' }),
       }),
       env,
+      async () => new Response(JSON.stringify({ ok: true, status, expires_in_seconds: 1800 }), { status: 202 }),
     )
 
-    assert.equal(verified.status, 200)
-    const verifiedPayload = await verified.json() as { email: string; previewId: string; identityToken: string }
-    assert.equal(verifiedPayload.email, 'buyer@example.com')
-    assert.equal(verifiedPayload.previewId, 'preview_accepted')
-    const session = await verifyIdentitySessionToken(verifiedPayload.identityToken, env)
-    assert.equal(session.email, 'buyer@example.com')
-    assert.equal(session.previewId, 'preview_accepted')
-  } finally {
-    globalThis.fetch = originalFetch
+    assert.equal(response.status, 200)
+    const payload = await response.json() as { delivery: string; magicLink?: string }
+    assert.equal(payload.delivery, 'email_sent')
+    assert.equal(payload.magicLink, undefined)
   }
 })
 

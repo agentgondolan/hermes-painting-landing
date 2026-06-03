@@ -10,7 +10,6 @@ type StoredIdentity = {
 type MagicLinkResponse = {
   ok?: boolean
   delivery?: 'email_sent' | 'accepted'
-  magicLink?: string
   error?: string
 }
 
@@ -21,6 +20,28 @@ type VerifyResponse = {
   identityToken?: string
   expiresInSeconds?: number
   error?: string
+}
+
+export async function verifyMagicToken(token: string): Promise<StoredIdentity> {
+  const response = await fetch('/api/identity/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  })
+  const payload = await response.json().catch(() => null) as VerifyResponse | null
+
+  if (!response.ok || !payload?.identityToken || !payload.email || !payload.previewId) {
+    throw new Error(payload?.error || 'Magic link verification failed')
+  }
+
+  const identity: StoredIdentity = {
+    email: payload.email,
+    previewId: payload.previewId,
+    identityToken: payload.identityToken,
+    expiresAt: Date.now() + (payload.expiresInSeconds ?? 0) * 1000,
+  }
+  window.localStorage.setItem(IDENTITY_STORAGE_KEY, JSON.stringify(identity))
+  return identity
 }
 
 export function readVerifiedIdentity(previewId?: string | null): StoredIdentity | null {
@@ -69,28 +90,12 @@ export async function requestDesignMagicLink(email: string, previewId: string): 
 export async function consumeMagicTokenFromUrl(): Promise<StoredIdentity | null> {
   if (typeof window === 'undefined') return null
   const url = new URL(window.location.href)
-  const token = url.searchParams.get('magic_token')
+  const token = url.searchParams.get('magic_token') ?? url.searchParams.get('token')
   if (!token) return null
 
-  const response = await fetch('/api/identity/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token }),
-  })
-  const payload = await response.json().catch(() => null) as VerifyResponse | null
   url.searchParams.delete('magic_token')
+  url.searchParams.delete('token')
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
 
-  if (!response.ok || !payload?.identityToken || !payload.email || !payload.previewId) {
-    throw new Error(payload?.error || 'Magic link verification failed')
-  }
-
-  const identity: StoredIdentity = {
-    email: payload.email,
-    previewId: payload.previewId,
-    identityToken: payload.identityToken,
-    expiresAt: Date.now() + (payload.expiresInSeconds ?? 0) * 1000,
-  }
-  window.localStorage.setItem(IDENTITY_STORAGE_KEY, JSON.stringify(identity))
-  return identity
+  return verifyMagicToken(token)
 }

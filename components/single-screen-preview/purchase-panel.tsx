@@ -51,7 +51,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
   const [identity, setIdentity] = useState<VerifiedIdentity | null>(null)
   const [magicLinkLoading, setMagicLinkLoading] = useState(false)
   const [magicLinkStatus, setMagicLinkStatus] = useState<string | null>(null)
-  const [magicLinkFallback, setMagicLinkFallback] = useState<string | null>(null)
+  const [magicLinkSent, setMagicLinkSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -62,6 +62,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
         setIdentity(verified)
         setEmail(verified.email)
         setMagicLinkStatus("Email verified. Your design is saved to this email.")
+        setMagicLinkSent(false)
         captureEvent("magic_link_verified", {
           preview_id: verified.previewId,
         })
@@ -78,6 +79,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
     const stored = readVerifiedIdentity(previewId)
     setIdentity(stored)
     if (stored?.email) setEmail(stored.email)
+    setMagicLinkSent(false)
   }, [previewId])
 
   useEffect(() => {
@@ -179,7 +181,6 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
     if (!previewId) return
     setMagicLinkLoading(true)
     setMagicLinkStatus(null)
-    setMagicLinkFallback(null)
     setError(null)
 
     try {
@@ -187,15 +188,16 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
       setMagicLinkStatus(
         result.delivery === "email_sent"
           ? "Magic link sent. Open it from your email to save this design."
-          : "Magic link requested. MGE accepted the request, but delivery is not confirmed yet.",
+          : "Magic link requested. If it does not arrive, try again in a moment.",
       )
-      setMagicLinkFallback(result.magicLink ?? null)
+      setMagicLinkSent(result.delivery === "email_sent")
       captureEvent("magic_link_requested", {
         preview_id: previewId,
         delivery: result.delivery,
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not send magic link"
+      setMagicLinkSent(false)
       setMagicLinkStatus(message)
       captureEvent("magic_link_request_failed", {
         preview_id: previewId,
@@ -310,25 +312,23 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
                   inputMode="email"
                   autoComplete="email"
                   value={email}
-                  onChange={(event) => setEmail(event.target.value)}
+                  onChange={(event) => {
+                    setEmail(event.target.value)
+                    setMagicLinkSent(false)
+                  }}
                   placeholder="you@example.com"
                   className="min-w-0 flex-1 rounded-full border border-[#9432c1]/15 bg-white px-3 py-2 text-sm font-semibold text-[#2e2d2c] outline-none transition placeholder:text-[#2e2d2c]/35 focus:border-[#9432c1]/45"
                 />
                 <button
                   type="button"
                   onClick={handleRequestMagicLink}
-                  disabled={magicLinkLoading || !email.trim()}
+                  disabled={magicLinkLoading || !email.trim() || magicLinkSent}
                   className="rounded-full bg-[#2e2d2c] px-4 py-2 text-xs font-extrabold text-white transition hover:bg-[#111] disabled:cursor-not-allowed disabled:bg-[#2e2d2c]/15 disabled:text-[#2e2d2c]/35"
                 >
-                  {magicLinkLoading ? "Sending…" : "Send link"}
+                  {magicLinkLoading ? "Sending…" : magicLinkSent ? "Sent" : "Send link"}
                 </button>
               </div>
               {magicLinkStatus && <p className="mt-2 text-xs font-medium text-[#2e2d2c]/58">{magicLinkStatus}</p>}
-              {magicLinkFallback && (
-                <a className="mt-2 block break-all text-xs font-bold text-[#9432c1] underline" href={magicLinkFallback}>
-                  Open test magic link
-                </a>
-              )}
             </div>
           )}
 

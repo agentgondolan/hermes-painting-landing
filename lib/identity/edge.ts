@@ -52,17 +52,13 @@ export async function requestMagicLink(
     if (!previewId) return withCors(json({ error: 'preview_id is required' }, 400), request, env)
 
     const upstream = await requestMgeMagicLink({ email, previewId, continuePath }, env, fetcher)
-    const delivery = upstream.status === 'sent' ? 'email_sent' : 'accepted'
-    const magicLink = delivery === 'accepted'
-      ? buildMagicLink(request, env, await createMagicToken({ email, previewId }, env), continuePath)
-      : undefined
+    const delivery = normalizeMagicLinkDelivery(upstream.status)
 
     return withCors(
       json({
         ok: true,
         delivery,
         expiresInSeconds: upstream.expiresInSeconds || MAGIC_LINK_TTL_SECONDS,
-        ...(magicLink ? { magicLink } : {}),
       }),
       request,
       env,
@@ -160,7 +156,7 @@ export async function sendContinuationMagicLink(
     previewId: identity.previewId,
     continuePath,
   }, env, fetcher)
-  return upstream.status === 'sent' ? 'email_sent' : 'accepted'
+  return normalizeMagicLinkDelivery(upstream.status)
 }
 
 type MgeMagicLinkRequestResult = {
@@ -170,6 +166,10 @@ type MgeMagicLinkRequestResult = {
 
 type MgeMagicLinkIdentity = Pick<VerifiedIdentity, 'email' | 'previewId'> & {
   expiresInSeconds: number
+}
+
+function normalizeMagicLinkDelivery(status: string): 'email_sent' | 'accepted' {
+  return ['sent', 'email_sent', 'delivered', 'succeeded'].includes(status.toLowerCase()) ? 'email_sent' : 'accepted'
 }
 
 async function requestMgeMagicLink(
