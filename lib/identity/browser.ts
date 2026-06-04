@@ -10,6 +10,7 @@ type StoredIdentity = {
 type MagicLinkResponse = {
   ok?: boolean
   delivery?: 'email_sent' | 'accepted'
+  emailStatus?: string
   error?: string
 }
 
