@@ -52,9 +52,9 @@ export async function requestMagicLink(
     if (!previewId) return withCors(json({ error: 'preview_id is required' }, 400), request, env)
 
     const upstream = await requestMgeMagicLink({ email, previewId, continuePath }, env, fetcher)
-    const emailStatus = upstream.requestId && normalizeMagicLinkDelivery(upstream.status) !== 'email_sent'
-      ? await checkMgeMagicLinkStatus({ email, previewId, requestId: upstream.requestId }, env, fetcher)
-      : upstream.status
+    const emailStatus = normalizeMagicLinkDelivery(upstream.status) === 'email_sent'
+      ? upstream.status
+      : await checkMgeMagicLinkStatus({ email, previewId, requestId: upstream.requestId }, upstream.status, env, fetcher)
     const delivery = normalizeMagicLinkDelivery(emailStatus)
 
     return withCors(
@@ -210,7 +210,8 @@ async function requestMgeMagicLink(
 }
 
 async function checkMgeMagicLinkStatus(
-  identity: Pick<VerifiedIdentity, 'email' | 'previewId'> & { requestId: string },
+  identity: Pick<VerifiedIdentity, 'email' | 'previewId'> & { requestId?: string },
+  fallbackStatus: string,
   env: IdentityEnv,
   fetcher: typeof fetch,
 ): Promise<string> {
@@ -224,13 +225,18 @@ async function checkMgeMagicLinkStatus(
       brand_id: mgeBrandId(),
       email: normalizeEmail(identity.email),
       preview_id: normalizeId(identity.previewId),
-      request_id: normalizeId(identity.requestId),
+      ...(identity.requestId ? { request_id: normalizeId(identity.requestId) } : {}),
     }),
   })
   const payload = parseJson(await response.text())
-  if (!response.ok) return 'accepted'
+  if (!response.ok) return fallbackStatus || 'accepted'
   const record = asRecord(payload)
-  return stringValue(record?.status) || 'accepted'
+  return stringValue(record?.status)
+    || stringValue(record?.email_status)
+    || stringValue(record?.delivery)
+    || stringValue(record?.mail_status)
+    || fallbackStatus
+    || 'accepted'
 }
 
 async function verifyMgeMagicLink(token: string, env: IdentityEnv): Promise<MgeMagicLinkIdentity> {

@@ -85,6 +85,7 @@ test('repeated magic-link requests generate fresh upstream idempotency keys', as
 })
 
 test('accepted MGE magic-link requests do not expose a fallback link to the browser', async () => {
+  const calls: Array<{ url: string; body: Record<string, unknown> }> = []
   const response = await requestMagicLink(
     new Request('https://dottingo.test/api/identity/request-magic-link', {
       method: 'POST',
@@ -92,13 +93,29 @@ test('accepted MGE magic-link requests do not expose a fallback link to the brow
       body: JSON.stringify({ email: 'Buyer@Example.com', preview_id: 'preview_accepted', continue_path: '/?size=40x50' }),
     }),
     env,
-    async () => new Response(JSON.stringify({ ok: true, status: 'accepted', expires_in_seconds: 1800 }), { status: 202 }),
+    async (request, init) => {
+      const upstreamRequest = request instanceof Request ? request : new Request(request, init)
+      calls.push({
+        url: upstreamRequest.url,
+        body: await upstreamRequest.json() as Record<string, unknown>,
+      })
+      return new Response(JSON.stringify({ ok: true, status: 'accepted', expires_in_seconds: 1800 }), { status: upstreamRequest.url.endsWith('/magic-link/request/') ? 202 : 200 })
+    },
   )
 
   assert.equal(response.status, 200)
   const payload = await response.json() as { delivery: string; magicLink?: string }
   assert.equal(payload.delivery, 'accepted')
   assert.equal(payload.magicLink, undefined)
+  assert.deepEqual(calls.map((call) => call.url), [
+    'https://mge.test/api/internal/v1/identity/magic-link/request/',
+    'https://mge.test/api/internal/v1/identity/magic-link/status/',
+  ])
+  assert.deepEqual(calls[1].body, {
+    brand_id: 64,
+    email: 'buyer@example.com',
+    preview_id: 'preview_accepted',
+  })
 })
 
 test('requestMagicLink checks internal email status before reporting confirmed delivery', async () => {

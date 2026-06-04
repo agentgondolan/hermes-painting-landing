@@ -4,8 +4,8 @@ import test from 'node:test'
 
 const source = readFileSync(new URL('../components/single-screen-preview/purchase-panel.tsx', import.meta.url), 'utf8')
 
-test('magic-link request shows accepted state when delivery is not confirmed', () => {
-  assert.equal(source.includes('Magic link accepted by email service. Check your inbox; you can retry if it does not arrive.'), true)
+test('magic-link request does not show accepted-unconfirmed copy', () => {
+  assert.equal(source.includes('Magic link accepted by email service'), false)
   assert.match(source, /setMagicLinkStatus\(result\.delivery === "email_sent"/)
 })
 

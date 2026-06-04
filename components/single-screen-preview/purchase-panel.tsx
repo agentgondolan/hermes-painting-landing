@@ -185,9 +185,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
 
     try {
       const result = await requestDesignMagicLink(email, previewId)
-      setMagicLinkStatus(result.delivery === "email_sent"
-        ? "Magic link sent. Check your inbox."
-        : "Magic link accepted by email service. Check your inbox; you can retry if it does not arrive.")
+      setMagicLinkStatus(result.delivery === "email_sent" ? "Magic link sent. Check your inbox." : null)
       setMagicLinkSent(result.delivery === "email_sent")
       captureEvent("magic_link_requested", {
         preview_id: previewId,
