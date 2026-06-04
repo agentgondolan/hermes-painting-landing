@@ -62,6 +62,7 @@ export async function requestMagicLink(
         ok: true,
         delivery,
         emailStatus,
+        requestId: upstream.requestId,
         expiresInSeconds: upstream.expiresInSeconds || MAGIC_LINK_TTL_SECONDS,
       }),
       request,
@@ -69,6 +70,48 @@ export async function requestMagicLink(
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Could not send magic link'
+    return withCors(json({ error: message }, 500), request, env)
+  }
+}
+
+export async function getMagicLinkRequestStatus(
+  request: Request,
+  env: IdentityEnv,
+  requestId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<Response> {
+  if (request.method === 'OPTIONS') return corsResponse(request, env)
+  if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405), request, env)
+
+  const normalizedRequestId = normalizeId(requestId)
+  if (!normalizedRequestId) return withCors(json({ error: 'request_id is required' }, 400), request, env)
+
+  try {
+    const response = await fetcher(`${mgeBaseUrl(env)}/api/internal/v1/identity/magic-link/requests/${normalizedRequestId}/`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${requireMgeToken(env)}`,
+      },
+    })
+    const payload = parseJson(await response.text())
+    if (!response.ok) return withCors(json({ error: mgeErrorMessage(payload, 'MGE rejected the magic link status request') }, response.status), request, env)
+
+    const emailStatus = magicLinkStatusFromPayload(payload, 'accepted')
+    const delivery = normalizeMagicLinkDelivery(emailStatus)
+
+    return withCors(
+      json({
+        ok: true,
+        delivery,
+        emailStatus,
+        terminal: delivery === 'email_sent' || isTerminalMagicLinkFailure(emailStatus),
+        requestId: normalizedRequestId,
+      }),
+      request,
+      env,
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Could not check magic link status'
     return withCors(json({ error: message }, 500), request, env)
   }
 }
@@ -177,6 +220,20 @@ function normalizeMagicLinkDelivery(status: string): 'email_sent' | 'accepted' {
   return ['sent', 'email_sent', 'delivered', 'succeeded'].includes(status.toLowerCase()) ? 'email_sent' : 'accepted'
 }
 
+function isTerminalMagicLinkFailure(status: string): boolean {
+  return ['failed', 'bounced', 'rejected', 'cancelled', 'canceled', 'expired'].includes(status.toLowerCase())
+}
+
+function magicLinkStatusFromPayload(payload: unknown, fallbackStatus: string): string {
+  const record = asRecord(payload)
+  return stringValue(record?.status)
+    || stringValue(record?.email_status)
+    || stringValue(record?.delivery)
+    || stringValue(record?.mail_status)
+    || fallbackStatus
+    || 'accepted'
+}
+
 async function requestMgeMagicLink(
   identity: Pick<VerifiedIdentity, 'email' | 'previewId'> & { continuePath: string },
   env: IdentityEnv,
@@ -230,13 +287,7 @@ async function checkMgeMagicLinkStatus(
   })
   const payload = parseJson(await response.text())
   if (!response.ok) return fallbackStatus || 'accepted'
-  const record = asRecord(payload)
-  return stringValue(record?.status)
-    || stringValue(record?.email_status)
-    || stringValue(record?.delivery)
-    || stringValue(record?.mail_status)
-    || fallbackStatus
-    || 'accepted'
+  return magicLinkStatusFromPayload(payload, fallbackStatus)
 }
 
 async function verifyMgeMagicLink(token: string, env: IdentityEnv): Promise<MgeMagicLinkIdentity> {

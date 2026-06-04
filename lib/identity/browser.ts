@@ -11,7 +11,12 @@ type MagicLinkResponse = {
   ok?: boolean
   delivery?: 'email_sent' | 'accepted'
   emailStatus?: string
+  requestId?: string
   error?: string
+}
+
+type MagicLinkStatusResponse = MagicLinkResponse & {
+  terminal?: boolean
 }
 
 type VerifyResponse = {
@@ -86,6 +91,15 @@ export async function requestDesignMagicLink(email: string, previewId: string): 
   const payload = await response.json().catch(() => null) as MagicLinkResponse | null
   if (!response.ok) throw new Error(payload?.error || 'Could not send magic link')
   return payload ?? { ok: true }
+}
+
+export async function pollMagicLinkRequestStatus(requestId: string): Promise<MagicLinkStatusResponse> {
+  const response = await fetch(`/api/identity/magic-link/requests/${encodeURIComponent(requestId)}`, {
+    method: 'GET',
+  })
+  const payload = await response.json().catch(() => null) as MagicLinkStatusResponse | null
+  if (!response.ok) throw new Error(payload?.error || 'Could not check magic link status')
+  return payload ?? { ok: true, terminal: false }
 }
 
 export async function consumeMagicTokenFromUrl(): Promise<StoredIdentity | null> {

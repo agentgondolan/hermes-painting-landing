@@ -304,6 +304,22 @@ Free-tier fit as of 2026-05-19: Cloudflare Workers/Pages Functions include a fre
 
 ---
 
+## Phase 12 — Parked: UCP / agentic commerce adapter
+
+**Status:** Parked. Do not refactor the current storefront or MGE API flow around UCP yet.
+
+**Purpose:** Later expose a standardized AI-agent commerce interface (for Google UCP / Gemini / AI Mode style checkout) backed by the existing MGE storefront flow.
+
+**Decision:** UCP is an outer adapter layer, not a replacement for MGE. The current priority remains: preview → purchase option → order draft → Stripe payment → webhook → MGE submit → confirmation.
+
+**Future scope:**
+- Add a UCP profile at `/.well-known/ucp` only after the normal paid flow is proven.
+- Map UCP cart/checkout/order calls onto the existing BFF/MGE flow.
+- Keep MGE as the source of truth for preview generation, purchase options, order validation, submit, and order status.
+- Treat Google Pay / agent identity / merchant discovery as adapter concerns, not core product logic.
+
+---
+
 ## API documentation improvement notes
 
 Initial docs are strong: Swagger is public, OpenAPI schema is available, auth scheme is clear, and preview/order endpoints include useful descriptions.

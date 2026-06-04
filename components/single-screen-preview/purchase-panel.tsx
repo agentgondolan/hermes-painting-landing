@@ -10,6 +10,7 @@ import type { DotPreviewResult, FrameSizeOption } from "./preview-state"
 import { persistCheckoutSelection, readStoredCheckoutState } from "./checkout-persistence"
 import {
   consumeMagicTokenFromUrl,
+  pollMagicLinkRequestStatus,
   readVerifiedIdentity,
   requestDesignMagicLink,
 } from "@/lib/identity/browser"
@@ -49,6 +50,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
   const [checkoutComingSoon, setCheckoutComingSoon] = useState(false)
   const [email, setEmail] = useState("")
   const [identity, setIdentity] = useState<VerifiedIdentity | null>(null)
+  const [changingVerifiedEmail, setChangingVerifiedEmail] = useState(false)
   const [magicLinkLoading, setMagicLinkLoading] = useState(false)
   const [magicLinkStatus, setMagicLinkStatus] = useState<string | null>(null)
   const [magicLinkSent, setMagicLinkSent] = useState(false)
@@ -60,6 +62,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
       (verified) => {
         if (!verified) return
         setIdentity(verified)
+        setChangingVerifiedEmail(false)
         setEmail(verified.email)
         setMagicLinkStatus("Email verified. Your design is saved to this email.")
         setMagicLinkSent(false)
@@ -78,6 +81,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
   useEffect(() => {
     const stored = readVerifiedIdentity(previewId)
     setIdentity(stored)
+    setChangingVerifiedEmail(false)
     if (stored?.email) setEmail(stored.email)
     setMagicLinkSent(false)
   }, [previewId])
@@ -180,17 +184,66 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
   const handleRequestMagicLink = async () => {
     if (!previewId) return
     setMagicLinkLoading(true)
-    setMagicLinkStatus(null)
+    setMagicLinkStatus("Sending link…")
     setError(null)
 
     try {
       const result = await requestDesignMagicLink(email, previewId)
-      setMagicLinkStatus(result.delivery === "email_sent" ? "Magic link sent. Check your inbox." : null)
-      setMagicLinkSent(result.delivery === "email_sent")
+      const confirmed = result.delivery === "email_sent"
+      setMagicLinkStatus(confirmed ? "Please check your emails to verify." : "Sending link…")
+      setMagicLinkSent(confirmed)
+      if (confirmed) setChangingVerifiedEmail(false)
       captureEvent("magic_link_requested", {
         preview_id: previewId,
         delivery: result.delivery,
         email_status: result.emailStatus,
+        request_id: result.requestId,
+      })
+
+      if (confirmed || !result.requestId) return
+
+      for (let attempt = 1; attempt <= 5; attempt += 1) {
+        await wait(1500)
+        const status = await pollMagicLinkRequestStatus(result.requestId)
+        captureEvent("magic_link_delivery_poll", {
+          preview_id: previewId,
+          attempt,
+          delivery: status.delivery,
+          email_status: status.emailStatus,
+          terminal: status.terminal,
+          request_id: result.requestId,
+        })
+
+        if (status.delivery === "email_sent") {
+          setMagicLinkStatus("Please check your emails to verify.")
+          setMagicLinkSent(true)
+          setChangingVerifiedEmail(false)
+          captureEvent("magic_link_delivery_confirmed", {
+            preview_id: previewId,
+            attempt,
+            email_status: status.emailStatus,
+            request_id: result.requestId,
+          })
+          return
+        }
+
+        if (status.terminal) {
+          setMagicLinkStatus("Could not send link. Try again.")
+          setMagicLinkSent(false)
+          captureEvent("magic_link_delivery_failed", {
+            preview_id: previewId,
+            attempt,
+            email_status: status.emailStatus,
+            request_id: result.requestId,
+          })
+          return
+        }
+      }
+
+      setMagicLinkStatus("Still sending. You can send again in a moment.")
+      captureEvent("magic_link_delivery_pending", {
+        preview_id: previewId,
+        request_id: result.requestId,
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not send magic link"
@@ -211,7 +264,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
       return
     }
     if (!previewId || !selectedPurchaseOption || quote.error) return
-    if (!identity || identity.previewId !== previewId) {
+    if (!identity || identity.previewId !== previewId || changingVerifiedEmail) {
       setError("Verify your email before checkout so your order can be recovered later.")
       return
     }
@@ -273,6 +326,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
 
   const panelClassName = "w-full rounded-[1.5rem] border border-[#9432c1]/12 bg-white/72 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]"
   const isVerifiedForPreview = Boolean(identity && identity.previewId === previewId)
+  const canUseVerifiedIdentity = isVerifiedForPreview && !changingVerifiedEmail
 
   return (
     <div className={panelClassName}>
@@ -293,44 +347,86 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
             <button
               type="button"
               onClick={handleCheckout}
-              disabled={checkoutLoading || loadingOptions || Boolean(quote.error) || !selectedPurchaseOption || checkoutComingSoon || !isVerifiedForPreview}
+              disabled={checkoutLoading || loadingOptions || Boolean(quote.error) || !selectedPurchaseOption || checkoutComingSoon || !canUseVerifiedIdentity}
               className="shrink-0 rounded-full bg-[#9432c1] px-5 py-2.5 text-sm font-extrabold text-white shadow-[0_14px_34px_rgba(148,50,193,0.28)] transition hover:bg-[#7f28aa] disabled:cursor-not-allowed disabled:bg-[#2e2d2c]/10 disabled:text-[#2e2d2c]/35"
             >
               {checkoutComingSoon ? "Coming soon" : checkoutLoading ? "Opening Stripe…" : "Checkout"}
             </button>
           </div>
 
-          {!isVerifiedForPreview && (
+          {(!isVerifiedForPreview || changingVerifiedEmail) && (
             <div className="mt-3 rounded-[1.25rem] border border-[#9432c1]/12 bg-white/62 p-3">
               <p className="text-xs font-extrabold text-[#2e2d2c]">Save your design and continue later.</p>
-              <div className="mt-2 flex gap-2">
-                <input
-                  type="email"
-                  inputMode="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(event) => {
-                    setEmail(event.target.value)
-                    setMagicLinkSent(false)
-                  }}
-                  placeholder="you@example.com"
-                  className="min-w-0 flex-1 rounded-full border border-[#9432c1]/15 bg-white px-3 py-2 text-sm font-semibold text-[#2e2d2c] outline-none transition placeholder:text-[#2e2d2c]/35 focus:border-[#9432c1]/45"
-                />
-                <button
-                  type="button"
-                  onClick={handleRequestMagicLink}
-                  disabled={magicLinkLoading || !email.trim() || magicLinkSent}
-                  className="rounded-full bg-[#2e2d2c] px-4 py-2 text-xs font-extrabold text-white transition hover:bg-[#111] disabled:cursor-not-allowed disabled:bg-[#2e2d2c]/15 disabled:text-[#2e2d2c]/35"
-                >
-                  {magicLinkLoading ? "Sending…" : magicLinkSent ? "Sent" : "Send link"}
-                </button>
-              </div>
-              {magicLinkStatus && <p className="mt-2 text-xs font-medium text-[#2e2d2c]/58">{magicLinkStatus}</p>}
+              {magicLinkSent ? (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    disabled
+                    className="w-full rounded-full bg-[#2e2d2c]/10 px-4 py-2 text-center text-xs font-extrabold text-[#2e2d2c]/42 disabled:cursor-not-allowed"
+                  >
+                    Email sent to {email}
+                  </button>
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <p className="text-xs font-medium text-[#2e2d2c]/58">{magicLinkStatus ?? "Please check your emails to verify."}</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMagicLinkSent(false)
+                        setMagicLinkStatus(null)
+                        setChangingVerifiedEmail(true)
+                      }}
+                      className="shrink-0 text-[11px] font-bold text-[#2e2d2c]/45 underline-offset-2 transition hover:text-[#9432c1] hover:underline"
+                    >
+                      Send again
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      type="email"
+                      inputMode="email"
+                      autoComplete="email"
+                      value={email}
+                      onChange={(event) => {
+                        setEmail(event.target.value)
+                        setMagicLinkSent(false)
+                        if (isVerifiedForPreview) setChangingVerifiedEmail(true)
+                      }}
+                      placeholder="you@example.com"
+                      className="min-w-0 flex-1 rounded-full border border-[#9432c1]/15 bg-white px-3 py-2 text-sm font-semibold text-[#2e2d2c] outline-none transition placeholder:text-[#2e2d2c]/35 focus:border-[#9432c1]/45"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleRequestMagicLink}
+                      disabled={magicLinkLoading || !email.trim()}
+                      className="rounded-full bg-[#2e2d2c] px-4 py-2 text-xs font-extrabold text-white transition hover:bg-[#111] disabled:cursor-not-allowed disabled:bg-[#2e2d2c]/15 disabled:text-[#2e2d2c]/35"
+                    >
+                      {magicLinkLoading ? "Sending…" : "Send link"}
+                    </button>
+                  </div>
+                  {magicLinkStatus && <p className="mt-2 text-xs font-medium text-[#2e2d2c]/58">{magicLinkStatus}</p>}
+                </>
+              )}
             </div>
           )}
 
-          {isVerifiedForPreview && (
-            <p className="mt-2 text-xs font-bold text-[#2f7d32]">Verified: {identity?.email}</p>
+          {canUseVerifiedIdentity && identity && (
+            <div className="mt-3 flex items-center justify-between gap-2 rounded-full border border-[#2f7d32]/15 bg-[#2f7d32]/8 px-3 py-2">
+              <p className="truncate text-xs font-extrabold text-[#2f7d32]">Saved to {identity.email}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setChangingVerifiedEmail(true)
+                  setMagicLinkSent(false)
+                  setMagicLinkStatus(null)
+                }}
+                className="shrink-0 text-xs font-extrabold text-[#9432c1] underline-offset-2 hover:underline"
+              >
+                Change email
+              </button>
+            </div>
           )}
 
           {visiblePurchaseOptions.length > 1 && (
@@ -407,6 +503,10 @@ function formatCheckoutError(payload: { error?: string; detail?: string } | null
   if (/Stripe sandbox checkout requires/i.test(message)) return "Checkout is still in Stripe test-mode setup."
   if (/order_draft/i.test(message)) return "Could not confirm the order draft. Please try again."
   return message
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
 function roundUpToNinetyNineCents(amount: number): number {

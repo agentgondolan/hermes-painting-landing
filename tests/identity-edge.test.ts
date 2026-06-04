@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   createIdentitySessionToken,
+  getMagicLinkRequestStatus,
   requestMagicLink,
   verifyIdentitySessionToken,
   verifyMagicLinkRequest,
@@ -183,6 +184,69 @@ test('requestMagicLink keeps delivery unconfirmed when internal email status is 
   assert.equal(payload.delivery, 'accepted')
   assert.equal(payload.emailStatus, 'queued')
   assert.equal(payload.magicLink, undefined)
+})
+
+test('requestMagicLink returns request_id immediately so the browser can poll final delivery status', async () => {
+  const response = await requestMagicLink(
+    new Request('https://dottingo.test/api/identity/request-magic-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'Buyer@Example.com', preview_id: 'preview_phase0', continue_path: '/?size=40x50' }),
+    }),
+    env,
+    async () => new Response(JSON.stringify({ ok: true, status: 'queued', request_id: 'ml_phase0', expires_in_seconds: 1800 }), { status: 202 }),
+  )
+
+  assert.equal(response.status, 200)
+  const payload = await response.json() as { delivery: string; emailStatus?: string; requestId?: string; magicLink?: string }
+  assert.equal(payload.delivery, 'accepted')
+  assert.equal(payload.emailStatus, 'queued')
+  assert.equal(payload.requestId, 'ml_phase0')
+  assert.equal(payload.magicLink, undefined)
+})
+
+test('getMagicLinkRequestStatus proxies request_id to MGE internal request status endpoint', async () => {
+  let upstreamRequestUrl = ''
+  let upstreamAuthorization = ''
+
+  const response = await getMagicLinkRequestStatus(
+    new Request('https://dottingo.test/api/identity/magic-link/requests/ml_phase0', {
+      method: 'GET',
+    }),
+    env,
+    'ml_phase0',
+    async (request, init) => {
+      const upstreamRequest = request instanceof Request ? request : new Request(request, init)
+      upstreamRequestUrl = upstreamRequest.url
+      upstreamAuthorization = upstreamRequest.headers.get('Authorization') || ''
+      return new Response(JSON.stringify({ ok: true, status: 'sent' }), { status: 200 })
+    },
+  )
+
+  assert.equal(response.status, 200)
+  const payload = await response.json() as { delivery: string; emailStatus?: string; terminal?: boolean; requestId?: string }
+  assert.equal(payload.delivery, 'email_sent')
+  assert.equal(payload.emailStatus, 'sent')
+  assert.equal(payload.terminal, true)
+  assert.equal(payload.requestId, 'ml_phase0')
+  assert.equal(upstreamRequestUrl, 'https://mge.test/api/internal/v1/identity/magic-link/requests/ml_phase0/')
+  assert.equal(upstreamAuthorization, 'Bearer test_mge_token')
+})
+
+test('getMagicLinkRequestStatus keeps queued request non-terminal', async () => {
+  const response = await getMagicLinkRequestStatus(
+    new Request('https://dottingo.test/api/identity/magic-link/requests/ml_queued', { method: 'GET' }),
+    env,
+    'ml_queued',
+    async () => new Response(JSON.stringify({ ok: true, status: 'queued' }), { status: 200 }),
+  )
+
+  assert.equal(response.status, 200)
+  const payload = await response.json() as { delivery: string; emailStatus?: string; terminal?: boolean; requestId?: string }
+  assert.equal(payload.delivery, 'accepted')
+  assert.equal(payload.emailStatus, 'queued')
+  assert.equal(payload.terminal, false)
+  assert.equal(payload.requestId, 'ml_queued')
 })
 
 test('MGE email-sent status aliases are normalized as confirmed email delivery', async () => {
