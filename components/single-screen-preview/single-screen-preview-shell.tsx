@@ -28,6 +28,7 @@ export function SingleScreenPreviewShell() {
   const [magicLinkNotice, setMagicLinkNotice] = useState<MagicLinkNotice>(null)
   const [magicLinkIdentity, setMagicLinkIdentity] = useState<StoredIdentity | null>(null)
   const [accountPanelOpen, setAccountPanelOpen] = useState(false)
+  const [saveEmailFlowNonce, setSaveEmailFlowNonce] = useState(0)
   const selectedPreview = state.selectedSize ? state.dotPreviews[state.selectedSize.id] : null
 
   useEffect(() => {
@@ -131,6 +132,7 @@ export function SingleScreenPreviewShell() {
           selectedPreview={selectedPreview ?? null}
           selectedSize={state.selectedSize}
           verifiedIdentity={magicLinkIdentity}
+          startEmailFlowNonce={saveEmailFlowNonce}
           onClose={() => setAccountPanelOpen(false)}
         />
       ) : null}
@@ -144,6 +146,7 @@ export function SingleScreenPreviewShell() {
               selectedPreview={selectedPreview ?? null}
               verifiedIdentity={magicLinkIdentity}
               onOpenAccountPanel={() => {
+                setSaveEmailFlowNonce((nonce) => nonce + 1)
                 setAccountPanelOpen(true)
               }}
             />

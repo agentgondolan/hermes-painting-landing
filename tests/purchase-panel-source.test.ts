@@ -13,10 +13,11 @@ test('purchase panel keeps two primary actions without inline email capture', ()
   assert.equal(source.includes('Please check your emails to verify.'), false)
 })
 
-test('bottom save action opens the account panel', () => {
+test('bottom save action opens the account panel directly in email-save state', () => {
   assert.equal(source.includes('onOpenAccountPanel?.()'), true)
-  assert.equal(shellSource.includes('onOpenAccountPanel={() =>'), true)
-  assert.equal(shellSource.includes('setAccountPanelOpen(true)'), true)
+  assert.equal(shellSource.includes('saveEmailFlowNonce'), true)
+  assert.match(shellSource, /setSaveEmailFlowNonce\(\(nonce\) => nonce \+ 1\)/)
+  assert.equal(shellSource.includes('startEmailFlowNonce={saveEmailFlowNonce}'), true)
 })
 
 test('checkout requires verified identity for the exact preview', () => {
