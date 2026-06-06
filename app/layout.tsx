@@ -10,9 +10,9 @@ const outfit = Outfit({
 })
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://dottingo.sg'
-const title = 'Custom Dot Art from Your Photo | Dottingo'
+const title = 'Turn Your Photo into Dot Art | Dottingo'
 const description =
-  'Turn your favorite photo into a personalized dot art kit. Upload a picture, preview your custom artwork, and create a meaningful handmade gift.'
+  'Upload a picture, preview your custom Dottingo design, and order a personalized handmade kit.'
 const ogImage = '/opengraph-image.png'
 
 export const metadata: Metadata = {
