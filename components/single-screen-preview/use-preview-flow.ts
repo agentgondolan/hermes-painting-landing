@@ -48,6 +48,49 @@ function normalizePreviewOptions(result: Pick<PreviewFlowResult, 'options'>): Pr
     }))
 }
 
+export function readPreviewIdFromUrl(): string | null {
+  if (typeof window === "undefined") return null
+  const previewId = new URL(window.location.href).searchParams.get("preview_id")?.trim()
+  return previewId || null
+}
+
+function buildRestoredPreviewState(
+  result: PreviewFlowResult,
+  selectedSize: FrameSizeOption | null,
+): Pick<PreviewState, "selectedSize" | "dotPreviews" | "finalUrl"> | null {
+  if (!result.previewId || !result.imageUrl) return null
+  const size = selectedSize ?? initialPreviewState.selectedSize
+  if (!size) return null
+
+  const options = normalizePreviewOptions(result)
+  const selectedOptionId = options.find((option) => option.orderable)?.previewOptionId
+    ?? options[0]?.previewOptionId
+    ?? null
+  const selectedOptionUrl = selectedOptionId
+    ? options.find((option) => option.previewOptionId === selectedOptionId)?.imageUrl ?? null
+    : null
+
+  const dotPreview: DotPreviewResult = {
+    sizeId: size.id,
+    status: "ready",
+    previewId: result.previewId,
+    imageUrl: result.imageUrl,
+    productCode: "DOT",
+    orderable: pickOrderable(result),
+    error: null,
+    options,
+    selectedOptionId,
+  }
+
+  return {
+    selectedSize: size,
+    finalUrl: selectedOptionUrl ?? result.imageUrl,
+    dotPreviews: {
+      [size.id]: dotPreview,
+    },
+  }
+}
+
 export function usePreviewFlow() {
   const [state, dispatch] = useReducer(previewReducer, initialPreviewState)
   const stateRef = useRef(state)
@@ -280,12 +323,70 @@ export function usePreviewFlow() {
   }, [])
 
   useEffect(() => {
+    const previewId = readPreviewIdFromUrl()
     const restored = restoreStoredPreviewState()
-    if (restored) {
+    const restoredPreviewId = restored?.selectedSize
+      ? restored.dotPreviews[restored.selectedSize.id]?.previewId
+      : null
+
+    if (restored && (!previewId || restoredPreviewId === previewId)) {
       dispatch({ type: "RESTORE_PREVIEW", state: restored })
       captureEvent('checkout_preview_restored', {
         selected_size: restored.selectedSize?.id,
+        preview_id: restoredPreviewId ?? undefined,
+        restore_source: 'local_storage',
       })
+      return
+    }
+
+    if (!previewId) return
+
+    const previewClient = createPreviewClient()
+    if (!previewClient) return
+
+    let cancelled = false
+    const selectedSize = stateRef.current.selectedSize
+
+    previewClient
+      .getPreview(previewId)
+      .then((preview) =>
+        isTerminalPreview(preview)
+          ? preview
+          : previewClient.pollPreview(preview.previewId || previewId),
+      )
+      .then((preview) => {
+        if (cancelled) return
+        const restoredFromUrl = buildRestoredPreviewState(preview, selectedSize)
+        if (!restoredFromUrl) {
+          captureEvent('checkout_preview_restore_failed', {
+            preview_id: previewId,
+            restore_source: 'preview_id_url',
+            preview_status: preview.status,
+            error_message: 'Preview response had no restorable image',
+          })
+          return
+        }
+
+        dispatch({ type: "RESTORE_PREVIEW", state: restoredFromUrl })
+        captureEvent('checkout_preview_restored', {
+          selected_size: restoredFromUrl.selectedSize?.id,
+          preview_id: previewId,
+          restore_source: 'preview_id_url',
+          preview_status: preview.status,
+          preview_option_count: preview.options.length,
+        })
+      })
+      .catch((err) => {
+        if (cancelled) return
+        captureEvent('checkout_preview_restore_failed', {
+          preview_id: previewId,
+          restore_source: 'preview_id_url',
+          error_message: err instanceof Error ? err.message : 'Preview restore failed',
+        })
+      })
+
+    return () => {
+      cancelled = true
     }
   }, [])
 

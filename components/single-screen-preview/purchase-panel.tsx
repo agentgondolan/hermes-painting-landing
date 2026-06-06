@@ -8,18 +8,15 @@ import {
 import { captureEvent } from "@/lib/analytics/posthog"
 import type { DotPreviewResult, FrameSizeOption } from "./preview-state"
 import { persistCheckoutSelection, readStoredCheckoutState } from "./checkout-persistence"
-import {
-  consumeMagicTokenFromUrl,
-  pollMagicLinkRequestStatus,
-  readVerifiedIdentity,
-  requestDesignMagicLink,
-} from "@/lib/identity/browser"
+import { type StoredIdentity } from "@/lib/identity/browser"
 
 type PurchaseOption = BffPurchaseOptionsResult["purchaseOptions"][number]
 
 type PurchasePanelProps = {
   selectedSize: FrameSizeOption | null
   selectedPreview: DotPreviewResult | null
+  verifiedIdentity?: StoredIdentity | null
+  onOpenAccountPanel?: () => void
 }
 
 type Quote = {
@@ -29,18 +26,11 @@ type Quote = {
   error: string | null
 }
 
-type VerifiedIdentity = {
-  email: string
-  previewId: string
-  identityToken: string
-  expiresAt: number
-}
-
 const DEFAULT_EUR_TO_SGD_RATE = 1.46
 const TARGET_GROSS_MARGIN = 0.5
 const GST_RATE = 0.09
 
-export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelProps) {
+export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity = null, onOpenAccountPanel }: PurchasePanelProps) {
   const previewId = selectedPreview?.previewId ?? null
   const selectedPreviewOptionId = selectedPreview?.selectedOptionId ?? null
   const [purchaseOptions, setPurchaseOptions] = useState<PurchaseOption[]>([])
@@ -48,43 +38,18 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
   const [loadingOptions, setLoadingOptions] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState(false)
   const [checkoutComingSoon, setCheckoutComingSoon] = useState(false)
-  const [email, setEmail] = useState("")
-  const [identity, setIdentity] = useState<VerifiedIdentity | null>(null)
-  const [changingVerifiedEmail, setChangingVerifiedEmail] = useState(false)
-  const [magicLinkLoading, setMagicLinkLoading] = useState(false)
-  const [magicLinkStatus, setMagicLinkStatus] = useState<string | null>(null)
-  const [magicLinkSent, setMagicLinkSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     setCheckoutComingSoon(/(^|\.)dottingo\.sg$/i.test(window.location.hostname))
-    consumeMagicTokenFromUrl().then(
-      (verified) => {
-        if (!verified) return
-        setIdentity(verified)
-        setChangingVerifiedEmail(false)
-        setEmail(verified.email)
-        setMagicLinkStatus("Email verified. Your design is saved to this email.")
-        setMagicLinkSent(false)
-        captureEvent("magic_link_verified", {
-          preview_id: verified.previewId,
-        })
-      },
-      (err) => {
-        const message = err instanceof Error ? err.message : "Magic link verification failed"
-        setMagicLinkStatus(message)
-        captureEvent("magic_link_verification_failed", { error_message: message })
-      },
-    )
   }, [])
 
   useEffect(() => {
-    const stored = readVerifiedIdentity(previewId)
-    setIdentity(stored)
-    setChangingVerifiedEmail(false)
-    if (stored?.email) setEmail(stored.email)
-    setMagicLinkSent(false)
-  }, [previewId])
+    if (!verifiedIdentity) return
+    captureEvent("magic_link_verified", {
+      preview_id: verifiedIdentity.previewId,
+    })
+  }, [verifiedIdentity])
 
   useEffect(() => {
     const restored = readStoredCheckoutState()
@@ -153,7 +118,9 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
 
   const visiblePurchaseOptions = useMemo(() => {
     const matchingPreviewOptions = purchaseOptions.filter((option) => !selectedPreviewOptionId || option.previewOptionId === selectedPreviewOptionId)
-    return matchingPreviewOptions.length ? matchingPreviewOptions : purchaseOptions
+    const scopedOptions = matchingPreviewOptions.length ? matchingPreviewOptions : purchaseOptions
+    const standardOptions = scopedOptions.filter((option) => !isExpressOption(option))
+    return standardOptions.length ? standardOptions : scopedOptions
   }, [purchaseOptions, selectedPreviewOptionId])
 
   const selectedPurchaseOption = useMemo(() => {
@@ -181,91 +148,15 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
     })
   }
 
-  const handleRequestMagicLink = async () => {
-    if (!previewId) return
-    setMagicLinkLoading(true)
-    setMagicLinkStatus("Sending link…")
-    setError(null)
-
-    try {
-      const result = await requestDesignMagicLink(email, previewId)
-      const confirmed = result.delivery === "email_sent"
-      setMagicLinkStatus(confirmed ? "Please check your emails to verify." : "Sending link…")
-      setMagicLinkSent(confirmed)
-      if (confirmed) setChangingVerifiedEmail(false)
-      captureEvent("magic_link_requested", {
-        preview_id: previewId,
-        delivery: result.delivery,
-        email_status: result.emailStatus,
-        request_id: result.requestId,
-      })
-
-      if (confirmed || !result.requestId) return
-
-      for (let attempt = 1; attempt <= 5; attempt += 1) {
-        await wait(1500)
-        const status = await pollMagicLinkRequestStatus(result.requestId)
-        captureEvent("magic_link_delivery_poll", {
-          preview_id: previewId,
-          attempt,
-          delivery: status.delivery,
-          email_status: status.emailStatus,
-          terminal: status.terminal,
-          request_id: result.requestId,
-        })
-
-        if (status.delivery === "email_sent") {
-          setMagicLinkStatus("Please check your emails to verify.")
-          setMagicLinkSent(true)
-          setChangingVerifiedEmail(false)
-          captureEvent("magic_link_delivery_confirmed", {
-            preview_id: previewId,
-            attempt,
-            email_status: status.emailStatus,
-            request_id: result.requestId,
-          })
-          return
-        }
-
-        if (status.terminal) {
-          setMagicLinkStatus("Could not send link. Try again.")
-          setMagicLinkSent(false)
-          captureEvent("magic_link_delivery_failed", {
-            preview_id: previewId,
-            attempt,
-            email_status: status.emailStatus,
-            request_id: result.requestId,
-          })
-          return
-        }
-      }
-
-      setMagicLinkStatus("Still sending. You can send again in a moment.")
-      captureEvent("magic_link_delivery_pending", {
-        preview_id: previewId,
-        request_id: result.requestId,
-      })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not send magic link"
-      setMagicLinkSent(false)
-      setMagicLinkStatus(message)
-      captureEvent("magic_link_request_failed", {
-        preview_id: previewId,
-        error_message: message,
-      })
-    } finally {
-      setMagicLinkLoading(false)
-    }
-  }
-
   const handleCheckout = async () => {
-    if (checkoutComingSoon) {
-      setError("Checkout coming soon.")
+    if (!previewId || !selectedPurchaseOption || quote.error) return
+    if (!verifiedIdentity || verifiedIdentity.previewId !== previewId) {
+      onOpenAccountPanel?.()
+      setError("Verify your email from Account first, then checkout.")
       return
     }
-    if (!previewId || !selectedPurchaseOption || quote.error) return
-    if (!identity || identity.previewId !== previewId || changingVerifiedEmail) {
-      setError("Verify your email before checkout so your order can be recovered later.")
+    if (checkoutComingSoon) {
+      setError("Checkout coming soon.")
       return
     }
 
@@ -298,7 +189,7 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
           preview_option_id: selectedPurchaseOption.previewOptionId,
           purchase_option_id: purchaseOptionId,
           sku: optionSku(selectedPurchaseOption),
-          identity_token: identity.identityToken,
+          identity_token: verifiedIdentity.identityToken,
         }),
       })
       const payload = await response.json().catch(() => null) as { url?: string; error?: string; detail?: string } | null
@@ -325,139 +216,73 @@ export function PurchasePanel({ selectedSize, selectedPreview }: PurchasePanelPr
   }
 
   const panelClassName = "w-full rounded-[1.5rem] border border-[#9432c1]/12 bg-white/72 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]"
-  const isVerifiedForPreview = Boolean(identity && identity.previewId === previewId)
-  const canUseVerifiedIdentity = isVerifiedForPreview && !changingVerifiedEmail
+  const isVerifiedForPreview = Boolean(verifiedIdentity && verifiedIdentity.previewId === previewId)
 
   return (
     <div className={panelClassName}>
-      <>
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-baseline gap-2">
-                <p className="text-lg font-extrabold text-[#2e2d2c]">
-                  {quote.loading ? "Loading…" : quote.error ? "—" : `${quote.currency} ${quote.amount}`}
-                </p>
-                <p className="truncate text-xs font-semibold text-[#9432c1]/70">{selectedSize?.label ?? "Custom size"}</p>
-              </div>
-              <p className="mt-0.5 truncate text-xs font-medium text-[#2e2d2c]/48">
-                {selectedPurchaseOption?.label ?? "Custom paint-by-number kit"}
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleCheckout}
-              disabled={checkoutLoading || loadingOptions || Boolean(quote.error) || !selectedPurchaseOption || checkoutComingSoon || !canUseVerifiedIdentity}
-              className="shrink-0 rounded-full bg-[#9432c1] px-5 py-2.5 text-sm font-extrabold text-white shadow-[0_14px_34px_rgba(148,50,193,0.28)] transition hover:bg-[#7f28aa] disabled:cursor-not-allowed disabled:bg-[#2e2d2c]/10 disabled:text-[#2e2d2c]/35"
-            >
-              {checkoutComingSoon ? "Coming soon" : checkoutLoading ? "Opening Stripe…" : "Checkout"}
-            </button>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-baseline gap-2">
+            <p className="text-lg font-extrabold text-[#2e2d2c]">
+              {quote.loading ? "Loading…" : quote.error ? "—" : `${quote.currency} ${quote.amount}`}
+            </p>
+            <p className="truncate text-xs font-semibold text-[#9432c1]/70">{selectedSize?.label ?? "Custom size"}</p>
           </div>
+          <p className="mt-0.5 truncate text-xs font-medium text-[#2e2d2c]/48">Paint-by-number kit</p>
+        </div>
+      </div>
 
-          {(!isVerifiedForPreview || changingVerifiedEmail) && (
-            <div className="mt-3 rounded-[1.25rem] border border-[#9432c1]/12 bg-white/62 p-3">
-              <p className="text-xs font-extrabold text-[#2e2d2c]">Save your design and continue later.</p>
-              {magicLinkSent ? (
-                <div className="mt-2">
-                  <button
-                    type="button"
-                    disabled
-                    className="w-full rounded-full bg-[#2e2d2c]/10 px-4 py-2 text-center text-xs font-extrabold text-[#2e2d2c]/42 disabled:cursor-not-allowed"
-                  >
-                    Email sent to {email}
-                  </button>
-                  <div className="mt-2 flex items-center justify-between gap-3">
-                    <p className="text-xs font-medium text-[#2e2d2c]/58">{magicLinkStatus ?? "Please check your emails to verify."}</p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMagicLinkSent(false)
-                        setMagicLinkStatus(null)
-                        setChangingVerifiedEmail(true)
-                      }}
-                      className="shrink-0 text-[11px] font-bold text-[#2e2d2c]/45 underline-offset-2 transition hover:text-[#9432c1] hover:underline"
-                    >
-                      Send again
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="mt-2 flex gap-2">
-                    <input
-                      type="email"
-                      inputMode="email"
-                      autoComplete="email"
-                      value={email}
-                      onChange={(event) => {
-                        setEmail(event.target.value)
-                        setMagicLinkSent(false)
-                        if (isVerifiedForPreview) setChangingVerifiedEmail(true)
-                      }}
-                      placeholder="you@example.com"
-                      className="min-w-0 flex-1 rounded-full border border-[#9432c1]/15 bg-white px-3 py-2 text-sm font-semibold text-[#2e2d2c] outline-none transition placeholder:text-[#2e2d2c]/35 focus:border-[#9432c1]/45"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleRequestMagicLink}
-                      disabled={magicLinkLoading || !email.trim()}
-                      className="rounded-full bg-[#2e2d2c] px-4 py-2 text-xs font-extrabold text-white transition hover:bg-[#111] disabled:cursor-not-allowed disabled:bg-[#2e2d2c]/15 disabled:text-[#2e2d2c]/35"
-                    >
-                      {magicLinkLoading ? "Sending…" : "Send link"}
-                    </button>
-                  </div>
-                  {magicLinkStatus && <p className="mt-2 text-xs font-medium text-[#2e2d2c]/58">{magicLinkStatus}</p>}
-                </>
-              )}
-            </div>
-          )}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={handleCheckout}
+          disabled={checkoutLoading || loadingOptions || Boolean(quote.error) || !selectedPurchaseOption}
+          className="rounded-full bg-[#9432c1] px-4 py-3 text-sm font-extrabold text-white shadow-[0_14px_34px_rgba(148,50,193,0.24)] transition hover:bg-[#7f28aa] disabled:cursor-not-allowed disabled:bg-[#2e2d2c]/10 disabled:text-[#2e2d2c]/35"
+        >
+          {checkoutLoading ? "Opening…" : "Checkout"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onOpenAccountPanel?.()
+            setError(null)
+          }}
+          disabled={!previewId}
+          className="rounded-full border border-[#9432c1]/16 bg-white/76 px-4 py-3 text-sm font-extrabold text-[#9432c1] transition hover:border-[#9432c1]/35 hover:bg-white disabled:cursor-not-allowed disabled:border-[#2e2d2c]/8 disabled:text-[#2e2d2c]/35"
+        >
+          Save and get back later
+        </button>
+      </div>
 
-          {canUseVerifiedIdentity && identity && (
-            <div className="mt-3 flex items-center justify-between gap-2 rounded-full border border-[#2f7d32]/15 bg-[#2f7d32]/8 px-3 py-2">
-              <p className="truncate text-xs font-extrabold text-[#2f7d32]">Saved to {identity.email}</p>
+      {visiblePurchaseOptions.length > 1 ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {visiblePurchaseOptions.map((option) => {
+            const id = optionIdentity(option)
+            const selected = id === optionIdentity(selectedPurchaseOption)
+            return (
               <button
+                key={id}
                 type="button"
-                onClick={() => {
-                  setChangingVerifiedEmail(true)
-                  setMagicLinkSent(false)
-                  setMagicLinkStatus(null)
-                }}
-                className="shrink-0 text-xs font-extrabold text-[#9432c1] underline-offset-2 hover:underline"
+                onClick={() => handleSelectMode(option)}
+                className={`rounded-full px-3 py-1.5 text-[11px] font-extrabold transition ${
+                  selected ? "bg-[#9432c1] text-white" : "bg-[#2e2d2c]/6 text-[#2e2d2c]/55 hover:bg-[#2e2d2c]/10"
+                }`}
               >
-                Change email
+                {modeLabel(option)}
               </button>
-            </div>
-          )}
-
-          {visiblePurchaseOptions.length > 1 && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {visiblePurchaseOptions.map((option) => {
-                const optionQuote = quoteForOption(option, visiblePurchaseOptions.length)
-                const identity = optionIdentity(option)
-                const active = identity === optionIdentity(selectedPurchaseOption)
-                return (
-                  <button
-                    key={identity}
-                    type="button"
-                    onClick={() => handleSelectMode(option)}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                      active
-                        ? "border-[#9432c1] bg-[#9432c1] text-white"
-                        : "border-[#9432c1]/16 bg-white/62 text-[#2e2d2c]/58 hover:border-[#9432c1]/32 hover:text-[#9432c1]"
-                    }`}
-                  >
-                    {modeLabel(option)}
-                    {!optionQuote.error && <span className="ml-1 text-current/60">SGD {optionQuote.amount}</span>}
-                  </button>
-                )
-              })}
-            </div>
-          )}
-        </>
+            )
+          })}
+        </div>
+      ) : null}
 
       {(error || quote.error) && (
         <p className="mt-2 text-xs font-medium text-[#8a4a00]">{error || quote.error}</p>
       )}
+      {isVerifiedForPreview ? (
+        <p className="mt-3 rounded-full bg-[#9432c1]/8 px-3 py-2 text-center text-xs font-extrabold text-[#9432c1]">
+          Saved to your verified email.
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -493,6 +318,11 @@ function optionSku(option: PurchaseOption): string {
   return typeof option.sku === "string" && option.sku ? option.sku : String(option.orderLine?.sku ?? option.purchaseOptionId)
 }
 
+function isExpressOption(option: PurchaseOption): boolean {
+  const speed = `${option.productionSpeedCode ?? ""} ${option.productionSpeedLabel ?? ""} ${option.label ?? ""}`
+  return /express/i.test(speed)
+}
+
 function modeLabel(option: PurchaseOption): string {
   return option.productionSpeedLabel || option.productionSpeedCode || option.label?.split("/").at(-1)?.trim() || "Option"
 }
@@ -503,10 +333,6 @@ function formatCheckoutError(payload: { error?: string; detail?: string } | null
   if (/Stripe sandbox checkout requires/i.test(message)) return "Checkout is still in Stripe test-mode setup."
   if (/order_draft/i.test(message)) return "Could not confirm the order draft. Please try again."
   return message
-}
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
 function roundUpToNinetyNineCents(amount: number): number {

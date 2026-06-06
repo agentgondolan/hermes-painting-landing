@@ -1,6 +1,6 @@
 const IDENTITY_STORAGE_KEY = 'dottingo_verified_identity_v1'
 
-type StoredIdentity = {
+export type StoredIdentity = {
   email: string
   previewId: string
   identityToken: string
@@ -48,6 +48,13 @@ export async function verifyMagicToken(token: string): Promise<StoredIdentity> {
   }
   window.localStorage.setItem(IDENTITY_STORAGE_KEY, JSON.stringify(identity))
   return identity
+}
+
+export function buildVerifiedDesignReturnPath(identity: Pick<StoredIdentity, 'previewId'>): string {
+  const url = new URL('/', window.location.origin)
+  url.searchParams.set('preview_id', identity.previewId)
+  url.searchParams.set('identity_verified', '1')
+  return `${url.pathname}${url.search}`
 }
 
 export function readVerifiedIdentity(previewId?: string | null): StoredIdentity | null {
@@ -113,4 +120,16 @@ export async function consumeMagicTokenFromUrl(): Promise<StoredIdentity | null>
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
 
   return verifyMagicToken(token)
+}
+
+export function consumeVerifiedIdentityNoticeFromUrl(): StoredIdentity | null {
+  if (typeof window === 'undefined') return null
+  const url = new URL(window.location.href)
+  if (url.searchParams.get('identity_verified') !== '1') return null
+
+  const previewId = url.searchParams.get('preview_id')
+  const identity = readVerifiedIdentity(previewId)
+  url.searchParams.delete('identity_verified')
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+  return identity
 }

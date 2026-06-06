@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { verifyMagicToken } from "@/lib/identity/browser"
+import { buildVerifiedDesignReturnPath, verifyMagicToken } from "@/lib/identity/browser"
 
 export default function MagicLinkPage() {
   const [status, setStatus] = useState<"verifying" | "verified" | "failed">("verifying")
@@ -25,6 +25,7 @@ export default function MagicLinkPage() {
       (identity) => {
         setStatus("verified")
         setMessage(`Verified ${identity.email}. Your design is saved to this email.`)
+        window.location.replace(buildVerifiedDesignReturnPath(identity))
       },
       (error) => {
         setStatus("failed")
@@ -41,8 +42,11 @@ export default function MagicLinkPage() {
           {status === "verifying" ? "Checking your link" : status === "verified" ? "Email verified" : "Link problem"}
         </h1>
         <p className="mt-3 text-sm font-semibold text-[#2e2d2c]/62">{message}</p>
+        {status === "verified" ? (
+          <p className="mt-2 text-xs font-bold text-[#9432c1]/70">Returning to your design…</p>
+        ) : null}
         <Link
-          href="/"
+          href="/?identity_verified=1"
           className="mt-6 inline-flex rounded-full bg-[#9432c1] px-5 py-3 text-sm font-extrabold text-white shadow-[0_14px_34px_rgba(148,50,193,0.28)] transition hover:bg-[#7f28aa]"
         >
           Return to design

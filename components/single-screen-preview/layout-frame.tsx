@@ -2,9 +2,10 @@ import React from "react"
 
 interface LayoutFrameProps {
   children: React.ReactNode
+  headerAction?: React.ReactNode
 }
 
-export function LayoutFrame({ children }: LayoutFrameProps) {
+export function LayoutFrame({ children, headerAction }: LayoutFrameProps) {
   return (
     <div
       className="relative flex h-dvh w-full flex-col overflow-hidden bg-[#faf8ff] text-[#2e2d2c]"
@@ -16,12 +17,13 @@ export function LayoutFrame({ children }: LayoutFrameProps) {
         <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#f0dcfa] via-[#faf8ff]/70 to-transparent" />
       </div>
 
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between px-4 pt-[calc(env(safe-area-inset-top)+1rem)] sm:px-8 sm:pt-8">
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-[80] flex items-start justify-between px-4 pt-[calc(env(safe-area-inset-top)+1rem)] sm:px-8 sm:pt-8">
         <img
           src="/brand/dottingo/dottingo-logo-purple.svg"
           alt="Dottingo"
           className="dottingo-wordmark drop-shadow-[0_12px_28px_rgba(148,50,193,0.18)]"
         />
+        {headerAction ? <div className="pointer-events-auto">{headerAction}</div> : null}
       </header>
 
       {children}
