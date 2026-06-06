@@ -60,6 +60,8 @@ interface NormalizedOrderDraft {
   productionSpeedCode: string | null
   productionSpeedLabel: string | null
   orderLine: JsonRecord | null
+  lineItems: JsonRecord[]
+  itemCount: number
   unitPrice: string | null
   currency: string | null
 }
@@ -191,18 +193,21 @@ async function createOrderDraft(request: Request, env: Env): Promise<Response> {
   const previewId = normalizePreviewId(String(body.preview_id ?? ''))
   const previewOptionId = normalizeId(String(body.preview_option_id ?? ''))
   const sku = normalizeSku(String(body.sku ?? body.purchase_option_id ?? ''))
+  const existingDraftId = normalizeId(String(body.order_draft_id ?? ''))
 
   if (!previewId) return json({ error: 'preview_id is required' }, 400)
   if (!previewOptionId) return json({ error: 'preview_option_id is required' }, 400)
   if (!sku) return json({ error: 'sku is required' }, 400)
 
-  const shippingAddress = sanitizeShippingAddress(body.delivery_address)
-  if (!shippingAddress.phone) return json({ error: 'delivery_address.phone is required' }, 400)
-
   const canonical = await loadCanonicalPurchaseOption(previewId, previewOptionId, sku, env, token)
   if (!canonical) {
     return json({ error: 'Selected MGE purchase option is no longer orderable' }, 409)
   }
+
+  const existingLineItems = existingDraftId ? await loadOrderDraftLineItems(existingDraftId, env, token) : []
+  const shippingAddress = sanitizeShippingAddress(body.delivery_address)
+  const nextLineItems = canonical.orderLine ? [...existingLineItems, canonical.orderLine] : existingLineItems
+  if (!nextLineItems.length) return json({ error: 'Selected MGE purchase option has no order line' }, 409)
 
   const draftPayload = {
     brand_id: DOTTINGO_BRAND_ID,
@@ -210,19 +215,24 @@ async function createOrderDraft(request: Request, env: Env): Promise<Response> {
     preview_option_id: previewOptionId,
     selected_size: pickFirstString([body.selected_size]),
     product: canonical.product ?? 'DOT',
-    shipping_address: shippingAddress,
-    line_items: canonical.orderLine ? [canonical.orderLine] : undefined,
+    shipping_address: Object.keys(shippingAddress).length ? shippingAddress : undefined,
+    line_items: nextLineItems,
     source: 'dottingo_landing',
   }
 
-  const response = await fetch(`${baseUrl(env)}/api/v1/order-drafts/`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
+  const response = await fetch(
+    existingDraftId
+      ? `${baseUrl(env)}/api/v1/order-drafts/${encodeURIComponent(existingDraftId)}/`
+      : `${baseUrl(env)}/api/v1/order-drafts/`,
+    {
+      method: existingDraftId ? 'PATCH' : 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(draftPayload),
     },
-    body: JSON.stringify(draftPayload),
-  })
+  )
 
   return normalizeMgeOrderDraftResponse(response, canonical, token)
 }
@@ -246,6 +256,21 @@ export async function loadCanonicalPurchaseOption(
     if (option.sku !== sku) return false
     return Boolean(option.orderLine && option.unitPrice)
   }) ?? null
+}
+
+async function loadOrderDraftLineItems(draftId: string, env: Env, token: string): Promise<JsonRecord[]> {
+  const response = await fetch(`${baseUrl(env)}/api/v1/order-drafts/${encodeURIComponent(draftId)}/`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) return []
+  const raw = parseJson(await response.text())
+  return extractLineItems(raw)
+}
+
+function extractLineItems(raw: unknown): JsonRecord[] {
+  const obj = asRecord(raw)
+  const direct = Array.isArray(obj.line_items) ? obj.line_items : []
+  return direct.map(asRecord).filter((item) => Object.keys(item).length)
 }
 
 async function proxyPreviewImage(request: Request): Promise<Response> {
@@ -363,7 +388,8 @@ async function normalizeMgeOrderDraftResponse(
 
 export function normalizeOrderDraft(raw: unknown, canonical: NormalizedPurchaseOption): NormalizedOrderDraft {
   const obj = asRecord(raw)
-  const orderLine = asNullableRecord(obj.order_line) ?? canonical.orderLine
+  const lineItems = extractLineItems(raw)
+  const orderLine = asNullableRecord(obj.order_line) ?? lineItems.at(-1) ?? canonical.orderLine
   const previewOptionId = pickFirstString([obj.preview_option_id, canonical.previewOptionId]) ?? canonical.previewOptionId
   return {
     orderDraftId: pickFirstString([obj.order_draft_id, obj.draft_id, obj.id]) ?? `${canonical.previewOptionId}:${canonical.purchaseOptionId}`,
@@ -377,6 +403,8 @@ export function normalizeOrderDraft(raw: unknown, canonical: NormalizedPurchaseO
     productionSpeedCode: pickFirstString([obj.production_speed_code, canonical.productionSpeedCode]),
     productionSpeedLabel: pickFirstString([obj.production_speed_label, canonical.productionSpeedLabel]),
     orderLine,
+    lineItems,
+    itemCount: Number(obj.item_count ?? lineItems.length) || lineItems.length,
     unitPrice: pickFirstString([obj.unit_price, obj.price, canonical.unitPrice]),
     currency: pickFirstString([obj.currency, canonical.currency]),
   }

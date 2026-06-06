@@ -89,6 +89,13 @@ export function readAccountPreviews(email?: string | null): AccountPreviewRecord
     .sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
+export function isAccountPreviewSaved(email: string | null | undefined, previewId: string | null | undefined): boolean {
+  const normalizedEmail = email ? normalizeRegistryEmail(email) : ""
+  if (!normalizedEmail || !previewId) return false
+
+  return (readPreviewRegistry()[normalizedEmail] ?? []).some((record) => record.previewId === previewId && !record.hidden)
+}
+
 export function hideAccountPreview(email: string, previewId: string): boolean {
   const normalizedEmail = normalizeRegistryEmail(email)
   if (!normalizedEmail || !previewId) return false

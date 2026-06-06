@@ -312,9 +312,6 @@ async function readCheckoutContext(
   if (!sku) throw new Error('sku is required for dynamic checkout')
 
   const identity = await verifyIdentitySessionToken(stringValue(source.identity_token), env)
-  if (identity.previewId !== previewId) {
-    throw new Error('Verified email does not own this preview')
-  }
 
   const token = requireValue(env.MGEVERYDAY_API_TOKEN, 'MGEVERYDAY_API_TOKEN')
   const canonical = await loadCanonicalPurchaseOptionForCheckout(previewId, previewOptionId, sku, env, token, fetcher)

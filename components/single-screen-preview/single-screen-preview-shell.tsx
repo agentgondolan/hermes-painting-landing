@@ -16,7 +16,7 @@ import {
   readVerifiedIdentity,
   type StoredIdentity,
 } from "@/lib/identity/browser"
-import { upsertAccountPreview } from "@/lib/account/preview-registry"
+import { isAccountPreviewSaved, upsertAccountPreview } from "@/lib/account/preview-registry"
 
 type MagicLinkNotice = {
   kind: "success" | "error"
@@ -29,6 +29,7 @@ export function SingleScreenPreviewShell() {
   const [magicLinkIdentity, setMagicLinkIdentity] = useState<StoredIdentity | null>(null)
   const [accountPanelOpen, setAccountPanelOpen] = useState(false)
   const [saveEmailFlowNonce, setSaveEmailFlowNonce] = useState(0)
+  const [currentPreviewSaved, setCurrentPreviewSaved] = useState(false)
   const selectedPreview = state.selectedSize ? state.dotPreviews[state.selectedSize.id] : null
 
   useEffect(() => {
@@ -62,9 +63,13 @@ export function SingleScreenPreviewShell() {
   }, [])
 
   useEffect(() => {
-    if (!magicLinkIdentity || !selectedPreview || selectedPreview.status !== "ready" || !state.selectedSize) return
+    if (!magicLinkIdentity || !selectedPreview || selectedPreview.status !== "ready" || !state.selectedSize) {
+      setCurrentPreviewSaved(false)
+      return
+    }
 
     const registered = upsertAccountPreview(magicLinkIdentity.email, selectedPreview, state.selectedSize)
+    setCurrentPreviewSaved(Boolean(registered) || isAccountPreviewSaved(magicLinkIdentity.email, selectedPreview.previewId))
     if (!registered) return
 
     captureEvent("account_preview_registered", {
@@ -145,6 +150,7 @@ export function SingleScreenPreviewShell() {
               selectedSize={state.selectedSize}
               selectedPreview={selectedPreview ?? null}
               verifiedIdentity={magicLinkIdentity}
+              currentPreviewSaved={currentPreviewSaved}
               onOpenAccountPanel={() => {
                 setSaveEmailFlowNonce((nonce) => nonce + 1)
                 setAccountPanelOpen(true)

@@ -96,16 +96,19 @@ export interface BffOrderDraftResult {
   productionSpeedCode: string | null
   productionSpeedLabel: string | null
   orderLine: Record<string, unknown> | null
+  lineItems?: Record<string, unknown>[]
+  itemCount?: number
   unitPrice: string | null
   currency: string | null
 }
 
 export interface BffOrderDraftInput {
+  order_draft_id?: string | null
   preview_id: string
   preview_option_id: string
   sku: string
   selected_size?: string | null
-  delivery_address: Record<string, string>
+  delivery_address?: Record<string, string>
 }
 
 export interface BffError {

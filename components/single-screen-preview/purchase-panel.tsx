@@ -16,6 +16,7 @@ type PurchasePanelProps = {
   selectedSize: FrameSizeOption | null
   selectedPreview: DotPreviewResult | null
   verifiedIdentity?: StoredIdentity | null
+  currentPreviewSaved?: boolean
   onOpenAccountPanel?: () => void
 }
 
@@ -30,7 +31,7 @@ const DEFAULT_EUR_TO_SGD_RATE = 1.46
 const TARGET_GROSS_MARGIN = 0.5
 const GST_RATE = 0.09
 
-export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity = null, onOpenAccountPanel }: PurchasePanelProps) {
+export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity = null, currentPreviewSaved = false, onOpenAccountPanel }: PurchasePanelProps) {
   const previewId = selectedPreview?.previewId ?? null
   const selectedPreviewOptionId = selectedPreview?.selectedOptionId ?? null
   const [purchaseOptions, setPurchaseOptions] = useState<PurchaseOption[]>([])
@@ -150,7 +151,7 @@ export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity 
 
   const handleCheckout = async () => {
     if (!previewId || !selectedPurchaseOption || quote.error) return
-    if (!verifiedIdentity || verifiedIdentity.previewId !== previewId) {
+    if (!verifiedIdentity) {
       onOpenAccountPanel?.()
       setError("Verify your email from Account first, then checkout.")
       return
@@ -175,8 +176,24 @@ export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity 
     })
 
     try {
+      const storedCheckout = readStoredCheckoutState()
       persistCheckoutSelection({
         selectedPurchaseOptionId: purchaseOptionId,
+        checkoutInProgress: true,
+      })
+
+      const client = createPreviewClient()
+      if (!client) throw new Error("Checkout is not available in local fallback mode.")
+      const orderDraft = await client.createOrderDraft({
+        order_draft_id: storedCheckout?.orderDraftId ?? null,
+        selected_size: selectedSize?.id,
+        preview_id: previewId,
+        preview_option_id: selectedPurchaseOption.previewOptionId,
+        sku: optionSku(selectedPurchaseOption),
+      })
+      persistCheckoutSelection({
+        selectedPurchaseOptionId: purchaseOptionId,
+        orderDraftId: orderDraft.orderDraftId,
         checkoutInProgress: true,
       })
 
@@ -189,6 +206,8 @@ export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity 
           preview_option_id: selectedPurchaseOption.previewOptionId,
           purchase_option_id: purchaseOptionId,
           sku: optionSku(selectedPurchaseOption),
+          order_draft_id: orderDraft.orderDraftId,
+          order_draft: orderDraft,
           identity_token: verifiedIdentity.identityToken,
         }),
       })
@@ -216,7 +235,7 @@ export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity 
   }
 
   const panelClassName = "w-full rounded-[1.5rem] border border-[#9432c1]/12 bg-white/72 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]"
-  const isVerifiedForPreview = Boolean(verifiedIdentity && verifiedIdentity.previewId === previewId)
+  const isSavedCurrentPreview = Boolean(verifiedIdentity && currentPreviewSaved)
 
   return (
     <div className={panelClassName}>
@@ -278,7 +297,7 @@ export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity 
       {(error || quote.error) && (
         <p className="mt-2 text-xs font-medium text-[#8a4a00]">{error || quote.error}</p>
       )}
-      {isVerifiedForPreview ? (
+      {isSavedCurrentPreview ? (
         <p className="mt-3 rounded-full bg-[#9432c1]/8 px-3 py-2 text-center text-xs font-extrabold text-[#9432c1]">
           Saved to your verified email.
         </p>

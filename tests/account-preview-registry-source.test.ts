@@ -10,6 +10,7 @@ test('preview registry stores verified previews by normalized email', () => {
   assert.equal(registrySource.includes('dottingo_preview_registry_v1'), true)
   assert.equal(registrySource.includes('normalizeRegistryEmail'), true)
   assert.equal(registrySource.includes('upsertAccountPreview'), true)
+  assert.equal(registrySource.includes('isAccountPreviewSaved'), true)
   assert.equal(registrySource.includes('readAccountPreviews'), true)
   assert.equal(registrySource.includes('hideAccountPreview'), true)
 })
@@ -25,6 +26,8 @@ test('account panel renders saved previews with open continue and hide actions',
 
 test('preview shell registers the current ready preview when a global identity is verified', () => {
   assert.equal(shellSource.includes('upsertAccountPreview'), true)
+  assert.equal(shellSource.includes('isAccountPreviewSaved'), true)
+  assert.equal(shellSource.includes('currentPreviewSaved'), true)
   assert.equal(shellSource.includes('selectedPreview.status !== "ready"'), true)
   assert.equal(shellSource.includes('account_preview_registered'), true)
 })

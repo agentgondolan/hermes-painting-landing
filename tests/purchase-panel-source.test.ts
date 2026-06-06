@@ -20,8 +20,8 @@ test('bottom save action opens the account panel directly in email-save state', 
   assert.equal(shellSource.includes('startEmailFlowNonce={saveEmailFlowNonce}'), true)
 })
 
-test('checkout requires verified identity for the exact preview', () => {
-  assert.equal(source.includes('verifiedIdentity.previewId !== previewId'), true)
+test('checkout accepts a global verified identity and no longer binds verification to one preview', () => {
+  assert.equal(source.includes('verifiedIdentity.previewId !== previewId'), false)
   assert.equal(source.includes('Verify your email from Account first, then checkout.'), true)
   assert.equal(source.includes('identity_token: verifiedIdentity.identityToken'), true)
 })
@@ -32,7 +32,8 @@ test('purchase panel hides express options but keeps option filtering available'
   assert.equal(source.includes('Standard'), false)
 })
 
-test('verified current preview shows saved confirmation without change-email controls', () => {
+test('saved current preview shows saved confirmation without change-email controls', () => {
+  assert.equal(source.includes('currentPreviewSaved'), true)
   assert.equal(source.includes('Saved to your verified email.'), true)
   assert.equal(source.includes('Change email'), false)
   assert.equal(source.includes('changeEmailRequestNonce'), false)

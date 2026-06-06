@@ -236,12 +236,27 @@ test('order-draft BFF posts to documented plural MGE order-drafts endpoint', asy
   }
 })
 
-test('order-draft BFF rejects missing delivery phone before calling MGE', async () => {
+test('order-draft BFF creates draft without local delivery fields because MGE draft is canonical', async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = []
   const originalFetch = globalThis.fetch
-  let called = false
-  globalThis.fetch = (async () => {
-    called = true
-    return new Response('{}')
+  const fixture = JSON.parse(await readFile(fixturePath, 'utf8'))
+
+  globalThis.fetch = (async (url, init) => {
+    calls.push({ url: String(url), init: init ?? {} })
+    if (String(url).includes('/api/v1/preview/preview-123/purchase-options/')) {
+      return new Response(JSON.stringify(fixture), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+
+    return new Response(
+      JSON.stringify({
+        id: 'draft-123',
+        preview_id: 'preview-123',
+        status: 'DRAFT',
+        item_count: 1,
+        line_items: [{ preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', sku: 'DOT/VF/40X50/W/BLACK/STD', quantity: 1 }],
+      }),
+      { status: 201, headers: { 'Content-Type': 'application/json' } },
+    )
   }) as typeof fetch
 
   try {
@@ -254,23 +269,84 @@ test('order-draft BFF rejects missing delivery phone before calling MGE', async 
           preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
           sku: 'DOT/VF/40X50/W/BLACK/STD',
           selected_size: '40x50',
-          delivery_address: {
-            name: 'Test Customer',
-            email: 'test@example.com',
-            line1: '1 Test Street',
-            city: 'Singapore',
-            postal_code: '018956',
-            country: 'SG',
-          },
         }),
       }),
       env,
     )
 
-    assert.equal(response.status, 400)
-    const payload = await response.json() as { error?: string }
-    assert.match(payload.error ?? '', /phone/i)
-    assert.equal(called, false)
+    assert.equal(response.status, 201)
+    assert.equal(calls.length, 2)
+    assert.equal(calls[0].url, 'https://mge.example.test/api/v1/preview/preview-123/purchase-options/')
+    assert.equal(calls[1].url, 'https://mge.example.test/api/v1/order-drafts/')
+
+    const upstreamBody = JSON.parse(String(calls[1].init.body))
+    assert.equal(upstreamBody.brand_id, '64')
+    assert.equal(upstreamBody.preview_id, 'preview-123')
+    assert.equal(upstreamBody.preview_option_id, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
+    assert.equal('shipping_address' in upstreamBody, false)
+    assert.deepEqual(upstreamBody.line_items, [{ preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', sku: 'DOT/VF/40X50/W/BLACK/STD', quantity: 1 }])
+
+    const payload = await response.json() as { itemCount?: number; lineItems?: unknown[] }
+    assert.equal(payload.itemCount, 1)
+    assert.equal(payload.lineItems?.length, 1)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('order-draft BFF edits existing MGE draft by PATCHing merged line_items', async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = []
+  const originalFetch = globalThis.fetch
+  const fixture = JSON.parse(await readFile(fixturePath, 'utf8'))
+  const existingLine = { preview_option_id: 'existing-option', sku: 'EXISTING/SKU', quantity: 1 }
+
+  globalThis.fetch = (async (url, init) => {
+    calls.push({ url: String(url), init: init ?? {} })
+    const target = String(url)
+    if (target.includes('/api/v1/preview/preview-123/purchase-options/')) {
+      return new Response(JSON.stringify(fixture), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    if (target === 'https://mge.example.test/api/v1/order-drafts/draft-123/' && (!init?.method || init.method === 'GET')) {
+      return new Response(JSON.stringify({ id: 'draft-123', line_items: [existingLine], item_count: 1 }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    return new Response(JSON.stringify({
+      id: 'draft-123',
+      preview_id: 'preview-123',
+      status: 'DRAFT',
+      item_count: 2,
+      line_items: [existingLine, { preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', sku: 'DOT/VF/40X50/W/BLACK/STD', quantity: 1 }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const response = await handleMgeBffRequest(
+      new Request('https://makeyourcraft.com/api/mge/order-draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_draft_id: 'draft-123',
+          preview_id: 'preview-123',
+          preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+          sku: 'DOT/VF/40X50/W/BLACK/STD',
+          selected_size: '40x50',
+        }),
+      }),
+      env,
+    )
+
+    assert.equal(response.status, 200)
+    assert.equal(calls.length, 3)
+    assert.equal(calls[1].url, 'https://mge.example.test/api/v1/order-drafts/draft-123/')
+    assert.equal(calls[2].url, 'https://mge.example.test/api/v1/order-drafts/draft-123/')
+    assert.equal(calls[2].init.method, 'PATCH')
+    const upstreamBody = JSON.parse(String(calls[2].init.body))
+    assert.deepEqual(upstreamBody.line_items, [existingLine, { preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', sku: 'DOT/VF/40X50/W/BLACK/STD', quantity: 1 }])
+    const payload = await response.json() as { itemCount?: number; lineItems?: unknown[] }
+    assert.equal(payload.itemCount, 2)
+    assert.equal(payload.lineItems?.length, 2)
   } finally {
     globalThis.fetch = originalFetch
   }
