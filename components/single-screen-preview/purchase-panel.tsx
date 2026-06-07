@@ -247,7 +247,6 @@ export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity 
             </p>
             <p className="truncate text-xs font-semibold text-[#9432c1]/70">{selectedSize?.label ?? "Custom size"}</p>
           </div>
-          <p className="mt-0.5 truncate text-xs font-medium text-[#2e2d2c]/48">Paint-by-number kit</p>
         </div>
       </div>
 
@@ -269,7 +268,7 @@ export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity 
           disabled={!previewId}
           className="rounded-full border border-[#9432c1]/16 bg-white/76 px-4 py-3 text-sm font-extrabold text-[#9432c1] transition hover:border-[#9432c1]/35 hover:bg-white disabled:cursor-not-allowed disabled:border-[#2e2d2c]/8 disabled:text-[#2e2d2c]/35"
         >
-          Save and get back later
+          Save
         </button>
       </div>
 

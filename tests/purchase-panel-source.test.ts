@@ -6,7 +6,9 @@ const source = readFileSync(new URL('../components/single-screen-preview/purchas
 const shellSource = readFileSync(new URL('../components/single-screen-preview/single-screen-preview-shell.tsx', import.meta.url), 'utf8')
 
 test('purchase panel keeps two primary actions without inline email capture', () => {
-  assert.equal(source.includes('Save and get back later'), true)
+  assert.equal(source.includes('Save'), true)
+  assert.equal(source.includes('Save and get back later'), false)
+  assert.equal(source.includes('Paint-by-number kit'), false)
   assert.equal(source.includes('Checkout'), true)
   assert.equal(source.includes('requestDesignMagicLink'), false)
   assert.equal(source.includes('Email sent to'), false)

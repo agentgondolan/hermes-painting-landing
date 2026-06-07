@@ -119,12 +119,12 @@ export function GuidedControls({
 
       {/* Size selector */}
       {guidedModel.showSizeSelector && (
-        <div className="flex gap-2">
+        <div className="flex w-full max-w-[34rem] gap-2">
           {FRAME_SIZE_OPTIONS.map((opt) => (
             <button
               key={opt.id}
               onClick={() => handleSetSize(opt)}
-              className={`rounded-full border px-4 py-1.5 text-sm font-medium transition ${
+              className={`min-w-0 flex-1 whitespace-nowrap rounded-full border px-2 py-2 text-[12px] font-semibold leading-none transition min-[390px]:px-3 min-[390px]:text-[13px] sm:px-4 sm:text-sm ${
                 selectedSize?.id === opt.id
                   ? "border-[#9432c1] bg-[#9432c1] text-white shadow-[0_10px_26px_rgba(148,50,193,0.22)]"
                   : "border-[#9432c1]/18 bg-white/60 text-[#2e2d2c]/70 hover:bg-[#f0dcfa] hover:text-[#9432c1]"

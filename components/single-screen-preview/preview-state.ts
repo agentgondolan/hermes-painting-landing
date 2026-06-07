@@ -91,13 +91,23 @@ function createProcessingDotPreview(sizeId: string): DotPreviewResult {
 }
 
 function pickDefaultSelectedOption(options: PreviewOptionChoice[]): string | null {
+  // Product default: BLACK / drama should be the first selected option when available.
+  const dramaOption = options.find((o) => isDramaPreviewOption(o) && o.orderable && o.imageUrl)
+  if (dramaOption) return dramaOption.previewOptionId
   // Prefer first orderable option with a valid image
   const firstOrderable = options.find((o) => o.orderable && o.imageUrl)
   if (firstOrderable) return firstOrderable.previewOptionId
+  const dramaImage = options.find((o) => isDramaPreviewOption(o) && o.imageUrl)
+  if (dramaImage) return dramaImage.previewOptionId
   // Fallback: first option with an image
   const firstImage = options.find((o) => o.imageUrl)
   if (firstImage) return firstImage.previewOptionId
   return null
+}
+
+function isDramaPreviewOption(option: Pick<PreviewOptionChoice, 'label' | 'description'>): boolean {
+  const text = `${option.label ?? ''} ${option.description ?? ''}`.toLowerCase()
+  return /\bdrama\b/.test(text)
 }
 
 function getSelectedDotPreview(state: PreviewState): DotPreviewResult | null {

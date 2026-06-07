@@ -37,8 +37,10 @@ function pickOrderable(result: Pick<PreviewFlowResult, 'options'>): boolean | nu
 
 function normalizePreviewOptions(result: Pick<PreviewFlowResult, 'options'>): PreviewOptionChoice[] {
   return result.options
-    .filter((option) => option.imageUrl && option.previewOptionId)
-    .map((option, index) => ({
+    .map((option, index) => ({ option, index }))
+    .filter(({ option }) => option.imageUrl && option.previewOptionId)
+    .sort((a, b) => previewOptionPriority(a.option) - previewOptionPriority(b.option) || a.index - b.index)
+    .map(({ option }, index) => ({
       previewOptionId: String(option.previewOptionId),
       label: option.label ?? `Option ${index + 1}`,
       description: option.description ?? null,
@@ -46,6 +48,13 @@ function normalizePreviewOptions(result: Pick<PreviewFlowResult, 'options'>): Pr
       mockupUrl: option.mockupUrl ?? null,
       orderable: option.orderable,
     }))
+}
+
+function previewOptionPriority(option: { label?: string | null; description?: string | null }): number {
+  const text = `${option.label ?? ''} ${option.description ?? ''}`.toLowerCase()
+  if (/\bdrama\b/.test(text)) return 0
+  if (/\bsource\b/.test(text)) return 1
+  return 2
 }
 
 export function readPreviewIdFromUrl(): string | null {
@@ -63,7 +72,9 @@ function buildRestoredPreviewState(
   if (!size) return null
 
   const options = normalizePreviewOptions(result)
-  const selectedOptionId = options.find((option) => option.orderable)?.previewOptionId
+  const selectedOptionId = options.find((option) => /\bdrama\b/i.test(`${option.label} ${option.description ?? ''}`) && option.orderable)?.previewOptionId
+    ?? options.find((option) => option.orderable)?.previewOptionId
+    ?? options.find((option) => /\bdrama\b/i.test(`${option.label} ${option.description ?? ''}`))?.previewOptionId
     ?? options[0]?.previewOptionId
     ?? null
   const selectedOptionUrl = selectedOptionId
