@@ -285,11 +285,36 @@ export function previewReducer(
 
     case "SET_SIZE": {
       const dp = state.dotPreviews[event.size.id]
+      const hasSourceContext = Boolean(state.selectedFile && state.sessionToken)
+      const hasRestoredPreview = Object.values(state.dotPreviews).some((preview) => preview.status === "ready")
+      const shouldCreateProcessingPreview = Boolean(hasSourceContext && !dp)
+      const shouldCreateUnavailablePreview = Boolean(!hasSourceContext && hasRestoredPreview && !dp)
       const resolvedUrl = dp?.status === 'ready' ? resolveActiveUrl(dp) ?? dp.imageUrl ?? null : null
       const nextState = {
         ...state,
         selectedSize: event.size,
         finalUrl: resolvedUrl,
+        dotPreviews: shouldCreateProcessingPreview
+          ? {
+              ...state.dotPreviews,
+              [event.size.id]: createProcessingDotPreview(event.size.id),
+            }
+          : shouldCreateUnavailablePreview
+            ? {
+                ...state.dotPreviews,
+                [event.size.id]: {
+                  sizeId: event.size.id,
+                  status: "error" as const,
+                  previewId: null,
+                  imageUrl: null,
+                  productCode: "DOT" as const,
+                  orderable: null,
+                  error: "Upload again to generate this size.",
+                  options: [],
+                  selectedOptionId: null,
+                },
+              }
+            : state.dotPreviews,
       }
       return {
         ...nextState,
