@@ -38,5 +38,5 @@ test('saved preview links carry the saved size so reopened previews keep the cor
   assert.equal(registrySource.includes('params.set("size_id", sizeId)'), true)
   assert.equal(accountSource.includes('buildPreviewOpenPath(record.previewId, record.sizeId)'), true)
   assert.equal(flowSource.includes('readPreviewSizeIdFromUrl'), true)
-  assert.equal(flowSource.includes('getFrameSizeOption(urlSizeId)'), true)
+  assert.equal(flowSource.includes('getFrameSizeOption(urlSizeId.toLowerCase())'), true)
 })

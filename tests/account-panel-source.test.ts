@@ -31,5 +31,5 @@ test('account panel preserves the current magic-link account MVP scope', () => {
   assert.equal(accountSource.includes('Verified previews'), true)
   assert.equal(accountSource.includes('readAccountPreviews'), true)
   assert.equal(accountSource.includes('Preview list comes next from MGE'), false)
-  assert.equal(accountSource.includes('requestDesignMagicLink(email, previewId)'), true)
+  assert.equal(accountSource.includes('requestDesignMagicLink(email, previewId, selectedSize?.id ?? null)'), true)
 })

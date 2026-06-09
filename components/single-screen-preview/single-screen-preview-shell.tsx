@@ -13,6 +13,7 @@ import { captureEvent } from "@/lib/analytics/posthog"
 import {
   consumeMagicTokenFromUrl,
   consumeVerifiedIdentityNoticeFromUrl,
+  fetchVerifiedIdentityPreviews,
   readVerifiedIdentity,
   type StoredIdentity,
 } from "@/lib/identity/browser"
@@ -25,6 +26,7 @@ type MagicLinkNotice = {
 
 export function SingleScreenPreviewShell() {
   const { state, sceneModel, guidedModel, actions } = usePreviewFlow()
+  const { hydrateSourceImage } = actions
   const [magicLinkNotice, setMagicLinkNotice] = useState<MagicLinkNotice>(null)
   const [magicLinkIdentity, setMagicLinkIdentity] = useState<StoredIdentity | null>(null)
   const [accountPanelOpen, setAccountPanelOpen] = useState(false)
@@ -77,6 +79,31 @@ export function SingleScreenPreviewShell() {
       selected_size: registered.sizeId,
     })
   }, [magicLinkIdentity, selectedPreview, state.selectedSize])
+
+  useEffect(() => {
+    if (!magicLinkIdentity || !selectedPreview?.previewId) return
+    let cancelled = false
+
+    fetchVerifiedIdentityPreviews(magicLinkIdentity).then(
+      async (previews) => {
+        if (cancelled) return
+        const identityPreview = previews.find((preview) => preview.previewId === selectedPreview.previewId)
+        if (!identityPreview?.sourceImageUrl) return
+        await hydrateSourceImage(identityPreview.sourceImageUrl, identityPreview.previewId)
+      },
+      (error) => {
+        if (cancelled) return
+        captureEvent('identity_preview_library_failed', {
+          preview_id: selectedPreview.previewId,
+          error_message: error instanceof Error ? error.message : 'Identity preview library failed',
+        })
+      },
+    )
+
+    return () => {
+      cancelled = true
+    }
+  }, [hydrateSourceImage, magicLinkIdentity, selectedPreview?.previewId])
 
   return (
     <LayoutFrame

@@ -40,6 +40,8 @@ export interface DotPreviewResult {
   options: PreviewOptionChoice[]
   /** ID of the currently selected option, or null */
   selectedOptionId: string | null
+  /** Original uploaded/source image, used to regenerate other sizes after account restore. */
+  sourceImageUrl?: string | null
 }
 
 export interface PreviewState {
@@ -56,6 +58,7 @@ export interface PreviewState {
 export type PreviewEvent =
   | { type: "SELECT_IMAGE"; file: File; sessionToken: string }
   | { type: "RESTORE_PREVIEW"; state: Pick<PreviewState, "selectedSize" | "dotPreviews" | "finalUrl"> }
+  | { type: "HYDRATE_SOURCE_IMAGE"; file: File; sessionToken: string }
   | { type: "TEMP_PREVIEW_READY"; url: string; sessionToken: string }
   | { type: "START_PROCESSING"; sessionToken: string; sizeId?: string }
   | { type: "PROCESSING_SUCCESS"; url: string; sessionToken: string; sizeId?: string; previewId?: string | null; status?: string; orderable?: boolean | null; options?: PreviewOptionChoice[] }
@@ -167,6 +170,14 @@ export function previewReducer(
         status: deriveStatusForSelectedSize(nextState),
       }
     }
+
+    case "HYDRATE_SOURCE_IMAGE":
+      return {
+        ...state,
+        selectedFile: event.file,
+        sessionToken: event.sessionToken,
+        error: null,
+      }
 
     case "TEMP_PREVIEW_READY":
       if (state.sessionToken !== event.sessionToken) return state

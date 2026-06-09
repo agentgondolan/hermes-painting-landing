@@ -26,6 +26,7 @@ import {
 
 type PreviewFlowResult = Omit<BffPreviewCreateResult, 'previewId'> & {
   previewId: string | null
+  sourceImageUrl?: string | null
   cleanup?: () => void
 }
 
@@ -98,6 +99,7 @@ function buildRestoredPreviewState(
     error: null,
     options,
     selectedOptionId,
+    sourceImageUrl: result.sourceImageUrl ?? null,
   }
 
   return {
@@ -340,6 +342,35 @@ export function usePreviewFlow() {
     })
   }, [])
 
+  const hydrateSourceImage = useCallback(async (sourceImageUrl: string, previewId?: string | null): Promise<boolean> => {
+    if (!sourceImageUrl) return false
+    const currentState = stateRef.current
+    if (currentState.selectedFile && currentState.sessionToken) return true
+
+    try {
+      const response = await fetch(sourceImageUrl, { credentials: 'omit' })
+      if (!response.ok) throw new Error(`Source image fetch failed: ${response.status}`)
+      const blob = await response.blob()
+      const contentType = blob.type || response.headers.get('Content-Type') || 'image/jpeg'
+      const extension = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
+      const file = new File([blob], `restored-preview-${previewId ?? 'source'}.${extension}`, { type: contentType })
+      const sessionToken = crypto.randomUUID()
+      dispatch({ type: "HYDRATE_SOURCE_IMAGE", file, sessionToken })
+      captureEvent('preview_source_image_hydrated', {
+        preview_id: previewId ?? undefined,
+        selected_size: currentState.selectedSize?.id,
+      })
+      return true
+    } catch (error) {
+      captureEvent('preview_source_image_hydration_failed', {
+        preview_id: previewId ?? undefined,
+        selected_size: currentState.selectedSize?.id,
+        error_message: error instanceof Error ? error.message : 'Source image hydration failed',
+      })
+      return false
+    }
+  }, [])
+
   useEffect(() => {
     const previewId = readPreviewIdFromUrl()
     const restored = restoreStoredPreviewState()
@@ -364,7 +395,7 @@ export function usePreviewFlow() {
 
     let cancelled = false
     const urlSizeId = readPreviewSizeIdFromUrl()
-    const selectedSize = urlSizeId ? getFrameSizeOption(urlSizeId) : stateRef.current.selectedSize
+    const selectedSize = urlSizeId ? getFrameSizeOption(urlSizeId.toLowerCase()) : stateRef.current.selectedSize
 
     previewClient
       .getPreview(previewId)
@@ -429,6 +460,7 @@ export function usePreviewFlow() {
       reset: handleReset,
       setSize: handleSetSize,
       setPreviewOption: handleSetPreviewOption,
+      hydrateSourceImage,
     },
   }
 }

@@ -116,6 +116,38 @@ export async function getMagicLinkRequestStatus(
   }
 }
 
+export async function getIdentityPreviews(
+  request: Request,
+  env: IdentityEnv,
+  fetcher: typeof fetch = fetch,
+): Promise<Response> {
+  if (request.method === 'OPTIONS') return corsResponse(request, env)
+  if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405), request, env)
+
+  const identityToken = request.headers.get('X-MGE-Identity-Token')?.trim()
+  if (!identityToken) return withCors(json({ error: 'X-MGE-Identity-Token is required' }, 401), request, env)
+
+  try {
+    const response = await fetcher(`${mgeBaseUrl(env)}/api/internal/v1/identity/previews/?brand_id=${mgeBrandId()}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${requireMgeToken(env)}`,
+        'X-API-Key': requireMgeToken(env),
+        'X-MGE-Identity-Token': identityToken,
+      },
+    })
+    const payload = parseJson(await response.text())
+    if (!response.ok) {
+      return withCors(json({ error: mgeErrorMessage(payload, 'MGE rejected the identity preview request') }, response.status), request, env)
+    }
+
+    return withCors(json({ ok: true, previews: normalizeIdentityPreviewRows(payload) }), request, env)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Could not load identity previews'
+    return withCors(json({ error: message }, 500), request, env)
+  }
+}
+
 export async function verifyMagicLinkRequest(request: Request, env: IdentityEnv): Promise<Response> {
   if (request.method === 'OPTIONS') return corsResponse(request, env)
   if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405), request, env)
@@ -146,6 +178,7 @@ export async function verifyMagicLinkRequest(request: Request, env: IdentityEnv)
         email: identity.email,
         previewId: identity.previewId,
         identityToken,
+        mgeIdentityToken: 'identityToken' in identity ? identity.identityToken ?? null : null,
         expiresInSeconds: IDENTITY_SESSION_TTL_SECONDS,
       }),
       request,
@@ -214,6 +247,7 @@ type MgeMagicLinkRequestResult = {
 
 type MgeMagicLinkIdentity = Pick<VerifiedIdentity, 'email' | 'previewId'> & {
   expiresInSeconds: number
+  identityToken?: string | null
 }
 
 function normalizeMagicLinkDelivery(status: string): 'email_sent' | 'accepted' {
@@ -316,6 +350,7 @@ async function verifyMgeMagicLink(token: string, env: IdentityEnv): Promise<MgeM
   return {
     email,
     previewId,
+    identityToken: stringValue(record?.identity_token) || stringValue(record?.token) || null,
     expiresInSeconds: numberValue(record?.expires_in_seconds) || IDENTITY_SESSION_TTL_SECONDS,
   }
 }
@@ -441,6 +476,71 @@ function numberValue(value: unknown): number {
 function mgeErrorMessage(payload: unknown, fallback: string): string {
   const record = asRecord(payload)
   return stringValue(record?.error) || stringValue(record?.detail) || fallback
+}
+
+function normalizeIdentityPreviewRows(payload: unknown): Array<Record<string, unknown>> {
+  const root = asRecord(payload)
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray(root?.previews)
+      ? root.previews
+      : Array.isArray(root?.results)
+        ? root.results
+        : Array.isArray(root?.data)
+          ? root.data
+          : []
+
+  return rows.map(normalizeIdentityPreviewRow).filter((row): row is Record<string, unknown> => Boolean(row))
+}
+
+function normalizeIdentityPreviewRow(value: unknown): Record<string, unknown> | null {
+  const record = asRecord(value)
+  if (!record) return null
+  const previewId = normalizeId(record.preview_id ?? record.previewId ?? record.id)
+  if (!previewId) return null
+  const sourceImageRecord = asRecord(record.source_image ?? record.sourceImage)
+  const sourceImageUrl = proxiedImageUrl(
+    stringValue(sourceImageRecord?.url) || stringValue(record.source_image_url) || stringValue(record.sourceImageUrl),
+  )
+  const optionsValue = Array.isArray(record.options)
+    ? record.options
+    : Array.isArray(record.preview_options)
+      ? record.preview_options
+      : []
+
+  return {
+    previewId,
+    status: stringValue(record.status) || null,
+    selectedSize: (stringValue(record.size_id) || stringValue(record.selected_size) || stringValue(record.selectedSize) || stringValue(record.size) || null)?.toLowerCase?.() ?? null,
+    imageUrl: proxiedImageUrl(stringValue(record.image_url) || stringValue(record.imageUrl) || stringValue(record.preview_url) || stringValue(record.previewUrl)),
+    sourceImageUrl,
+    options: optionsValue.map(normalizeIdentityPreviewOption).filter((option): option is Record<string, unknown> => Boolean(option)),
+  }
+}
+
+function normalizeIdentityPreviewOption(value: unknown): Record<string, unknown> | null {
+  const record = asRecord(value)
+  if (!record) return null
+  const imageUrl = stringValue(record.image_url) || stringValue(record.imageUrl) || stringValue(record.preview_url) || stringValue(record.previewUrl)
+  return {
+    previewOptionId: stringValue(record.preview_option_id) || stringValue(record.previewOptionId) || stringValue(record.id),
+    label: stringValue(record.label) || stringValue(record.name) || null,
+    description: stringValue(record.description) || null,
+    orderable: Boolean(record.orderable),
+    imageUrl: proxiedImageUrl(imageUrl),
+    mockupUrl: proxiedImageUrl(stringValue(record.mockup_url) || stringValue(record.mockupUrl)),
+  }
+}
+
+function proxiedImageUrl(imageUrl: string): string | null {
+  if (!imageUrl) return null
+  try {
+    const parsed = new URL(imageUrl)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return imageUrl
+    return `/api/mge/image?url=${encodeURIComponent(parsed.toString())}`
+  } catch {
+    return imageUrl
+  }
 }
 
 function bytesToHex(bytes: Uint8Array): string {

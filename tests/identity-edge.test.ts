@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   createIdentitySessionToken,
+  getIdentityPreviews,
   getMagicLinkRequestStatus,
   requestMagicLink,
   verifyIdentitySessionToken,
@@ -313,4 +314,46 @@ test('identity session tokens are preview scoped', async () => {
   const token = await createIdentitySessionToken({ email: 'buyer@example.com', previewId: 'preview_123' }, env)
   const identity = await verifyIdentitySessionToken(token, env)
   assert.equal(identity.previewId, 'preview_123')
+})
+
+test('getIdentityPreviews proxies the real MGE preview library and normalizes source images', async () => {
+  let upstreamUrl = ''
+  let upstreamApiKey = ''
+  let upstreamIdentityToken = ''
+
+  const response = await getIdentityPreviews(
+    new Request('https://dottingo.test/api/identity/previews', {
+      method: 'GET',
+      headers: { 'X-MGE-Identity-Token': 'identity-token-123' },
+    }),
+    env,
+    async (request, init) => {
+      const upstreamRequest = request instanceof Request ? request : new Request(request, init)
+      upstreamUrl = upstreamRequest.url
+      upstreamApiKey = upstreamRequest.headers.get('X-API-Key') || ''
+      upstreamIdentityToken = upstreamRequest.headers.get('X-MGE-Identity-Token') || ''
+      return new Response(JSON.stringify({
+        previews: [
+          {
+            preview_id: '11111111-1111-1111-1111-111111111111',
+            selected_size: '40X60',
+            image_url: 'https://cdn.test/preview.png',
+            source_image: {
+              url: 'https://cdn.test/source.png?sig=abc',
+              expires_in_seconds: 600,
+            },
+          },
+        ],
+      }), { status: 200 })
+    },
+  )
+
+  assert.equal(response.status, 200)
+  assert.equal(upstreamUrl, 'https://mge.test/api/internal/v1/identity/previews/?brand_id=64')
+  assert.equal(upstreamApiKey, 'test_mge_token')
+  assert.equal(upstreamIdentityToken, 'identity-token-123')
+  const payload = await response.json() as { previews: Array<{ selectedSize: string; imageUrl: string; sourceImageUrl: string }> }
+  assert.equal(payload.previews[0].selectedSize, '40x60')
+  assert.equal(payload.previews[0].imageUrl.startsWith('/api/mge/image?url='), true)
+  assert.equal(payload.previews[0].sourceImageUrl.startsWith('/api/mge/image?url='), true)
 })

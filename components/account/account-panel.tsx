@@ -79,7 +79,7 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
     setStatus("Sending link…")
 
     try {
-      const result = await requestDesignMagicLink(email, previewId)
+      const result = await requestDesignMagicLink(email, previewId, selectedSize?.id ?? null)
       const confirmed = result.delivery === "email_sent"
       setStatus(confirmed ? "Please check your emails to verify." : "Sending link…")
       setMagicLinkSent(confirmed)

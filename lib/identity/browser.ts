@@ -4,6 +4,7 @@ export type StoredIdentity = {
   email: string
   previewId: string
   identityToken: string
+  mgeIdentityToken?: string | null
   expiresAt: number
 }
 
@@ -24,8 +25,26 @@ type VerifyResponse = {
   email?: string
   previewId?: string
   identityToken?: string
+  mgeIdentityToken?: string | null
   expiresInSeconds?: number
   error?: string
+}
+
+export type IdentityPreviewRow = {
+  previewId: string
+  status?: string | null
+  selectedSize?: string | null
+  imageUrl?: string | null
+  sourceImageUrl?: string | null
+  options: Array<{
+    previewOptionId: string | number
+    label: string | null
+    description: string | null
+    orderable: boolean
+    imageUrl: string | null
+    mockupUrl: string | null
+    [key: string]: unknown
+  }>
 }
 
 export async function verifyMagicToken(token: string): Promise<StoredIdentity> {
@@ -44,6 +63,7 @@ export async function verifyMagicToken(token: string): Promise<StoredIdentity> {
     email: payload.email,
     previewId: payload.previewId,
     identityToken: payload.identityToken,
+    mgeIdentityToken: payload.mgeIdentityToken ?? null,
     expiresAt: Date.now() + (payload.expiresInSeconds ?? 0) * 1000,
   }
   window.localStorage.setItem(IDENTITY_STORAGE_KEY, JSON.stringify(identity))
@@ -53,8 +73,24 @@ export async function verifyMagicToken(token: string): Promise<StoredIdentity> {
 export function buildVerifiedDesignReturnPath(identity: Pick<StoredIdentity, 'previewId'>): string {
   const url = new URL('/', window.location.origin)
   url.searchParams.set('preview_id', identity.previewId)
+  const sizeId = readRestoredPreviewSizeId(identity.previewId)
+  if (sizeId) url.searchParams.set('size_id', sizeId)
   url.searchParams.set('identity_verified', '1')
   return `${url.pathname}${url.search}`
+}
+
+function readRestoredPreviewSizeId(previewId: string): string | null {
+  try {
+    const raw = window.localStorage.getItem('dottingo.checkout.restore.v1')
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { preview?: { selectedSize?: { id?: unknown }; dotPreviews?: Record<string, { previewId?: unknown }> } }
+    const sizeId = parsed.preview?.selectedSize?.id
+    if (typeof sizeId !== 'string') return null
+    const restoredPreviewId = parsed.preview?.dotPreviews?.[sizeId]?.previewId
+    return restoredPreviewId === previewId ? sizeId : null
+  } catch {
+    return null
+  }
 }
 
 export function readVerifiedIdentity(previewId?: string | null): StoredIdentity | null {
@@ -81,9 +117,10 @@ export function clearVerifiedIdentity() {
   window.localStorage.removeItem(IDENTITY_STORAGE_KEY)
 }
 
-export async function requestDesignMagicLink(email: string, previewId: string): Promise<MagicLinkResponse> {
+export async function requestDesignMagicLink(email: string, previewId: string, sizeId?: string | null): Promise<MagicLinkResponse> {
   const url = new URL(window.location.href)
   url.searchParams.delete('magic_token')
+  if (sizeId) url.searchParams.set('size_id', sizeId)
   const continuePath = `${url.pathname}${url.search}${url.hash}` || '/'
 
   const response = await fetch('/api/identity/request-magic-link', {
@@ -107,6 +144,18 @@ export async function pollMagicLinkRequestStatus(requestId: string): Promise<Mag
   const payload = await response.json().catch(() => null) as MagicLinkStatusResponse | null
   if (!response.ok) throw new Error(payload?.error || 'Could not check magic link status')
   return payload ?? { ok: true, terminal: false }
+}
+
+export async function fetchVerifiedIdentityPreviews(identity: StoredIdentity): Promise<IdentityPreviewRow[]> {
+  if (!identity.mgeIdentityToken) return []
+
+  const response = await fetch('/api/identity/previews', {
+    method: 'GET',
+    headers: { 'X-MGE-Identity-Token': identity.mgeIdentityToken },
+  })
+  const payload = await response.json().catch(() => null) as { previews?: IdentityPreviewRow[]; error?: string } | null
+  if (!response.ok) throw new Error(payload?.error || 'Could not load verified previews')
+  return payload?.previews ?? []
 }
 
 export async function consumeMagicTokenFromUrl(): Promise<StoredIdentity | null> {
