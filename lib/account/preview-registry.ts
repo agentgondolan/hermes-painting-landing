@@ -114,7 +114,8 @@ export function hideAccountPreview(email: string, previewId: string): boolean {
   return changed
 }
 
-export function buildPreviewOpenPath(previewId: string): string {
+export function buildPreviewOpenPath(previewId: string, sizeId?: string | null): string {
   const params = new URLSearchParams({ preview_id: previewId })
+  if (sizeId) params.set("size_id", sizeId)
   return `/?${params.toString()}`
 }

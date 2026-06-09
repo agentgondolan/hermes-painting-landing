@@ -13,6 +13,7 @@ import {
 } from "./preview-state"
 import {
   prepareArtworkForFrame,
+  getFrameSizeOption,
 } from "@/lib/image-processing"
 import { captureEvent } from "@/lib/analytics/posthog"
 import { createPreviewClient, isTerminalPreview, type BffPreviewCreateResult } from "@/lib/mgeveryday/browser-preview"
@@ -61,6 +62,12 @@ export function readPreviewIdFromUrl(): string | null {
   if (typeof window === "undefined") return null
   const previewId = new URL(window.location.href).searchParams.get("preview_id")?.trim()
   return previewId || null
+}
+
+export function readPreviewSizeIdFromUrl(): string | null {
+  if (typeof window === "undefined") return null
+  const sizeId = new URL(window.location.href).searchParams.get("size_id")?.trim()
+  return sizeId || null
 }
 
 function buildRestoredPreviewState(
@@ -356,7 +363,8 @@ export function usePreviewFlow() {
     if (!previewClient) return
 
     let cancelled = false
-    const selectedSize = stateRef.current.selectedSize
+    const urlSizeId = readPreviewSizeIdFromUrl()
+    const selectedSize = urlSizeId ? getFrameSizeOption(urlSizeId) : stateRef.current.selectedSize
 
     previewClient
       .getPreview(previewId)

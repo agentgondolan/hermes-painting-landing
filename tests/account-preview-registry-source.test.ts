@@ -5,6 +5,7 @@ import test from 'node:test'
 const registrySource = readFileSync(new URL('../lib/account/preview-registry.ts', import.meta.url), 'utf8')
 const accountSource = readFileSync(new URL('../components/account/account-panel.tsx', import.meta.url), 'utf8')
 const shellSource = readFileSync(new URL('../components/single-screen-preview/single-screen-preview-shell.tsx', import.meta.url), 'utf8')
+const flowSource = readFileSync(new URL('../components/single-screen-preview/use-preview-flow.ts', import.meta.url), 'utf8')
 
 test('preview registry stores verified previews by normalized email', () => {
   assert.equal(registrySource.includes('dottingo_preview_registry_v1'), true)
@@ -30,4 +31,12 @@ test('preview shell registers the current ready preview when a global identity i
   assert.equal(shellSource.includes('currentPreviewSaved'), true)
   assert.equal(shellSource.includes('selectedPreview.status !== "ready"'), true)
   assert.equal(shellSource.includes('account_preview_registered'), true)
+})
+
+test('saved preview links carry the saved size so reopened previews keep the correct canvas ratio', () => {
+  assert.match(registrySource, /buildPreviewOpenPath\(previewId: string, sizeId\?: string \| null\)/)
+  assert.equal(registrySource.includes('params.set("size_id", sizeId)'), true)
+  assert.equal(accountSource.includes('buildPreviewOpenPath(record.previewId, record.sizeId)'), true)
+  assert.equal(flowSource.includes('readPreviewSizeIdFromUrl'), true)
+  assert.equal(flowSource.includes('getFrameSizeOption(urlSizeId)'), true)
 })

@@ -294,13 +294,13 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <a
-                      href={buildPreviewOpenPath(record.previewId)}
+                      href={buildPreviewOpenPath(record.previewId, record.sizeId)}
                       className="rounded-full bg-[#9432c1] px-3 py-1.5 text-[11px] font-extrabold text-white transition hover:bg-[#7f28aa]"
                     >
                       Open preview
                     </a>
                     <a
-                      href={buildPreviewOpenPath(record.previewId)}
+                      href={buildPreviewOpenPath(record.previewId, record.sizeId)}
                       className="rounded-full bg-[#2e2d2c]/7 px-3 py-1.5 text-[11px] font-extrabold text-[#2e2d2c]/65 transition hover:bg-[#2e2d2c]/12 hover:text-[#2e2d2c]"
                     >
                       Continue checkout
