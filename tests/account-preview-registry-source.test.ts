@@ -38,5 +38,12 @@ test('saved preview links carry the saved size so reopened previews keep the cor
   assert.equal(registrySource.includes('params.set("size_id", sizeId)'), true)
   assert.equal(accountSource.includes('buildPreviewOpenPath(record.previewId, record.sizeId)'), true)
   assert.equal(flowSource.includes('readPreviewSizeIdFromUrl'), true)
-  assert.equal(flowSource.includes('getFrameSizeOption(urlSizeId.toLowerCase())'), true)
+  assert.equal(flowSource.includes('normalizePreviewSizeIdFromUrl'), true)
+  assert.equal(flowSource.includes('getFrameSizeOption(normalizedUrlSizeId)'), true)
+})
+
+test('saved preview URL size wins over stale local storage for the same preview id', () => {
+  assert.equal(flowSource.includes('const normalizedUrlSizeId = normalizePreviewSizeIdFromUrl()'), true)
+  assert.equal(flowSource.includes('const restoredMatchesUrlSize = !normalizedUrlSizeId || restored?.selectedSize?.id === normalizedUrlSizeId'), true)
+  assert.equal(flowSource.includes('restoredMatchesUrlSize'), true)
 })

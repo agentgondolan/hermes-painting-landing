@@ -12,6 +12,7 @@ import {
   type PreviewState,
 } from "./preview-state"
 import {
+  FRAME_SIZE_OPTIONS,
   prepareArtworkForFrame,
   getFrameSizeOption,
 } from "@/lib/image-processing"
@@ -69,6 +70,11 @@ export function readPreviewSizeIdFromUrl(): string | null {
   if (typeof window === "undefined") return null
   const sizeId = new URL(window.location.href).searchParams.get("size_id")?.trim()
   return sizeId || null
+}
+
+function normalizePreviewSizeIdFromUrl(): string | null {
+  const sizeId = readPreviewSizeIdFromUrl()?.toLowerCase() ?? null
+  return sizeId && FRAME_SIZE_OPTIONS.some((option) => option.id === sizeId) ? sizeId : null
 }
 
 function buildRestoredPreviewState(
@@ -373,12 +379,15 @@ export function usePreviewFlow() {
 
   useEffect(() => {
     const previewId = readPreviewIdFromUrl()
+    const normalizedUrlSizeId = normalizePreviewSizeIdFromUrl()
     const restored = restoreStoredPreviewState()
     const restoredPreviewId = restored?.selectedSize
       ? restored.dotPreviews[restored.selectedSize.id]?.previewId
       : null
+    const restoredMatchesPreview = !previewId || restoredPreviewId === previewId
+    const restoredMatchesUrlSize = !normalizedUrlSizeId || restored?.selectedSize?.id === normalizedUrlSizeId
 
-    if (restored && (!previewId || restoredPreviewId === previewId)) {
+    if (restored && restoredMatchesPreview && restoredMatchesUrlSize) {
       dispatch({ type: "RESTORE_PREVIEW", state: restored })
       captureEvent('checkout_preview_restored', {
         selected_size: restored.selectedSize?.id,
@@ -394,8 +403,7 @@ export function usePreviewFlow() {
     if (!previewClient) return
 
     let cancelled = false
-    const urlSizeId = readPreviewSizeIdFromUrl()
-    const selectedSize = urlSizeId ? getFrameSizeOption(urlSizeId.toLowerCase()) : stateRef.current.selectedSize
+    const selectedSize = normalizedUrlSizeId ? getFrameSizeOption(normalizedUrlSizeId) : stateRef.current.selectedSize
 
     previewClient
       .getPreview(previewId)

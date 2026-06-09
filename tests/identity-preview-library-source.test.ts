@@ -11,7 +11,8 @@ const stateSource = readFileSync(new URL('../components/single-screen-preview/pr
 test('verified identity preserves selected size through the magic-link return path', () => {
   assert.equal(browserIdentitySource.includes('if (sizeId) url.searchParams.set(\'size_id\', sizeId)'), true)
   assert.equal(browserIdentitySource.includes('readRestoredPreviewSizeId(identity.previewId)'), true)
-  assert.equal(flowSource.includes('getFrameSizeOption(urlSizeId.toLowerCase())'), true)
+  assert.equal(flowSource.includes('normalizePreviewSizeIdFromUrl'), true)
+  assert.equal(flowSource.includes('getFrameSizeOption(normalizedUrlSizeId)'), true)
 })
 
 test('verified identity preview library proxies real source images and caches them as selected files', () => {
