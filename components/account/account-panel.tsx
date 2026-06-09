@@ -11,6 +11,7 @@ import {
 import {
   buildPreviewOpenPath,
   hideAccountPreview,
+  isAccountPreviewSaved,
   readAccountPreviews,
   upsertAccountPreview,
   type AccountPreviewRecord,
@@ -67,7 +68,9 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
   }, [startEmailFlowNonce, selectedPreview?.status])
 
   const isVerifiedGlobally = Boolean(identity)
-  const isSavedCurrentPreview = Boolean(identity && savedPreviews.some((record) => record.previewId === previewId))
+  const isSavedCurrentPreview = Boolean(
+    identity && (savedPreviews.some((record) => record.previewId === previewId) || isAccountPreviewSaved(identity.email, previewId)),
+  )
   const hasCurrentDesign = Boolean(previewId && selectedPreview?.status === "ready")
   const showEmailForm = Boolean(hasCurrentDesign && (!isVerifiedGlobally || isChangingEmail) && saveFormOpen)
 

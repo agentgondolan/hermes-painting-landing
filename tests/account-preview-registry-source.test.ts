@@ -25,6 +25,12 @@ test('account panel renders saved previews with open continue and hide actions',
   assert.equal(accountSource.includes('Preview list comes next from MGE'), false)
 })
 
+test('account panel treats the current preview as saved from the canonical registry, not only stale component state', () => {
+  assert.equal(accountSource.includes('isAccountPreviewSaved(identity.email, previewId)'), true)
+  assert.match(accountSource, /savedPreviews\.some\(\(record\) => record\.previewId === previewId\) \|\| isAccountPreviewSaved\(identity\.email, previewId\)/)
+  assert.equal(accountSource.includes('Save current preview'), true)
+})
+
 test('preview shell registers the current ready preview when a global identity is verified', () => {
   assert.equal(shellSource.includes('upsertAccountPreview'), true)
   assert.equal(shellSource.includes('isAccountPreviewSaved'), true)
