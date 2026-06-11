@@ -141,7 +141,7 @@ export async function getIdentityPreviews(
       return withCors(json({ error: mgeErrorMessage(payload, 'MGE rejected the identity preview request') }, response.status), request, env)
     }
 
-    return withCors(json({ ok: true, previews: normalizeIdentityPreviewRows(payload) }), request, env)
+    return withCors(json({ ok: true, ...normalizeIdentityPreviewLibrary(payload) }), request, env)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Could not load identity previews'
     return withCors(json({ error: message }, 500), request, env)
@@ -473,9 +473,53 @@ function numberValue(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function booleanValue(value: unknown): boolean {
+  if (typeof value === 'boolean') return value
+  const normalized = stringValue(value).toLowerCase()
+  return ['true', '1', 'yes', 'y'].includes(normalized)
+}
+
 function mgeErrorMessage(payload: unknown, fallback: string): string {
   const record = asRecord(payload)
   return stringValue(record?.error) || stringValue(record?.detail) || fallback
+}
+
+function normalizeIdentityPreviewLibrary(payload: unknown): { previews: Array<Record<string, unknown>>; projects: Array<Record<string, unknown>> } {
+  const root = asRecord(payload)
+  const previews = normalizeIdentityPreviewRows(payload)
+  const projectValues = root && Array.isArray(root.projects) ? root.projects : []
+  const projects = projectValues
+    .map((project) => normalizeIdentityProject(project, previews))
+    .filter((project): project is Record<string, unknown> => Boolean(project))
+  return { previews, projects }
+}
+
+function normalizeIdentityProject(value: unknown, fallbackPreviews: Array<Record<string, unknown>>): Record<string, unknown> | null {
+  const record = asRecord(value)
+  if (!record) return null
+  const rawPreviews = Array.isArray(record.previews)
+    ? record.previews
+    : Array.isArray(record.preview_variants)
+      ? record.preview_variants
+      : []
+  const previews = rawPreviews.map(normalizeIdentityPreviewRow).filter((row): row is Record<string, unknown> => Boolean(row))
+  const projectId = normalizeId(record.project_id ?? record.projectId ?? record.id) || null
+  const sourceImageRecord = asRecord(record.source_image ?? record.sourceImage)
+  const sourceImageUrl = proxiedImageUrl(
+    stringValue(sourceImageRecord?.url) || stringValue(record.source_image_url) || stringValue(record.sourceImageUrl),
+  )
+  const sourceGroupId = stringValue(record.source_group_id) || stringValue(record.sourceGroupId) || projectId
+  return {
+    ...record,
+    projectId,
+    sourceGroupId: sourceGroupId || null,
+    sourceImageUrl,
+    sourceAvailable: booleanValue(record.source_available ?? record.sourceAvailable ?? Boolean(sourceImageUrl)),
+    previews: previews.length ? previews : fallbackPreviews.filter((preview) => {
+      const previewSourceGroupId = stringValue(preview.sourceGroupId) || stringValue(preview.projectId)
+      return Boolean(sourceGroupId && previewSourceGroupId === sourceGroupId)
+    }),
+  }
 }
 
 function normalizeIdentityPreviewRows(payload: unknown): Array<Record<string, unknown>> {
@@ -509,11 +553,24 @@ function normalizeIdentityPreviewRow(value: unknown): Record<string, unknown> | 
       : []
 
   return {
+    ...record,
     previewId,
     status: stringValue(record.status) || null,
     selectedSize: (stringValue(record.size_id) || stringValue(record.selected_size) || stringValue(record.selectedSize) || stringValue(record.size) || null)?.toLowerCase?.() ?? null,
+    preferredSize: (stringValue(record.preferred_size) || stringValue(record.preferredSize) || null)?.toLowerCase?.() ?? null,
+    isCurrent: booleanValue(record.is_current ?? record.isCurrent),
     imageUrl: proxiedImageUrl(stringValue(record.image_url) || stringValue(record.imageUrl) || stringValue(record.preview_url) || stringValue(record.previewUrl)),
     sourceImageUrl,
+    sourceGroupId: stringValue(record.source_group_id) || stringValue(record.sourceGroupId) || stringValue(record.project_id) || stringValue(record.projectId) || null,
+    fixedSize: booleanValue(record.fixed_size ?? record.fixedSize),
+    sizeChangeMode: stringValue(record.size_change_mode) || stringValue(record.sizeChangeMode) || null,
+    sourceAvailable: booleanValue(record.source_available ?? record.sourceAvailable ?? Boolean(sourceImageUrl)),
+    refreshAvailable: booleanValue(record.refresh_available ?? record.refreshAvailable),
+    refreshUnavailableReason: stringValue(record.refresh_unavailable_reason) || stringValue(record.refreshUnavailableReason) || null,
+    purchaseOptionsAvailable: record.purchase_options_available === undefined && record.purchaseOptionsAvailable === undefined
+      ? null
+      : booleanValue(record.purchase_options_available ?? record.purchaseOptionsAvailable),
+    purchaseOptionsUnavailableReason: stringValue(record.purchase_options_unavailable_reason) || stringValue(record.purchaseOptionsUnavailableReason) || null,
     options: optionsValue.map(normalizeIdentityPreviewOption).filter((option): option is Record<string, unknown> => Boolean(option)),
   }
 }

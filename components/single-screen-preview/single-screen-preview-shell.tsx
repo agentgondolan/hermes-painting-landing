@@ -85,8 +85,12 @@ export function SingleScreenPreviewShell() {
     let cancelled = false
 
     fetchVerifiedIdentityPreviews(magicLinkIdentity).then(
-      async (previews) => {
+      async (library) => {
         if (cancelled) return
+        const previews = [
+          ...library.previews,
+          ...library.projects.flatMap((project) => project.previews ?? []),
+        ]
         const identityPreview = previews.find((preview) => preview.previewId === selectedPreview.previewId)
         if (!identityPreview?.sourceImageUrl) return
         await hydrateSourceImage(identityPreview.sourceImageUrl, identityPreview.previewId)

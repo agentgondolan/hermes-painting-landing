@@ -30,21 +30,48 @@ type VerifyResponse = {
   error?: string
 }
 
+export type IdentityPreviewOption = {
+  previewOptionId: string | number
+  label: string | null
+  description: string | null
+  orderable: boolean
+  imageUrl: string | null
+  mockupUrl: string | null
+  [key: string]: unknown
+}
+
 export type IdentityPreviewRow = {
   previewId: string
   status?: string | null
   selectedSize?: string | null
+  preferredSize?: string | null
+  isCurrent?: boolean
   imageUrl?: string | null
   sourceImageUrl?: string | null
-  options: Array<{
-    previewOptionId: string | number
-    label: string | null
-    description: string | null
-    orderable: boolean
-    imageUrl: string | null
-    mockupUrl: string | null
-    [key: string]: unknown
-  }>
+  sourceGroupId?: string | null
+  fixedSize?: boolean
+  sizeChangeMode?: string | null
+  sourceAvailable?: boolean
+  refreshAvailable?: boolean
+  refreshUnavailableReason?: string | null
+  purchaseOptionsAvailable?: boolean | null
+  purchaseOptionsUnavailableReason?: string | null
+  options: IdentityPreviewOption[]
+  [key: string]: unknown
+}
+
+export type IdentityPreviewProject = {
+  projectId: string | null
+  sourceGroupId?: string | null
+  sourceImageUrl?: string | null
+  sourceAvailable?: boolean
+  previews: IdentityPreviewRow[]
+  [key: string]: unknown
+}
+
+export type IdentityPreviewLibrary = {
+  previews: IdentityPreviewRow[]
+  projects: IdentityPreviewProject[]
 }
 
 export async function verifyMagicToken(token: string): Promise<StoredIdentity> {
@@ -146,16 +173,19 @@ export async function pollMagicLinkRequestStatus(requestId: string): Promise<Mag
   return payload ?? { ok: true, terminal: false }
 }
 
-export async function fetchVerifiedIdentityPreviews(identity: StoredIdentity): Promise<IdentityPreviewRow[]> {
-  if (!identity.mgeIdentityToken) return []
+export async function fetchVerifiedIdentityPreviews(identity: StoredIdentity): Promise<IdentityPreviewLibrary> {
+  if (!identity.mgeIdentityToken) return { previews: [], projects: [] }
 
   const response = await fetch('/api/identity/previews', {
     method: 'GET',
     headers: { 'X-MGE-Identity-Token': identity.mgeIdentityToken },
   })
-  const payload = await response.json().catch(() => null) as { previews?: IdentityPreviewRow[]; error?: string } | null
+  const payload = await response.json().catch(() => null) as { previews?: IdentityPreviewRow[]; projects?: IdentityPreviewProject[]; error?: string } | null
   if (!response.ok) throw new Error(payload?.error || 'Could not load verified previews')
-  return payload?.previews ?? []
+  return {
+    previews: payload?.previews ?? [],
+    projects: payload?.projects ?? [],
+  }
 }
 
 export async function consumeMagicTokenFromUrl(): Promise<StoredIdentity | null> {

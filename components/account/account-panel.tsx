@@ -3,15 +3,20 @@
 import { useEffect, useState } from "react"
 import { captureEvent } from "@/lib/analytics/posthog"
 import {
+  fetchVerifiedIdentityPreviews,
   pollMagicLinkRequestStatus,
   readVerifiedIdentity,
   requestDesignMagicLink,
+  type IdentityPreviewLibrary,
+  type IdentityPreviewProject,
+  type IdentityPreviewRow,
   type StoredIdentity,
 } from "@/lib/identity/browser"
 import {
   buildPreviewOpenPath,
   hideAccountPreview,
   isAccountPreviewSaved,
+  normalizeRegistryEmail,
   readAccountPreviews,
   upsertAccountPreview,
   type AccountPreviewRecord,
@@ -27,7 +32,61 @@ type AccountPanelProps = {
   onClose: () => void
 }
 
+type SavedPreviewCard = AccountPreviewRecord & {
+  projectId?: string | null
+  sourceGroupId?: string | null
+  sourceImageUrl?: string | null
+  isCurrent?: boolean
+  fromIdentityProject?: boolean
+  purchaseOptionsAvailable?: boolean | null
+  purchaseOptionsUnavailableReason?: string | null
+}
+
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
+
+function asString(value: unknown): string {
+  return typeof value === "string" || typeof value === "number" ? String(value).trim() : ""
+}
+
+function previewImage(row: IdentityPreviewRow): string | null {
+  const selectedOption = row.options?.find((option) => option.orderable && option.imageUrl) ?? row.options?.find((option) => option.imageUrl)
+  return selectedOption?.imageUrl ?? row.imageUrl ?? null
+}
+
+function previewSizeLabel(row: IdentityPreviewRow): string | null {
+  return asString(row.preferredSize) || asString(row.selectedSize) || null
+}
+
+function buildProjectPreviewCard(row: IdentityPreviewRow, project?: IdentityPreviewProject | null): SavedPreviewCard | null {
+  const previewId = asString(row.previewId)
+  if (!previewId) return null
+  const sizeId = asString(row.selectedSize) || asString(row.preferredSize) || "unknown"
+  return {
+    email: "",
+    previewId,
+    sizeId,
+    sizeLabel: previewSizeLabel(row),
+    imageUrl: previewImage(row),
+    selectedPreviewOptionId: asString(row.options?.find((option) => option.orderable)?.previewOptionId) || null,
+    orderable: row.purchaseOptionsAvailable ?? row.options?.some((option) => option.orderable) ?? null,
+    updatedAt: Date.now(),
+    projectId: (project?.projectId ?? (asString(row.projectId) || null)),
+    sourceGroupId: project?.sourceGroupId ?? row.sourceGroupId ?? null,
+    sourceImageUrl: project?.sourceImageUrl ?? row.sourceImageUrl ?? null,
+    isCurrent: Boolean(row.isCurrent),
+    fromIdentityProject: Boolean(project),
+    purchaseOptionsAvailable: row.purchaseOptionsAvailable ?? null,
+    purchaseOptionsUnavailableReason: row.purchaseOptionsUnavailableReason ?? null,
+  }
+}
+
+function flattenIdentityProjects(library: IdentityPreviewLibrary): SavedPreviewCard[] {
+  const projectCards = library.projects.flatMap((project) =>
+    (project.previews ?? []).map((preview) => buildProjectPreviewCard(preview, project)).filter((card): card is SavedPreviewCard => Boolean(card)),
+  )
+  if (projectCards.length) return projectCards.sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent))
+  return library.previews.map((preview) => buildProjectPreviewCard(preview, null)).filter((card): card is SavedPreviewCard => Boolean(card))
+}
 
 export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIdentity, startEmailFlowNonce = 0, onClose }: AccountPanelProps) {
   const previewId = selectedPreview?.previewId ?? null
@@ -38,10 +97,42 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [magicLinkSent, setMagicLinkSent] = useState(false)
-  const [savedPreviews, setSavedPreviews] = useState<AccountPreviewRecord[]>([])
+  const [savedPreviews, setSavedPreviews] = useState<SavedPreviewCard[]>([])
+  const [hiddenPreviewIds, setHiddenPreviewIds] = useState<Set<string>>(() => new Set())
 
   const refreshSavedPreviews = (nextIdentity: StoredIdentity | null) => {
-    setSavedPreviews(readAccountPreviews(nextIdentity?.email))
+    if (!nextIdentity) {
+      setSavedPreviews([])
+      return
+    }
+
+    const normalizedEmail = normalizeRegistryEmail(nextIdentity.email)
+    const localRecords = readAccountPreviews(normalizedEmail)
+      .filter((record) => !hiddenPreviewIds.has(record.previewId))
+      .map((record) => ({ ...record, email: normalizedEmail }))
+    setSavedPreviews(localRecords)
+
+    if (!nextIdentity.mgeIdentityToken) return
+
+    fetchVerifiedIdentityPreviews(nextIdentity).then(
+      (library) => {
+        const identityCards = flattenIdentityProjects(library)
+          .map((card) => ({ ...card, email: normalizedEmail, updatedAt: Date.now() }))
+          .filter((card) => !hiddenPreviewIds.has(card.previewId))
+        if (!identityCards.length) return
+        const identityPreviewIds = new Set(identityCards.map((card) => card.previewId))
+        setSavedPreviews([
+          ...identityCards,
+          ...localRecords.filter((record) => !identityPreviewIds.has(record.previewId)),
+        ])
+      },
+      (error) => {
+        captureEvent("identity_preview_library_failed", {
+          preview_id: previewId,
+          error_message: error instanceof Error ? error.message : "Identity preview library failed",
+        })
+      },
+    )
   }
 
   useEffect(() => {
@@ -163,10 +254,11 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
     })
   }
 
-  const handleHidePreview = (record: AccountPreviewRecord) => {
+  const handleHidePreview = (record: SavedPreviewCard) => {
+    setHiddenPreviewIds((current) => new Set([...current, record.previewId]))
     if (!identity) return
     hideAccountPreview(identity.email, record.previewId)
-    refreshSavedPreviews(identity)
+    setSavedPreviews((current) => current.filter((item) => item.previewId !== record.previewId))
     captureEvent("account_preview_hidden", {
       preview_id: record.previewId,
     })
