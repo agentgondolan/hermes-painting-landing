@@ -36,10 +36,23 @@ type SavedPreviewCard = AccountPreviewRecord & {
   projectId?: string | null
   sourceGroupId?: string | null
   sourceImageUrl?: string | null
+  sourceAvailable?: boolean
   isCurrent?: boolean
   fromIdentityProject?: boolean
+  fixedSize?: boolean
+  sizeChangeMode?: string | null
+  refreshAvailable?: boolean
+  refreshUnavailableReason?: string | null
   purchaseOptionsAvailable?: boolean | null
   purchaseOptionsUnavailableReason?: string | null
+}
+
+type SavedPreviewGroup = {
+  key: string
+  sourceImageUrl: string | null
+  sourceAvailable: boolean
+  title: string
+  previews: SavedPreviewCard[]
 }
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
@@ -73,8 +86,13 @@ function buildProjectPreviewCard(row: IdentityPreviewRow, project?: IdentityPrev
     projectId: (project?.projectId ?? (asString(row.projectId) || null)),
     sourceGroupId: project?.sourceGroupId ?? row.sourceGroupId ?? null,
     sourceImageUrl: project?.sourceImageUrl ?? row.sourceImageUrl ?? null,
+    sourceAvailable: row.sourceAvailable ?? project?.sourceAvailable ?? Boolean(project?.sourceImageUrl ?? row.sourceImageUrl),
     isCurrent: Boolean(row.isCurrent),
     fromIdentityProject: Boolean(project),
+    fixedSize: row.fixedSize,
+    sizeChangeMode: row.sizeChangeMode ?? null,
+    refreshAvailable: row.refreshAvailable,
+    refreshUnavailableReason: row.refreshUnavailableReason ?? null,
     purchaseOptionsAvailable: row.purchaseOptionsAvailable ?? null,
     purchaseOptionsUnavailableReason: row.purchaseOptionsUnavailableReason ?? null,
   }
@@ -86,6 +104,45 @@ function flattenIdentityProjects(library: IdentityPreviewLibrary): SavedPreviewC
   )
   if (projectCards.length) return projectCards.sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent))
   return library.previews.map((preview) => buildProjectPreviewCard(preview, null)).filter((card): card is SavedPreviewCard => Boolean(card))
+}
+
+function sizeAvailabilityLabel(record: SavedPreviewCard): string {
+  if (record.purchaseOptionsAvailable === false) {
+    return record.purchaseOptionsUnavailableReason || "Not orderable yet"
+  }
+  if (record.fixedSize || record.sizeChangeMode === "fixed") return "Saved size only"
+  if (record.refreshAvailable) return "Other sizes available"
+  if (record.refreshUnavailableReason) return record.refreshUnavailableReason
+  if (record.sourceAvailable) return "Can reopen from source"
+  return "Saved size available"
+}
+
+function sizeAvailabilityTone(record: SavedPreviewCard): string {
+  if (record.purchaseOptionsAvailable === false) return "bg-[#c14432]/8 text-[#9f2d20]"
+  if (record.fixedSize || record.sizeChangeMode === "fixed") return "bg-[#2e2d2c]/7 text-[#2e2d2c]/55"
+  if (record.refreshAvailable || record.sourceAvailable) return "bg-[#40a060]/10 text-[#247244]"
+  return "bg-[#2e2d2c]/7 text-[#2e2d2c]/55"
+}
+
+function groupSavedPreviews(records: SavedPreviewCard[]): SavedPreviewGroup[] {
+  const groups = new Map<string, SavedPreviewGroup>()
+  records.forEach((record) => {
+    const key = record.sourceGroupId || record.projectId || record.previewId
+    const existing = groups.get(key)
+    const group = existing ?? {
+      key,
+      sourceImageUrl: record.sourceImageUrl || record.imageUrl || null,
+      sourceAvailable: Boolean(record.sourceAvailable || record.sourceImageUrl || record.imageUrl),
+      title: record.isCurrent ? "Current source" : "Source image",
+      previews: [],
+    }
+    if (!group.sourceImageUrl && (record.sourceImageUrl || record.imageUrl)) group.sourceImageUrl = record.sourceImageUrl || record.imageUrl
+    group.sourceAvailable = group.sourceAvailable || Boolean(record.sourceAvailable || record.sourceImageUrl || record.imageUrl)
+    group.previews.push(record)
+    group.previews.sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent) || b.updatedAt - a.updatedAt)
+    groups.set(key, group)
+  })
+  return Array.from(groups.values()).sort((a, b) => Number(b.previews.some((item) => item.isCurrent)) - Number(a.previews.some((item) => item.isCurrent)))
 }
 
 export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIdentity, startEmailFlowNonce = 0, onClose }: AccountPanelProps) {
@@ -164,6 +221,7 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
   )
   const hasCurrentDesign = Boolean(previewId && selectedPreview?.status === "ready")
   const showEmailForm = Boolean(hasCurrentDesign && (!isVerifiedGlobally || isChangingEmail) && saveFormOpen)
+  const savedPreviewGroups = groupSavedPreviews(savedPreviews)
 
   const handleSendMagicLink = async () => {
     if (!previewId || !email.trim()) return
@@ -372,41 +430,60 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
 
       <div className="mt-4 space-y-2">
         <p className="text-xs font-black uppercase tracking-[0.16em] text-[#2e2d2c]/45">Verified previews</p>
-        {savedPreviews.length ? (
-          savedPreviews.map((record) => (
-            <div key={record.previewId} className="rounded-[1.25rem] border border-[#9432c1]/12 bg-white/78 p-3">
+        {savedPreviewGroups.length ? (
+          savedPreviewGroups.map((group) => (
+            <div key={group.key} className="rounded-[1.25rem] border border-[#9432c1]/12 bg-white/78 p-3">
               <div className="flex gap-3">
-                {record.imageUrl ? (
+                {group.sourceImageUrl ? (
                   <img
-                    src={record.imageUrl}
-                    alt="Saved preview"
-                    className="h-14 w-14 rounded-2xl object-cover"
+                    src={group.sourceImageUrl}
+                    alt="Source image for saved previews"
+                    className="h-16 w-16 rounded-2xl object-cover"
                   />
-                ) : null}
+                ) : (
+                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#2e2d2c]/6 text-[10px] font-black uppercase tracking-[0.12em] text-[#2e2d2c]/35">
+                    Source
+                  </div>
+                )}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-extrabold text-[#2e2d2c]">
-                    {record.previewId === previewId ? "Current preview" : (record.sizeLabel ?? record.sizeId ?? "Saved preview")}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <a
-                      href={buildPreviewOpenPath(record.previewId, record.sizeId)}
-                      className="rounded-full bg-[#9432c1] px-3 py-1.5 text-[11px] font-extrabold text-white transition hover:bg-[#7f28aa]"
-                    >
-                      Open preview
-                    </a>
-                    <a
-                      href={buildPreviewOpenPath(record.previewId, record.sizeId)}
-                      className="rounded-full bg-[#2e2d2c]/7 px-3 py-1.5 text-[11px] font-extrabold text-[#2e2d2c]/65 transition hover:bg-[#2e2d2c]/12 hover:text-[#2e2d2c]"
-                    >
-                      Continue checkout
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => handleHidePreview(record)}
-                      className="rounded-full bg-[#2e2d2c]/5 px-3 py-1.5 text-[11px] font-extrabold text-[#2e2d2c]/45 transition hover:bg-[#2e2d2c]/10 hover:text-[#2e2d2c]"
-                    >
-                      Hide
-                    </button>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-extrabold text-[#2e2d2c]">{group.title}</p>
+                      <p className="mt-0.5 text-[11px] font-semibold text-[#2e2d2c]/48">
+                        {group.sourceAvailable ? "Source thumbnail saved" : "Source unavailable"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {group.previews.map((record) => (
+                      <div key={record.previewId} className="rounded-2xl bg-[#faf8ff]/82 p-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-extrabold text-[#2e2d2c]">
+                              {record.previewId === previewId ? "Current preview" : (record.sizeLabel ?? record.sizeId ?? "Saved size")}
+                            </p>
+                            <span className={`mt-1 inline-flex rounded-full px-2 py-1 text-[10px] font-black ${sizeAvailabilityTone(record)}`}>
+                              {sizeAvailabilityLabel(record)}
+                            </span>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <a
+                              href={buildPreviewOpenPath(record.previewId, record.sizeId)}
+                              className="rounded-full bg-[#9432c1] px-3 py-1.5 text-[11px] font-extrabold text-white transition hover:bg-[#7f28aa]"
+                            >
+                              Open preview
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => handleHidePreview(record)}
+                              className="rounded-full bg-[#2e2d2c]/5 px-2.5 py-1.5 text-[11px] font-extrabold text-[#2e2d2c]/45 transition hover:bg-[#2e2d2c]/10 hover:text-[#2e2d2c]"
+                            >
+                              Hide
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>

@@ -16,11 +16,14 @@ test('preview registry stores verified previews by normalized email', () => {
   assert.equal(registrySource.includes('hideAccountPreview'), true)
 })
 
-test('account panel renders saved previews with open continue and hide actions', () => {
+test('account panel renders saved previews grouped by source with one open action and size states', () => {
   assert.equal(accountSource.includes('readAccountPreviews'), true)
   assert.equal(accountSource.includes('upsertAccountPreview'), true)
+  assert.equal(accountSource.includes('groupSavedPreviews'), true)
+  assert.equal(accountSource.includes('Source thumbnail saved'), true)
   assert.equal(accountSource.includes('Open preview'), true)
-  assert.equal(accountSource.includes('Continue checkout'), true)
+  assert.equal(accountSource.includes('Continue checkout'), false)
+  assert.equal(accountSource.includes('sizeAvailabilityLabel'), true)
   assert.equal(accountSource.includes('Hide'), true)
   assert.equal(accountSource.includes('Preview list comes next from MGE'), false)
 })
