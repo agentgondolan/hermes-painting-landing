@@ -19,8 +19,11 @@ test('preview registry stores verified previews by normalized email', () => {
 test('account panel renders compact saved previews grouped by source with paginated open actions', () => {
   assert.equal(accountSource.includes('readAccountPreviews'), true)
   assert.equal(accountSource.includes('upsertAccountPreview'), true)
-  assert.equal(accountSource.includes('groupSavedPreviews'), true)
-  assert.equal(accountSource.includes('previewBadgeLabel'), true)
+  assert.equal(registrySource.includes('sourceImageUrl: preview.sourceImageUrl ?? null'), true)
+  assert.equal(accountSource.includes('sourceGroupingKey'), true)
+  assert.equal(accountSource.includes('if (sourceGroupId && sourceGroupId !== projectId)'), true)
+  assert.equal(accountSource.includes('if (sourceImageUrl) return `image:${sourceImageUrl}`'), true)
+  assert.equal(accountSource.includes('aria-label={`Open ${previewBadgeLabel(record)} saved preview`}'), true)
   assert.equal(accountSource.includes('Saved design image'), true)
   assert.equal(accountSource.includes('h-20 w-20'), true)
   assert.equal(accountSource.includes('Open'), true)

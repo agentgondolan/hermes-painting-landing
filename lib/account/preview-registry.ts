@@ -9,6 +9,8 @@ export type AccountPreviewRecord = {
   sizeId: string
   sizeLabel: string | null
   imageUrl: string | null
+  sourceImageUrl?: string | null
+  sourceGroupId?: string | null
   selectedPreviewOptionId: string | null
   orderable: boolean | null
   updatedAt: number
@@ -65,6 +67,8 @@ export function upsertAccountPreview(
     sizeId: preview.sizeId || selectedSize?.id || "unknown",
     sizeLabel: selectedSize?.label ?? preview.sizeId ?? null,
     imageUrl: resolvePreviewImage(preview),
+    sourceImageUrl: preview.sourceImageUrl ?? null,
+    sourceGroupId: preview.sourceImageUrl ?? null,
     selectedPreviewOptionId: preview.selectedOptionId,
     orderable: preview.orderable,
     updatedAt: Date.now(),

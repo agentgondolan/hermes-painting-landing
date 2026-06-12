@@ -109,10 +109,19 @@ function previewBadgeLabel(record: SavedPreviewCard): string {
   return record.sizeLabel || record.sizeId || "Saved size"
 }
 
+function sourceGroupingKey(record: SavedPreviewCard): string {
+  const sourceGroupId = asString(record.sourceGroupId)
+  const projectId = asString(record.projectId)
+  const sourceImageUrl = asString(record.sourceImageUrl)
+  if (sourceGroupId && sourceGroupId !== projectId) return `source:${sourceGroupId}`
+  if (sourceImageUrl) return `image:${sourceImageUrl}`
+  return projectId ? `project:${projectId}` : `preview:${record.previewId}`
+}
+
 function groupSavedPreviews(records: SavedPreviewCard[]): SavedPreviewGroup[] {
   const groups = new Map<string, SavedPreviewGroup>()
   records.forEach((record) => {
-    const key = record.sourceGroupId || record.projectId || record.previewId
+    const key = sourceGroupingKey(record)
     const existing = groups.get(key)
     const group: SavedPreviewGroup = existing ?? {
       key,
@@ -462,12 +471,14 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap gap-1.5">
                           {group.previews.map((record) => (
-                            <span
+                            <a
                               key={record.previewId}
-                              className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-black ${record.previewId === previewId ? "bg-[#9432c1] text-white" : "bg-[#9432c1]/9 text-[#9432c1]"}`}
+                              href={buildPreviewOpenPath(record.previewId, record.sizeId)}
+                              aria-label={`Open ${previewBadgeLabel(record)} saved preview`}
+                              className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-black transition ${record.previewId === previewId ? "bg-[#9432c1] text-white" : "bg-[#9432c1]/9 text-[#9432c1] hover:bg-[#9432c1]/16"}`}
                             >
                               {previewBadgeLabel(record)}
-                            </span>
+                            </a>
                           ))}
                         </div>
                       </div>
