@@ -42,6 +42,8 @@ export interface DotPreviewResult {
   selectedOptionId: string | null
   /** Original uploaded/source image, used to regenerate other sizes after account restore. */
   sourceImageUrl?: string | null
+  /** Stable source/project grouping id, separate from the source image URL. */
+  sourceGroupId?: string | null
 }
 
 export interface PreviewState {
@@ -61,7 +63,7 @@ export type PreviewEvent =
   | { type: "HYDRATE_SOURCE_IMAGE"; file: File; sessionToken: string }
   | { type: "TEMP_PREVIEW_READY"; url: string; sessionToken: string }
   | { type: "START_PROCESSING"; sessionToken: string; sizeId?: string }
-  | { type: "PROCESSING_SUCCESS"; url: string; sessionToken: string; sizeId?: string; previewId?: string | null; status?: string; orderable?: boolean | null; options?: PreviewOptionChoice[] }
+  | { type: "PROCESSING_SUCCESS"; url: string; sessionToken: string; sizeId?: string; previewId?: string | null; status?: string; orderable?: boolean | null; options?: PreviewOptionChoice[]; sourceImageUrl?: string | null; sourceGroupId?: string | null }
   | { type: "PROCESSING_FAILURE"; error: string; sessionToken: string; sizeId?: string }
   | { type: "RETRY" }
   | { type: "RESET" }
@@ -79,7 +81,7 @@ export const initialPreviewState: PreviewState = {
   error: null,
 }
 
-function createProcessingDotPreview(sizeId: string): DotPreviewResult {
+function createProcessingDotPreview(sizeId: string, previous?: Pick<DotPreviewResult, "sourceImageUrl" | "sourceGroupId"> | null): DotPreviewResult {
   return {
     sizeId,
     status: "processing",
@@ -90,6 +92,8 @@ function createProcessingDotPreview(sizeId: string): DotPreviewResult {
     error: null,
     options: [],
     selectedOptionId: null,
+    sourceImageUrl: previous?.sourceImageUrl ?? null,
+    sourceGroupId: previous?.sourceGroupId ?? null,
   }
 }
 
@@ -196,7 +200,7 @@ export function previewReducer(
         dotPreviews: sizeId
           ? {
               ...state.dotPreviews,
-              [sizeId]: createProcessingDotPreview(sizeId),
+              [sizeId]: createProcessingDotPreview(sizeId, state.dotPreviews[sizeId] ?? getSelectedDotPreview(state)),
             }
           : state.dotPreviews,
         error: null,
@@ -207,6 +211,7 @@ export function previewReducer(
       if (state.sessionToken !== event.sessionToken) return state
       const sizeId = event.sizeId ?? state.selectedSize?.id
       const options = event.options ?? []
+      const previousPreview = sizeId ? state.dotPreviews[sizeId] ?? getSelectedDotPreview(state) : null
       const selectedOptionId = pickDefaultSelectedOption(options)
       const selectedOptionUrl = selectedOptionId
         ? options.find((o) => o.previewOptionId === selectedOptionId)?.imageUrl ?? null
@@ -231,6 +236,8 @@ export function previewReducer(
                 error: null,
                 options,
                 selectedOptionId,
+                sourceImageUrl: event.sourceImageUrl ?? previousPreview?.sourceImageUrl ?? null,
+                sourceGroupId: event.sourceGroupId ?? previousPreview?.sourceGroupId ?? null,
               },
             }
           : state.dotPreviews,
@@ -260,6 +267,8 @@ export function previewReducer(
                 error: event.error,
                 options: [],
                 selectedOptionId: null,
+                sourceImageUrl: state.dotPreviews[sizeId]?.sourceImageUrl ?? getSelectedDotPreview(state)?.sourceImageUrl ?? null,
+                sourceGroupId: state.dotPreviews[sizeId]?.sourceGroupId ?? getSelectedDotPreview(state)?.sourceGroupId ?? null,
               },
             }
           : state.dotPreviews,
@@ -280,7 +289,7 @@ export function previewReducer(
         dotPreviews: selectedSizeId
           ? {
               ...state.dotPreviews,
-              [selectedSizeId]: createProcessingDotPreview(selectedSizeId),
+              [selectedSizeId]: createProcessingDotPreview(selectedSizeId, state.dotPreviews[selectedSizeId] ?? getSelectedDotPreview(state)),
             }
           : state.dotPreviews,
       }
@@ -308,7 +317,7 @@ export function previewReducer(
         dotPreviews: shouldCreateProcessingPreview
           ? {
               ...state.dotPreviews,
-              [event.size.id]: createProcessingDotPreview(event.size.id),
+              [event.size.id]: createProcessingDotPreview(event.size.id, getSelectedDotPreview(state)),
             }
           : shouldCreateUnavailablePreview
             ? {
@@ -323,6 +332,8 @@ export function previewReducer(
                   error: "Upload again to generate this size.",
                   options: [],
                   selectedOptionId: null,
+                  sourceImageUrl: getSelectedDotPreview(state)?.sourceImageUrl ?? null,
+                  sourceGroupId: getSelectedDotPreview(state)?.sourceGroupId ?? null,
                 },
               }
             : state.dotPreviews,

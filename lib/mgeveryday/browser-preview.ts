@@ -37,6 +37,8 @@ export interface BffPreviewCreateResult {
   previewId: string
   status: string
   imageUrl: string | null
+  sourceImageUrl?: string | null
+  sourceGroupId?: string | null
   options: Array<{
     previewOptionId: string | number
     label: string | null

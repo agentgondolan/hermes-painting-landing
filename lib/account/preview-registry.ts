@@ -68,7 +68,7 @@ export function upsertAccountPreview(
     sizeLabel: selectedSize?.label ?? preview.sizeId ?? null,
     imageUrl: resolvePreviewImage(preview),
     sourceImageUrl: preview.sourceImageUrl ?? null,
-    sourceGroupId: preview.sourceImageUrl ?? null,
+    sourceGroupId: preview.sourceGroupId ?? null,
     selectedPreviewOptionId: preview.selectedOptionId,
     orderable: preview.orderable,
     updatedAt: Date.now(),

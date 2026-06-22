@@ -97,12 +97,10 @@ function buildProjectPreviewCard(row: IdentityPreviewRow, project?: IdentityPrev
   }
 }
 
-function flattenIdentityProjects(library: IdentityPreviewLibrary): SavedPreviewCard[] {
-  const projectCards = library.projects.flatMap((project) =>
+function identityProjectPreviewCards(library: IdentityPreviewLibrary): SavedPreviewCard[] {
+  return library.projects.flatMap((project) =>
     (project.previews ?? []).map((preview) => buildProjectPreviewCard(preview, project)).filter((card): card is SavedPreviewCard => Boolean(card)),
-  )
-  if (projectCards.length) return projectCards.sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent))
-  return library.previews.map((preview) => buildProjectPreviewCard(preview, null)).filter((card): card is SavedPreviewCard => Boolean(card))
+  ).sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent))
 }
 
 function previewBadgeLabel(record: SavedPreviewCard): string {
@@ -110,12 +108,13 @@ function previewBadgeLabel(record: SavedPreviewCard): string {
 }
 
 function sourceGroupingKey(record: SavedPreviewCard): string {
-  const sourceGroupId = asString(record.sourceGroupId)
   const projectId = asString(record.projectId)
+  if (projectId) return `project:${projectId}`
+  const sourceGroupId = asString(record.sourceGroupId)
   const sourceImageUrl = asString(record.sourceImageUrl)
   if (sourceGroupId && sourceGroupId !== projectId) return `source:${sourceGroupId}`
   if (sourceImageUrl) return `image:${sourceImageUrl}`
-  return projectId ? `project:${projectId}` : `preview:${record.previewId}`
+  return `preview:${record.previewId}`
 }
 
 function groupSavedPreviews(records: SavedPreviewCard[]): SavedPreviewGroup[] {
@@ -168,7 +167,7 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
 
     fetchVerifiedIdentityPreviews(nextIdentity).then(
       (library) => {
-        const identityCards = flattenIdentityProjects(library)
+        const identityCards = identityProjectPreviewCards(library)
           .map((card) => ({ ...card, email: normalizedEmail, updatedAt: Date.now() }))
           .filter((card) => !hiddenPreviewIds.has(card.previewId))
         if (!identityCards.length) return

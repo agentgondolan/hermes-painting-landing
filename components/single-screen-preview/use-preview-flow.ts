@@ -28,6 +28,7 @@ import {
 type PreviewFlowResult = Omit<BffPreviewCreateResult, 'previewId'> & {
   previewId: string | null
   sourceImageUrl?: string | null
+  sourceGroupId?: string | null
   cleanup?: () => void
 }
 
@@ -106,6 +107,7 @@ function buildRestoredPreviewState(
     options,
     selectedOptionId,
     sourceImageUrl: result.sourceImageUrl ?? null,
+    sourceGroupId: result.sourceGroupId ?? null,
   }
 
   return {
@@ -170,6 +172,8 @@ export function usePreviewFlow() {
                 previewId: null,
                 status: 'LOCAL_FALLBACK',
                 options: [],
+                sourceImageUrl: null,
+                sourceGroupId: null,
               })
 
           previewPromise.then(
@@ -206,6 +210,8 @@ export function usePreviewFlow() {
                 status: result.status,
                 orderable: pickOrderable(result),
                 options: normalizePreviewOptions(result),
+                sourceImageUrl: result.sourceImageUrl ?? null,
+                sourceGroupId: result.sourceGroupId ?? null,
               })
 
               captureEvent(previewClient ? 'mge_dot_preview_completed' : 'preview_processing_completed', {

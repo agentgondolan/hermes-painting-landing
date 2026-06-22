@@ -16,11 +16,14 @@ test('preview registry stores verified previews by normalized email', () => {
   assert.equal(registrySource.includes('hideAccountPreview'), true)
 })
 
-test('account panel renders compact saved previews grouped by source with paginated open actions', () => {
+test('account panel renders verified previews from projects with one card per project and size badges', () => {
   assert.equal(accountSource.includes('readAccountPreviews'), true)
   assert.equal(accountSource.includes('upsertAccountPreview'), true)
   assert.equal(registrySource.includes('sourceImageUrl: preview.sourceImageUrl ?? null'), true)
-  assert.equal(accountSource.includes('sourceGroupingKey'), true)
+  assert.equal(accountSource.includes('identityProjectPreviewCards'), true)
+  assert.equal(accountSource.includes('library.projects.flatMap((project)'), true)
+  assert.equal(accountSource.includes('library.previews.map'), false)
+  assert.equal(accountSource.includes('if (projectId) return `project:${projectId}`'), true)
   assert.equal(accountSource.includes('if (sourceGroupId && sourceGroupId !== projectId)'), true)
   assert.equal(accountSource.includes('if (sourceImageUrl) return `image:${sourceImageUrl}`'), true)
   assert.equal(accountSource.includes('aria-label={`Open ${previewBadgeLabel(record)} saved preview`}'), true)
@@ -36,6 +39,12 @@ test('account panel renders compact saved previews grouped by source with pagina
   assert.equal(accountSource.includes('setPreviewPage'), true)
   assert.equal(accountSource.includes('Hide'), true)
   assert.equal(accountSource.includes('Preview list comes next from MGE'), false)
+})
+
+test('account preview registry preserves source group ids independently from source image urls', () => {
+  assert.equal(registrySource.includes('sourceImageUrl: preview.sourceImageUrl ?? null'), true)
+  assert.equal(registrySource.includes('sourceGroupId: preview.sourceGroupId ?? null'), true)
+  assert.equal(registrySource.includes('sourceGroupId: preview.sourceImageUrl ?? null'), false)
 })
 
 test('account panel treats the current preview as saved from the canonical registry, not only stale component state', () => {
