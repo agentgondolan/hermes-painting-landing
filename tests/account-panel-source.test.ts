@@ -4,6 +4,7 @@ import test from 'node:test'
 
 const layoutSource = readFileSync(new URL('../components/single-screen-preview/layout-frame.tsx', import.meta.url), 'utf8')
 const shellSource = readFileSync(new URL('../components/single-screen-preview/single-screen-preview-shell.tsx', import.meta.url), 'utf8')
+const accountSource = readFileSync(new URL('../components/account/account-panel.tsx', import.meta.url), 'utf8')
 
 test('preview shell mounts an account panel connected to verified identity', () => {
   assert.equal(shellSource.includes('AccountPanel'), true)

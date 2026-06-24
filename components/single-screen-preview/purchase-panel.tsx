@@ -18,6 +18,8 @@ type PurchasePanelProps = {
   verifiedIdentity?: StoredIdentity | null
   currentPreviewSaved?: boolean
   onOpenAccountPanel?: () => void
+  // onSaveCurrentPreview?: () => void
+  onSaveCurrentPreview?: () => boolean | void | Promise<boolean | void>
 }
 
 type Quote = {
@@ -31,7 +33,7 @@ const DEFAULT_EUR_TO_SGD_RATE = 1.46
 const TARGET_GROSS_MARGIN = 0.5
 const GST_RATE = 0.09
 
-export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity = null, currentPreviewSaved = false, onOpenAccountPanel }: PurchasePanelProps) {
+export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity = null, currentPreviewSaved = false, onOpenAccountPanel, onSaveCurrentPreview }: PurchasePanelProps) {
   const previewId = selectedPreview?.previewId ?? null
   const selectedPreviewOptionId = selectedPreview?.selectedOptionId ?? null
   const [purchaseOptions, setPurchaseOptions] = useState<PurchaseOption[]>([])
@@ -39,6 +41,7 @@ export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity 
   const [loadingOptions, setLoadingOptions] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState(false)
   const [checkoutComingSoon, setCheckoutComingSoon] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle")
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -134,6 +137,29 @@ export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity 
     if (loadingOptions) return { amount: "", currency: "SGD", loading: true, error: null }
     return quoteForOption(selectedPurchaseOption, visiblePurchaseOptions.length)
   }, [loadingOptions, selectedPurchaseOption, visiblePurchaseOptions.length])
+
+  useEffect(() => {
+    setSaveStatus(currentPreviewSaved ? "saved" : "idle")
+  }, [currentPreviewSaved, previewId, selectedSize?.id])
+
+  const handleSave = async () => {
+    if (!previewId || saveStatus === "saving" || currentPreviewSaved) return
+    if (!verifiedIdentity) {
+      onOpenAccountPanel?.()
+      setError(null)
+      return
+    }
+
+    setSaveStatus("saving")
+    setError(null)
+    try {
+      const saved = await onSaveCurrentPreview?.()
+      setSaveStatus(saved === false ? "idle" : "saved")
+    } catch (err) {
+      setSaveStatus("idle")
+      setError(err instanceof Error ? err.message : "Could not save preview")
+    }
+  }
 
   const handleSelectMode = (option: PurchaseOption) => {
     const nextId = optionIdentity(option)
@@ -261,14 +287,11 @@ export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity 
         </button>
         <button
           type="button"
-          onClick={() => {
-            onOpenAccountPanel?.()
-            setError(null)
-          }}
-          disabled={!previewId}
+          onClick={handleSave}
+          disabled={!previewId || saveStatus === "saving" || currentPreviewSaved}
           className="rounded-full border border-[#9432c1]/16 bg-white/76 px-4 py-3 text-sm font-extrabold text-[#9432c1] transition hover:border-[#9432c1]/35 hover:bg-white disabled:cursor-not-allowed disabled:border-[#2e2d2c]/8 disabled:text-[#2e2d2c]/35"
         >
-          Save
+          {saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "Saved" : "Save"}
         </button>
       </div>
 

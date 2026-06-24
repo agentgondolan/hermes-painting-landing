@@ -1,4 +1,5 @@
 const IDENTITY_STORAGE_KEY = 'dottingo_verified_identity_v1'
+export const VERIFIED_IDENTITY_CHANGED_EVENT = 'dottingo_verified_identity_changed'
 
 export type StoredIdentity = {
   email: string
@@ -93,8 +94,14 @@ export async function verifyMagicToken(token: string): Promise<StoredIdentity> {
     mgeIdentityToken: payload.mgeIdentityToken ?? null,
     expiresAt: Date.now() + (payload.expiresInSeconds ?? 0) * 1000,
   }
-  window.localStorage.setItem(IDENTITY_STORAGE_KEY, JSON.stringify(identity))
+  saveVerifiedIdentity(identity)
   return identity
+}
+
+export function saveVerifiedIdentity(identity: StoredIdentity) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(IDENTITY_STORAGE_KEY, JSON.stringify(identity))
+  window.dispatchEvent(new CustomEvent(VERIFIED_IDENTITY_CHANGED_EVENT))
 }
 
 export function buildVerifiedDesignReturnPath(identity: Pick<StoredIdentity, 'previewId'>): string {

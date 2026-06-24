@@ -7,6 +7,7 @@ import {
   pollMagicLinkRequestStatus,
   readVerifiedIdentity,
   requestDesignMagicLink,
+  VERIFIED_IDENTITY_CHANGED_EVENT,
   type IdentityPreviewLibrary,
   type IdentityPreviewProject,
   type IdentityPreviewRow,
@@ -15,6 +16,7 @@ import {
 import {
   buildPreviewOpenPath,
   hideAccountPreview,
+  ACCOUNT_PREVIEW_REGISTRY_CHANGED_EVENT,
   isAccountPreviewSaved,
   normalizeRegistryEmail,
   readAccountPreviews,
@@ -97,10 +99,29 @@ function buildProjectPreviewCard(row: IdentityPreviewRow, project?: IdentityPrev
   }
 }
 
-function identityProjectPreviewCards(library: IdentityPreviewLibrary): SavedPreviewCard[] {
-  return library.projects.flatMap((project) =>
-    (project.previews ?? []).map((preview) => buildProjectPreviewCard(preview, project)).filter((card): card is SavedPreviewCard => Boolean(card)),
-  ).sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent))
+function identityProjectPreviewGroups(library: IdentityPreviewLibrary): SavedPreviewGroup[] {
+  return (library.projects ?? [])
+    .map((project) => {
+      const previews = (project.previews ?? [])
+        .map((preview) => buildProjectPreviewCard(preview, project))
+        .filter((card): card is SavedPreviewCard => Boolean(card))
+        .sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent) || b.updatedAt - a.updatedAt)
+
+      if (!previews.length) return null
+
+      const projectId = asString(project.projectId)
+      const sourceGroupId = asString(project.sourceGroupId)
+      const sourceImageUrl = project.sourceImageUrl ?? previews.find((preview) => preview.sourceImageUrl)?.sourceImageUrl ?? previews[0].imageUrl ?? null
+
+      return {
+        key: projectId ? `project:${projectId}` : sourceGroupId ? `source:${sourceGroupId}` : `preview:${previews[0].previewId}`,
+        sourceImageUrl,
+        sourceAvailable: Boolean(project.sourceAvailable ?? sourceImageUrl ?? previews.some((preview) => preview.sourceAvailable || preview.sourceImageUrl || preview.imageUrl)),
+        previews,
+      }
+    })
+    .filter((group): group is SavedPreviewGroup => Boolean(group))
+    .sort((a, b) => Number(b.previews.some((item) => item.isCurrent)) - Number(a.previews.some((item) => item.isCurrent)))
 }
 
 function previewBadgeLabel(record: SavedPreviewCard): string {
@@ -146,14 +167,16 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [magicLinkSent, setMagicLinkSent] = useState(false)
-  const [savedPreviews, setSavedPreviews] = useState<SavedPreviewCard[]>([])
+  const [localSavedPreviews, setLocalSavedPreviews] = useState<SavedPreviewCard[]>([])
+  const [identityPreviewGroups, setIdentityPreviewGroups] = useState<SavedPreviewGroup[]>([])
   const [hiddenPreviewIds, setHiddenPreviewIds] = useState<Set<string>>(() => new Set())
   const [previewPage, setPreviewPage] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(900)
 
   const refreshSavedPreviews = (nextIdentity: StoredIdentity | null) => {
     if (!nextIdentity) {
-      setSavedPreviews([])
+      setLocalSavedPreviews([])
+      setIdentityPreviewGroups([])
       return
     }
 
@@ -161,21 +184,25 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
     const localRecords = readAccountPreviews(normalizedEmail)
       .filter((record) => !hiddenPreviewIds.has(record.previewId))
       .map((record) => ({ ...record, email: normalizedEmail }))
-    setSavedPreviews(localRecords)
+    setLocalSavedPreviews(localRecords)
 
-    if (!nextIdentity.mgeIdentityToken) return
+    if (!nextIdentity.mgeIdentityToken) {
+      setIdentityPreviewGroups([])
+      return
+    }
 
     fetchVerifiedIdentityPreviews(nextIdentity).then(
       (library) => {
-        const identityCards = identityProjectPreviewCards(library)
-          .map((card) => ({ ...card, email: normalizedEmail, updatedAt: Date.now() }))
-          .filter((card) => !hiddenPreviewIds.has(card.previewId))
-        if (!identityCards.length) return
-        const identityPreviewIds = new Set(identityCards.map((card) => card.previewId))
-        setSavedPreviews([
-          ...identityCards,
-          ...localRecords.filter((record) => !identityPreviewIds.has(record.previewId)),
-        ])
+        const fetchedAt = Date.now()
+        const groups = identityProjectPreviewGroups(library)
+          .map((group) => ({
+            ...group,
+            previews: group.previews
+              .map((card) => ({ ...card, email: normalizedEmail, updatedAt: fetchedAt }))
+              .filter((card) => !hiddenPreviewIds.has(card.previewId)),
+          }))
+          .filter((group) => group.previews.length > 0)
+        setIdentityPreviewGroups(groups)
       },
       (error) => {
         captureEvent("identity_preview_library_failed", {
@@ -195,9 +222,6 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
     setStatus(null)
     setMagicLinkSent(false)
 
-    if (storedIdentity && selectedPreview?.status === "ready") {
-      upsertAccountPreview(storedIdentity.email, selectedPreview, selectedSize)
-    }
     refreshSavedPreviews(storedIdentity)
   }, [previewId, selectedPreview, selectedSize, verifiedIdentity])
 
@@ -218,15 +242,54 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
 
   useEffect(() => {
     setPreviewPage(0)
-  }, [savedPreviews.length])
+  }, [identityPreviewGroups.length, localSavedPreviews.length])
+
+  useEffect(() => {
+    const syncVerifiedIdentity = () => {
+      const storedIdentity = readVerifiedIdentity()
+      if (!storedIdentity) return
+      const identityChanged = storedIdentity.identityToken !== identity?.identityToken
+
+      setIdentity(storedIdentity)
+      setEmail(storedIdentity.email)
+      if (identityChanged) {
+        setIsChangingEmail(false)
+        setSaveFormOpen(false)
+        setStatus(null)
+        setMagicLinkSent(false)
+      }
+      refreshSavedPreviews(storedIdentity)
+    }
+
+    const syncPreviewRegistry = () => refreshSavedPreviews(identity ?? readVerifiedIdentity())
+
+    window.addEventListener("focus", syncVerifiedIdentity)
+    window.addEventListener("storage", syncVerifiedIdentity)
+    window.addEventListener(VERIFIED_IDENTITY_CHANGED_EVENT, syncVerifiedIdentity)
+    window.addEventListener(ACCOUNT_PREVIEW_REGISTRY_CHANGED_EVENT, syncPreviewRegistry)
+    document.addEventListener("visibilitychange", syncVerifiedIdentity)
+    return () => {
+      window.removeEventListener("focus", syncVerifiedIdentity)
+      window.removeEventListener("storage", syncVerifiedIdentity)
+      window.removeEventListener(VERIFIED_IDENTITY_CHANGED_EVENT, syncVerifiedIdentity)
+      window.removeEventListener(ACCOUNT_PREVIEW_REGISTRY_CHANGED_EVENT, syncPreviewRegistry)
+      document.removeEventListener("visibilitychange", syncVerifiedIdentity)
+    }
+  }, [identity, identity?.identityToken, selectedPreview, selectedSize])
 
   const isVerifiedGlobally = Boolean(identity)
+  const savedPreviewGroups = useMemo(
+    () => (identityPreviewGroups.length ? identityPreviewGroups : groupSavedPreviews(localSavedPreviews)),
+    [identityPreviewGroups, localSavedPreviews],
+  )
+  const savedPreviews = useMemo(() => savedPreviewGroups.flatMap((group) => group.previews), [savedPreviewGroups])
   const isSavedCurrentPreview = Boolean(
-    identity && (savedPreviews.some((record) => record.previewId === previewId) || isAccountPreviewSaved(identity.email, previewId)),
+    identity &&
+      (savedPreviews.some((record) => record.previewId === previewId && (!selectedSize?.id || record.sizeId === selectedSize.id)) ||
+        isAccountPreviewSaved(identity.email, previewId, selectedSize?.id)),
   )
   const hasCurrentDesign = Boolean(previewId && selectedPreview?.status === "ready")
   const showEmailForm = Boolean(hasCurrentDesign && (!isVerifiedGlobally || isChangingEmail) && saveFormOpen)
-  const savedPreviewGroups = useMemo(() => groupSavedPreviews(savedPreviews), [savedPreviews])
   const previewGroupsPerPage = Math.max(1, Math.min(6, Math.floor((viewportHeight - 360) / 96)))
   const previewPageCount = Math.max(1, Math.ceil(savedPreviewGroups.length / previewGroupsPerPage))
   const safePreviewPage = Math.min(previewPage, previewPageCount - 1)
@@ -328,7 +391,12 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
     setHiddenPreviewIds((current) => new Set([...current, record.previewId]))
     if (!identity) return
     hideAccountPreview(identity.email, record.previewId)
-    setSavedPreviews((current) => current.filter((item) => item.previewId !== record.previewId))
+    setLocalSavedPreviews((current) => current.filter((item) => item.previewId !== record.previewId))
+    setIdentityPreviewGroups((current) =>
+      current
+        .map((group) => ({ ...group, previews: group.previews.filter((item) => item.previewId !== record.previewId) }))
+        .filter((group) => group.previews.length > 0),
+    )
     captureEvent("account_preview_hidden", {
       preview_id: record.previewId,
     })

@@ -20,8 +20,8 @@ test('account panel renders verified previews from projects with one card per pr
   assert.equal(accountSource.includes('readAccountPreviews'), true)
   assert.equal(accountSource.includes('upsertAccountPreview'), true)
   assert.equal(registrySource.includes('sourceImageUrl: preview.sourceImageUrl ?? null'), true)
-  assert.equal(accountSource.includes('identityProjectPreviewCards'), true)
-  assert.equal(accountSource.includes('library.projects.flatMap((project)'), true)
+  assert.equal(accountSource.includes('identityProjectPreviewGroups'), true)
+  assert.equal(accountSource.includes('library.projects ?? []'), true)
   assert.equal(accountSource.includes('library.previews.map'), false)
   assert.equal(accountSource.includes('if (projectId) return `project:${projectId}`'), true)
   assert.equal(accountSource.includes('if (sourceGroupId && sourceGroupId !== projectId)'), true)
@@ -47,9 +47,9 @@ test('account preview registry preserves source group ids independently from sou
   assert.equal(registrySource.includes('sourceGroupId: preview.sourceImageUrl ?? null'), false)
 })
 
-test('account panel treats the current preview as saved from the canonical registry, not only stale component state', () => {
-  assert.equal(accountSource.includes('isAccountPreviewSaved(identity.email, previewId)'), true)
-  assert.match(accountSource, /savedPreviews\.some\(\(record\) => record\.previewId === previewId\) \|\| isAccountPreviewSaved\(identity\.email, previewId\)/)
+test('account panel treats the current preview size as saved from the canonical registry, not only stale component state', () => {
+  assert.equal(accountSource.includes('isAccountPreviewSaved(identity.email, previewId, selectedSize?.id)'), true)
+  assert.match(accountSource, /savedPreviews\.some\(\(record\) => record\.previewId === previewId && \(!selectedSize\?\.id \|\| record\.sizeId === selectedSize\.id\)\) \|\|\s*isAccountPreviewSaved\(identity\.email, previewId, selectedSize\?\.id\)/)
   assert.equal(accountSource.includes('Save current preview'), true)
 })
 

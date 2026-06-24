@@ -2,7 +2,7 @@ import { chromium } from 'playwright'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-const outputPath = resolve('public/opengraph-image.png')
+const outputPath = resolve('public/opengraph-dottingo-20260623.png')
 const logoPath = resolve('public/brand/dottingo/dottingo-logo-purple.svg')
 const logoSvg = await readFile(logoPath, 'utf8')
 const logoUrl = `data:image/svg+xml;base64,${Buffer.from(logoSvg).toString('base64')}`

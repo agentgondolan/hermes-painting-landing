@@ -15,8 +15,12 @@ test('purchase panel keeps two primary actions without inline email capture', ()
   assert.equal(source.includes('Please check your emails to verify.'), false)
 })
 
-test('bottom save action opens the account panel directly in email-save state', () => {
-  assert.equal(source.includes('onOpenAccountPanel?.()'), true)
+test('verified bottom save action saves the current preview directly before opening account email flow', () => {
+  assert.equal(source.includes('onSaveCurrentPreview?: () => void'), true)
+  assert.equal(source.includes('onSaveCurrentPreview?.()'), true)
+  assert.equal(shellSource.includes('const handleSaveCurrentPreview = () => {'), true)
+  assert.equal(shellSource.includes('upsertAccountPreview(magicLinkIdentity.email, selectedPreview, state.selectedSize)'), true)
+  assert.equal(shellSource.includes('onSaveCurrentPreview={handleSaveCurrentPreview}'), true)
   assert.equal(shellSource.includes('saveEmailFlowNonce'), true)
   assert.match(shellSource, /setSaveEmailFlowNonce\(\(nonce\) => nonce \+ 1\)/)
   assert.equal(shellSource.includes('startEmailFlowNonce={saveEmailFlowNonce}'), true)

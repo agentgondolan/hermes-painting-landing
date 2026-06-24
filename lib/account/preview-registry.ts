@@ -3,6 +3,8 @@ import type { DotPreviewResult, FrameSizeOption } from "@/components/single-scre
 const PREVIEW_REGISTRY_STORAGE_KEY = "dottingo_preview_registry_v1"
 const MAX_ACCOUNT_PREVIEWS = 12
 
+export const ACCOUNT_PREVIEW_REGISTRY_CHANGED_EVENT = "dottingo_preview_registry_changed"
+
 export type AccountPreviewRecord = {
   email: string
   previewId: string
@@ -41,6 +43,7 @@ function readPreviewRegistry(): PreviewRegistry {
 function writePreviewRegistry(registry: PreviewRegistry) {
   if (typeof window === "undefined") return
   window.localStorage.setItem(PREVIEW_REGISTRY_STORAGE_KEY, JSON.stringify(registry))
+  window.dispatchEvent(new CustomEvent(ACCOUNT_PREVIEW_REGISTRY_CHANGED_EVENT))
 }
 
 function resolvePreviewImage(preview: DotPreviewResult): string | null {
@@ -60,11 +63,12 @@ export function upsertAccountPreview(
 
   const registry = readPreviewRegistry()
   const existingRecords = registry[normalizedEmail] ?? []
-  const existing = existingRecords.find((record) => record.previewId === preview.previewId)
+  const sizeId = preview.sizeId || selectedSize?.id || "unknown"
+  const existing = existingRecords.find((record) => record.previewId === preview.previewId && record.sizeId === sizeId)
   const record: AccountPreviewRecord = {
     email: normalizedEmail,
     previewId: preview.previewId,
-    sizeId: preview.sizeId || selectedSize?.id || "unknown",
+    sizeId,
     sizeLabel: selectedSize?.label ?? preview.sizeId ?? null,
     imageUrl: resolvePreviewImage(preview),
     sourceImageUrl: preview.sourceImageUrl ?? null,
@@ -77,7 +81,7 @@ export function upsertAccountPreview(
 
   registry[normalizedEmail] = [
     record,
-    ...existingRecords.filter((item) => item.previewId !== preview.previewId),
+    ...existingRecords.filter((item) => item.previewId !== preview.previewId || item.sizeId !== sizeId),
   ].slice(0, MAX_ACCOUNT_PREVIEWS)
 
   writePreviewRegistry(registry)
@@ -93,11 +97,14 @@ export function readAccountPreviews(email?: string | null): AccountPreviewRecord
     .sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
-export function isAccountPreviewSaved(email: string | null | undefined, previewId: string | null | undefined): boolean {
+export function isAccountPreviewSaved(email: string | null | undefined, previewId: string | null | undefined, sizeId?: string | null): boolean {
   const normalizedEmail = email ? normalizeRegistryEmail(email) : ""
   if (!normalizedEmail || !previewId) return false
 
-  return (readPreviewRegistry()[normalizedEmail] ?? []).some((record) => record.previewId === previewId && !record.hidden)
+  return (readPreviewRegistry()[normalizedEmail] ?? []).some((record) => {
+    if (record.previewId !== previewId || record.hidden) return false
+    return !sizeId || record.sizeId === sizeId
+  })
 }
 
 export function hideAccountPreview(email: string, previewId: string): boolean {

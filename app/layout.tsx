@@ -13,7 +13,7 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://dottingo.sg'
 const title = 'Turn Your Photo into Dot Art | Dottingo'
 const description =
   'Upload a picture, preview your custom Dottingo design, and order a personalized handmade kit.'
-const ogImage = '/opengraph-image.png'
+const ogImage = '/opengraph-dottingo-20260623.png'
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),

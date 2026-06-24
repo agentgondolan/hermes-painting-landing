@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useEffect, useState } from "react"
+import { Suspense, useEffect, useState, useCallback } from "react"
 import { LayoutFrame } from "./layout-frame"
 import { usePreviewFlow } from "./use-preview-flow"
 import { PreviewScenePanel } from "./preview-scene-panel"
@@ -15,6 +15,7 @@ import {
   consumeVerifiedIdentityNoticeFromUrl,
   fetchVerifiedIdentityPreviews,
   readVerifiedIdentity,
+  VERIFIED_IDENTITY_CHANGED_EVENT,
   type StoredIdentity,
 } from "@/lib/identity/browser"
 import { isAccountPreviewSaved, upsertAccountPreview } from "@/lib/account/preview-registry"
@@ -34,18 +35,42 @@ export function SingleScreenPreviewShell() {
   const [currentPreviewSaved, setCurrentPreviewSaved] = useState(false)
   const selectedPreview = state.selectedSize ? state.dotPreviews[state.selectedSize.id] : null
 
+  const syncVerifiedIdentity = useCallback(() => {
+    const storedIdentity = readVerifiedIdentity()
+    setMagicLinkIdentity(storedIdentity)
+  }, [])
+
+  const handleSaveCurrentPreview = () => {
+    if (!magicLinkIdentity || !selectedPreview || selectedPreview.status !== "ready" || !state.selectedSize) {
+      setSaveEmailFlowNonce((nonce) => nonce + 1)
+      setAccountPanelOpen(true)
+      return
+    }
+
+    const registered = upsertAccountPreview(magicLinkIdentity.email, selectedPreview, state.selectedSize)
+    const saved = Boolean(registered) || isAccountPreviewSaved(magicLinkIdentity.email, selectedPreview.previewId, state.selectedSize.id)
+    setCurrentPreviewSaved(saved)
+    if (!registered) return saved
+
+    captureEvent("account_preview_registered", {
+      preview_id: registered.previewId,
+      selected_size: registered.sizeId,
+      save_source: "bottom_save_button",
+    })
+    return true
+  }
+
   useEffect(() => {
     const restoredIdentity = consumeVerifiedIdentityNoticeFromUrl()
     if (restoredIdentity) {
       setMagicLinkIdentity(restoredIdentity)
       setMagicLinkNotice({
         kind: "success",
-        message: `Verified ${restoredIdentity.email}. Your current preview is saved.`,
+        message: `Verified ${restoredIdentity.email}. You can now save the current preview.`,
       })
-      return
     }
 
-    const storedIdentity = readVerifiedIdentity()
+    const storedIdentity = restoredIdentity ?? readVerifiedIdentity()
     if (storedIdentity) {
       setMagicLinkIdentity(storedIdentity)
     }
@@ -62,23 +87,38 @@ export function SingleScreenPreviewShell() {
         })
       },
     )
-  }, [])
+
+    window.addEventListener("storage", syncVerifiedIdentity)
+    window.addEventListener("focus", syncVerifiedIdentity)
+    window.addEventListener(VERIFIED_IDENTITY_CHANGED_EVENT, syncVerifiedIdentity)
+    document.addEventListener("visibilitychange", syncVerifiedIdentity)
+
+    return () => {
+      window.removeEventListener("storage", syncVerifiedIdentity)
+      window.removeEventListener("focus", syncVerifiedIdentity)
+      window.removeEventListener(VERIFIED_IDENTITY_CHANGED_EVENT, syncVerifiedIdentity)
+      document.removeEventListener("visibilitychange", syncVerifiedIdentity)
+    }
+  }, [syncVerifiedIdentity])
 
   useEffect(() => {
-    if (!magicLinkIdentity || !selectedPreview || selectedPreview.status !== "ready" || !state.selectedSize) {
-      setCurrentPreviewSaved(false)
-      return
+    const refreshCurrentPreviewSaved = () => {
+      if (!magicLinkIdentity || !selectedPreview?.previewId || selectedPreview.status !== "ready" || !state.selectedSize?.id) {
+        setCurrentPreviewSaved(false)
+        return
+      }
+
+      setCurrentPreviewSaved(isAccountPreviewSaved(magicLinkIdentity.email, selectedPreview.previewId, state.selectedSize.id))
     }
 
-    const registered = upsertAccountPreview(magicLinkIdentity.email, selectedPreview, state.selectedSize)
-    setCurrentPreviewSaved(Boolean(registered) || isAccountPreviewSaved(magicLinkIdentity.email, selectedPreview.previewId))
-    if (!registered) return
-
-    captureEvent("account_preview_registered", {
-      preview_id: registered.previewId,
-      selected_size: registered.sizeId,
-    })
-  }, [magicLinkIdentity, selectedPreview, state.selectedSize])
+    refreshCurrentPreviewSaved()
+    window.addEventListener("storage", refreshCurrentPreviewSaved)
+    window.addEventListener("dottingo_preview_registry_changed", refreshCurrentPreviewSaved)
+    return () => {
+      window.removeEventListener("storage", refreshCurrentPreviewSaved)
+      window.removeEventListener("dottingo_preview_registry_changed", refreshCurrentPreviewSaved)
+    }
+  }, [magicLinkIdentity, selectedPreview?.previewId, selectedPreview?.status, state.selectedSize?.id])
 
   useEffect(() => {
     if (!magicLinkIdentity || !selectedPreview?.previewId) return
@@ -182,6 +222,7 @@ export function SingleScreenPreviewShell() {
               selectedPreview={selectedPreview ?? null}
               verifiedIdentity={magicLinkIdentity}
               currentPreviewSaved={currentPreviewSaved}
+              onSaveCurrentPreview={handleSaveCurrentPreview}
               onOpenAccountPanel={() => {
                 setSaveEmailFlowNonce((nonce) => nonce + 1)
                 setAccountPanelOpen(true)

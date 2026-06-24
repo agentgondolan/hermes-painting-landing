@@ -4,6 +4,7 @@ import test from 'node:test'
 
 const shellSource = readFileSync(new URL('../components/single-screen-preview/single-screen-preview-shell.tsx', import.meta.url), 'utf8')
 const flowSource = readFileSync(new URL('../components/single-screen-preview/use-preview-flow.ts', import.meta.url), 'utf8')
+const identitySource = readFileSync(new URL('../lib/identity/browser.ts', import.meta.url), 'utf8')
 
 test('main preview shell consumes direct magic-link tokens from the return URL', () => {
   assert.equal(shellSource.includes('consumeMagicTokenFromUrl'), true)
@@ -29,6 +30,16 @@ test('magic-link return keeps checkout preview restoration on the main page', ()
   assert.equal(flowSource.includes('restoreStoredPreviewState()'), true)
   assert.equal(shellSource.includes('usePreviewFlow()'), true)
   assert.match(shellSource, /consumeMagicTokenFromUrl\(\)/)
+})
+
+test('main preview shell learns verified identity changes from magic-link return pages', () => {
+  assert.equal(identitySource.includes('VERIFIED_IDENTITY_CHANGED_EVENT'), true)
+  assert.equal(identitySource.includes('saveVerifiedIdentity(identity)'), true)
+  assert.equal(identitySource.includes('window.dispatchEvent(new CustomEvent(VERIFIED_IDENTITY_CHANGED_EVENT))'), true)
+  assert.equal(shellSource.includes('VERIFIED_IDENTITY_CHANGED_EVENT'), true)
+  assert.equal(shellSource.includes('window.addEventListener("storage", syncVerifiedIdentity)'), true)
+  assert.equal(shellSource.includes('window.addEventListener("focus", syncVerifiedIdentity)'), true)
+  assert.equal(shellSource.includes('document.addEventListener("visibilitychange", syncVerifiedIdentity)'), true)
 })
 
 test('direct preview_id URLs restore the server preview onto the canvas', () => {
