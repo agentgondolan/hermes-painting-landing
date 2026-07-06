@@ -513,7 +513,7 @@ function sizeLabel(preview: IdentityPreviewRow): string {
 }
 
 function optionIdentity(option: PurchaseOption): string {
-  return option.purchaseOptionId || `${option.previewOptionId}:${option.sku ?? option.productionSpeedCode ?? option.unitPrice ?? "option"}`
+  return `${option.previewOptionId}:${option.sku ?? option.purchaseOptionId ?? option.productionSpeedCode ?? option.unitPrice ?? "option"}`
 }
 
 function optionSku(option: PurchaseOption): string {
@@ -526,7 +526,10 @@ function purchaseOptionLabel(option: PurchaseOption): string {
   if (/\b(no frame|unframed|without frame)\b/i.test(label) || skuParts.some((part) => ["NOFRAME", "NO-FRAME", "UNFRAMED", "WO"].includes(part))) {
     return "Without frame"
   }
-  if (/\b(frame|framed)\b/i.test(label) || skuParts.includes("FRAME")) return "With frame"
+  if (/\bwhite frame\b/i.test(label) || skuParts.includes("WW")) return "White frame"
+  if (/\bdiy frame\b/i.test(label) || skuParts.includes("WDIYF")) return "DIY frame"
+  if (/\bpremium frame\b/i.test(label) || skuParts.includes("WPM")) return "Premium frame"
+  if (/\bwith frame\b/i.test(label) || skuParts.includes("FRAME") || skuParts.includes("W")) return "With frame"
   return option.label || option.productionSpeedLabel || option.productionSpeedCode || option.sku || "Order option"
 }
 
