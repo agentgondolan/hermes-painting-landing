@@ -39,6 +39,7 @@ export interface BffPreviewCreateResult {
   imageUrl: string | null
   sourceImageUrl?: string | null
   sourceGroupId?: string | null
+  orientation?: 'horizontal' | 'vertical' | null
   options: Array<{
     previewOptionId: string | number
     label: string | null
@@ -54,6 +55,9 @@ export interface BffPreviewStatusResult {
   previewId: string
   status: string
   imageUrl: string | null
+  sourceImageUrl?: string | null
+  sourceGroupId?: string | null
+  orientation?: 'horizontal' | 'vertical' | null
   options: Array<{
     previewOptionId: string | number
     label: string | null
@@ -104,13 +108,26 @@ export interface BffOrderDraftResult {
   currency: string | null
 }
 
-export interface BffOrderDraftInput {
-  order_draft_id?: string | null
+export interface BffCartDraftLineInput {
   preview_id: string
   preview_option_id: string
   sku: string
+  quantity?: number
+  selected_size?: string | null
+  source_group_id?: string | null
+  source_image_url?: string | null
+  design_image_url?: string | null
+  label?: string | null
+}
+
+export interface BffOrderDraftInput {
+  order_draft_id?: string | null
+  preview_id?: string
+  preview_option_id?: string
+  sku?: string
   selected_size?: string | null
   delivery_address?: Record<string, string>
+  cart_lines?: BffCartDraftLineInput[]
 }
 
 export interface BffError {
@@ -273,6 +290,9 @@ function proxiedPreviewResult<T extends BffPreviewCreateResult | BffPreviewStatu
   return {
     ...result,
     imageUrl: proxiedImageUrl(result.imageUrl, base),
+    ...('sourceImageUrl' in result
+      ? { sourceImageUrl: proxiedImageUrl(result.sourceImageUrl ?? null, base) }
+      : {}),
     options: result.options.map((option) => ({
       ...option,
       imageUrl: proxiedImageUrl(option.imageUrl, base),

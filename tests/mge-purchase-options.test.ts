@@ -112,6 +112,85 @@ test('preview BFF always uses Dottingo brand 64 even if legacy B2B env brand is 
   }
 })
 
+test('preview BFF preserves MGE source image fields for account history thumbnails', async () => {
+  const originalFetch = globalThis.fetch
+
+  globalThis.fetch = (async () => {
+    return new Response(JSON.stringify({
+      id: 'preview-123',
+      status: 'COMPLETED',
+      source_group_id: 'source-group-123',
+      source_image: {
+        url: 'https://mge.example.test/media/source-photo.jpg',
+      },
+      options: [
+        {
+          preview_option_id: 'option-123',
+          orderable: true,
+          preview_url: 'https://mge.example.test/media/generated-dot.jpg',
+        },
+      ],
+    }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }) as typeof fetch
+
+  try {
+    const form = new FormData()
+    form.set('image', new File(['fake-image'], 'art.png', { type: 'image/png' }))
+
+    const response = await handleMgeBffRequest(
+      new Request('https://makeyourcraft.com/api/mge/preview', {
+        method: 'POST',
+        body: form,
+      }),
+      env,
+    )
+
+    assert.equal(response.status, 201)
+    const payload = await response.json() as {
+      imageUrl: string | null
+      sourceImageUrl: string | null
+      sourceGroupId: string | null
+    }
+    assert.equal(payload.imageUrl, 'https://mge.example.test/media/generated-dot.jpg')
+    assert.equal(payload.sourceImageUrl, 'https://mge.example.test/media/source-photo.jpg')
+    assert.equal(payload.sourceGroupId, 'source-group-123')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('preview BFF preserves orientation metadata when MGE returns it', async () => {
+  const originalFetch = globalThis.fetch
+
+  globalThis.fetch = (async () => {
+    return new Response(JSON.stringify({
+      id: 'preview-landscape-123',
+      status: 'COMPLETED',
+      frame_orientation: 'landscape',
+      preview_url: 'https://mge.example.test/media/landscape-dot.jpg',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }) as typeof fetch
+
+  try {
+    const response = await handleMgeBffRequest(
+      new Request('https://makeyourcraft.com/api/mge/preview/preview-landscape-123'),
+      env,
+    )
+
+    assert.equal(response.status, 200)
+    const payload = await response.json() as { orientation: string | null }
+    assert.equal(payload.orientation, 'horizontal')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('purchase-options BFF rejects invalid preview IDs before calling MGE', async () => {
   const originalFetch = globalThis.fetch
   let called = false
@@ -347,6 +426,218 @@ test('order-draft BFF edits existing MGE draft by PATCHing merged line_items', a
     const payload = await response.json() as { itemCount?: number; lineItems?: unknown[] }
     assert.equal(payload.itemCount, 2)
     assert.equal(payload.lineItems?.length, 2)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('order-draft BFF syncs multi-preview cart lines by replacing draft line_items', async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = []
+  const originalFetch = globalThis.fetch
+  const fixture = JSON.parse(await readFile(fixturePath, 'utf8'))
+  const secondFixture = {
+    ...fixture,
+    preview_id: 'preview-456',
+    purchase_options: [
+      {
+        ...fixture.purchase_options[0],
+        preview_option_id: 'ffffffff-1111-2222-3333-444444444444',
+        label: 'BLACK / source / Framed',
+        order_line: {
+          preview_option_id: 'ffffffff-1111-2222-3333-444444444444',
+          sku: 'DOT/VF/60X80/W/BLACK/FRAME/STD',
+          quantity: 1,
+        },
+        unit_price: '18.25',
+      },
+    ],
+  }
+
+  globalThis.fetch = (async (url, init) => {
+    calls.push({ url: String(url), init: init ?? {} })
+    const target = String(url)
+    if (target.includes('/api/v1/preview/preview-123/purchase-options/')) {
+      return new Response(JSON.stringify(fixture), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    if (target.includes('/api/v1/preview/preview-456/purchase-options/')) {
+      return new Response(JSON.stringify(secondFixture), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+
+    return new Response(JSON.stringify({
+      id: 'draft-123',
+      status: 'DRAFT',
+      item_count: 2,
+      line_items: [
+        { preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', sku: 'DOT/VF/40X50/W/BLACK/STD', quantity: 2 },
+        { preview_option_id: 'ffffffff-1111-2222-3333-444444444444', sku: 'DOT/VF/60X80/W/BLACK/FRAME/STD', quantity: 1 },
+      ],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const response = await handleMgeBffRequest(
+      new Request('https://makeyourcraft.com/api/mge/order-draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_draft_id: 'draft-123',
+          cart_lines: [
+            {
+              preview_id: 'preview-123',
+              preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+              sku: 'DOT/VF/40X50/W/BLACK/STD',
+              quantity: 2,
+              unit_price: '0.01',
+              order_line: { sku: 'TAMPERED/SKU', quantity: 99 },
+              design_image_url: 'https://mge.example.test/generated-display-only.jpg',
+            },
+            {
+              preview_id: 'preview-456',
+              preview_option_id: 'ffffffff-1111-2222-3333-444444444444',
+              sku: 'DOT/VF/60X80/W/BLACK/FRAME/STD',
+              quantity: 1,
+              source_image_url: 'https://mge.example.test/source-display-only.jpg',
+            },
+          ],
+        }),
+      }),
+      env,
+    )
+
+    assert.equal(response.status, 200)
+    assert.equal(calls.length, 3)
+    assert.equal(calls[0].url, 'https://mge.example.test/api/v1/preview/preview-123/purchase-options/')
+    assert.equal(calls[1].url, 'https://mge.example.test/api/v1/preview/preview-456/purchase-options/')
+    assert.equal(calls[2].url, 'https://mge.example.test/api/v1/order-drafts/draft-123/')
+    assert.equal(calls[2].init.method, 'PATCH')
+
+    const upstreamBody = JSON.parse(String(calls[2].init.body))
+    assert.equal(upstreamBody.source, 'dottingo_cart')
+    assert.equal(upstreamBody.preview_id, undefined)
+    assert.equal(upstreamBody.preview_option_id, undefined)
+    assert.equal(upstreamBody.unit_price, undefined)
+    assert.deepEqual(upstreamBody.line_items, [
+      { preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', sku: 'DOT/VF/40X50/W/BLACK/STD', quantity: 2 },
+      { preview_option_id: 'ffffffff-1111-2222-3333-444444444444', sku: 'DOT/VF/60X80/W/BLACK/FRAME/STD', quantity: 1 },
+    ])
+
+    const payload = await response.json() as { itemCount?: number; lineItems?: unknown[] }
+    assert.equal(payload.itemCount, 2)
+    assert.equal(payload.lineItems?.length, 2)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('order-draft BFF rejects tampered cart lines before mutating an MGE draft', async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = []
+  const originalFetch = globalThis.fetch
+  const fixture = JSON.parse(await readFile(fixturePath, 'utf8'))
+
+  globalThis.fetch = (async (url, init) => {
+    calls.push({ url: String(url), init: init ?? {} })
+    return new Response(JSON.stringify(fixture), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const response = await handleMgeBffRequest(
+      new Request('https://makeyourcraft.com/api/mge/order-draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_draft_id: 'draft-123',
+          cart_lines: [
+            {
+              preview_id: 'preview-123',
+              preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+              sku: 'DOT/VF/40X50/W/BLACK/NOT-REAL',
+              quantity: 1,
+            },
+          ],
+        }),
+      }),
+      env,
+    )
+
+    assert.equal(response.status, 409)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].url, 'https://mge.example.test/api/v1/preview/preview-123/purchase-options/')
+    const text = await response.text()
+    assert.match(text, /no longer orderable/i)
+    assert.doesNotMatch(text, /mge_test_token/)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('order-draft BFF can clear an existing cart draft by syncing empty cart_lines', async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = []
+  const originalFetch = globalThis.fetch
+
+  globalThis.fetch = (async (url, init) => {
+    calls.push({ url: String(url), init: init ?? {} })
+    return new Response(JSON.stringify({
+      id: 'draft-123',
+      status: 'DRAFT',
+      item_count: 0,
+      line_items: [],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const response = await handleMgeBffRequest(
+      new Request('https://makeyourcraft.com/api/mge/order-draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_draft_id: 'draft-123',
+          cart_lines: [],
+        }),
+      }),
+      env,
+    )
+
+    assert.equal(response.status, 200)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].url, 'https://mge.example.test/api/v1/order-drafts/draft-123/')
+    const upstreamBody = JSON.parse(String(calls[0].init.body))
+    assert.deepEqual(upstreamBody.line_items, [])
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('order-draft BFF accepts an empty cart without creating a new MGE draft', async () => {
+  const originalFetch = globalThis.fetch
+  let called = false
+
+  globalThis.fetch = (async () => {
+    called = true
+    return new Response('{}')
+  }) as typeof fetch
+
+  try {
+    const response = await handleMgeBffRequest(
+      new Request('https://makeyourcraft.com/api/mge/order-draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cart_lines: [] }),
+      }),
+      env,
+    )
+
+    assert.equal(response.status, 200)
+    assert.equal(called, false)
+    const payload = await response.json() as {
+      orderDraftId: string
+      status: string
+      itemCount: number
+      lineItems: unknown[]
+    }
+    assert.equal(payload.orderDraftId, '')
+    assert.equal(payload.status, 'EMPTY')
+    assert.equal(payload.itemCount, 0)
+    assert.deepEqual(payload.lineItems, [])
   } finally {
     globalThis.fetch = originalFetch
   }

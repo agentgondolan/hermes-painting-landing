@@ -22,6 +22,9 @@ interface NormalizedPreview {
   previewId: string
   status: string
   imageUrl: string | null
+  sourceImageUrl: string | null
+  sourceGroupId: string | null
+  orientation: 'horizontal' | 'vertical' | null
   options: NormalizedPreviewOption[]
 }
 
@@ -64,6 +67,14 @@ interface NormalizedOrderDraft {
   itemCount: number
   unitPrice: string | null
   currency: string | null
+}
+
+interface CartDraftLineInput {
+  previewId: string
+  previewOptionId: string
+  sku: string
+  quantity: number
+  selectedSize: string | null
 }
 
 const DEFAULT_BASE_URL = 'https://www.mgeveryday.sg'
@@ -190,10 +201,15 @@ async function createOrderDraft(request: Request, env: Env): Promise<Response> {
   const token = requireToken(env)
   const raw = await request.json().catch(() => null)
   const body = asRecord(raw)
+  const existingDraftId = normalizeId(String(body.order_draft_id ?? ''))
+
+  if (Array.isArray(body.cart_lines)) {
+    return syncCartOrderDraft(body, existingDraftId, env, token)
+  }
+
   const previewId = normalizePreviewId(String(body.preview_id ?? ''))
   const previewOptionId = normalizeId(String(body.preview_option_id ?? ''))
   const sku = normalizeSku(String(body.sku ?? body.purchase_option_id ?? ''))
-  const existingDraftId = normalizeId(String(body.order_draft_id ?? ''))
 
   if (!previewId) return json({ error: 'preview_id is required' }, 400)
   if (!previewOptionId) return json({ error: 'preview_option_id is required' }, 400)
@@ -235,6 +251,55 @@ async function createOrderDraft(request: Request, env: Env): Promise<Response> {
   )
 
   return normalizeMgeOrderDraftResponse(response, canonical, token)
+}
+
+async function syncCartOrderDraft(body: JsonRecord, existingDraftId: string | null, env: Env, token: string): Promise<Response> {
+  const rawCartLines = Array.isArray(body.cart_lines) ? body.cart_lines : []
+  const cartLines = normalizeCartDraftLines(rawCartLines)
+  if (cartLines.length !== rawCartLines.length) {
+    return json({ error: 'Each cart line requires preview_id, preview_option_id, and sku' }, 400)
+  }
+  if (!cartLines.length && !existingDraftId) {
+    return json(emptyOrderDraft())
+  }
+
+  const canonicalLines: Array<{ input: CartDraftLineInput; option: NormalizedPurchaseOption }> = []
+  for (const line of cartLines) {
+    const canonical = await loadCanonicalPurchaseOption(line.previewId, line.previewOptionId, line.sku, env, token)
+    if (!canonical) {
+      return json({ error: 'Selected MGE cart line is no longer orderable', preview_id: line.previewId, preview_option_id: line.previewOptionId }, 409)
+    }
+    canonicalLines.push({ input: line, option: canonical })
+  }
+
+  const lineItems = canonicalLines.map(({ input, option }) => ({
+    ...(option.orderLine ?? {}),
+    quantity: input.quantity,
+  }))
+
+  const firstLine = canonicalLines[0] ?? null
+  const draftPayload = {
+    brand_id: DOTTINGO_BRAND_ID,
+    product: 'DOT',
+    line_items: lineItems,
+    source: 'dottingo_cart',
+  }
+
+  const response = await fetch(
+    existingDraftId
+      ? `${baseUrl(env)}/api/v1/order-drafts/${encodeURIComponent(existingDraftId)}/`
+      : `${baseUrl(env)}/api/v1/order-drafts/`,
+    {
+      method: existingDraftId ? 'PATCH' : 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(draftPayload),
+    },
+  )
+
+  return normalizeMgeOrderDraftResponse(response, firstLine?.option ?? emptyCanonicalPurchaseOption(), token)
 }
 
 export async function loadCanonicalPurchaseOption(
@@ -452,8 +517,20 @@ function normalizePreview(raw: unknown): NormalizedPreview {
     previewId: String(obj.preview_id ?? obj.id ?? ''),
     status: String(obj.status ?? (imageUrl ? 'READY' : 'UNKNOWN')),
     imageUrl,
+    sourceImageUrl: sourceImageUrl(obj),
+    sourceGroupId: pickFirstString([obj.source_group_id, obj.sourceGroupId, obj.project_id, obj.projectId]),
+    orientation: normalizeOrientation(pickFirstString([obj.orientation, obj.frame_orientation, obj.frameOrientation, obj.product_orientation, obj.productOrientation])),
     options,
   }
+}
+
+function sourceImageUrl(obj: JsonRecord): string | null {
+  const sourceImage = asRecord(obj.source_image)
+  return pickFirstString([
+    sourceImage.url,
+    obj.source_image_url,
+    obj.sourceImageUrl,
+  ])
 }
 
 function extractOptions(obj: JsonRecord): NormalizedPreviewOption[] {
@@ -495,6 +572,14 @@ function normalizeBoolean(value: FormDataEntryValue | null): boolean {
   return typeof value === 'string' && ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
 
+function normalizeOrientation(value: string | null): 'horizontal' | 'vertical' | null {
+  const normalized = value?.trim().toLowerCase()
+  if (!normalized) return null
+  if (['horizontal', 'landscape', 'h'].includes(normalized)) return 'horizontal'
+  if (['vertical', 'portrait', 'v'].includes(normalized)) return 'vertical'
+  return null
+}
+
 function requireToken(env: Env): string {
   if (!env.MGEVERYDAY_API_TOKEN) {
     throw new Error('MGEeveryday API token is not configured')
@@ -514,6 +599,71 @@ function normalizeId(value: string): string | null {
 function normalizeSku(value: string): string | null {
   const decoded = decodeURIComponent(value).trim()
   return /^[a-zA-Z0-9_./:-]+$/.test(decoded) ? decoded : null
+}
+
+function normalizeCartDraftLines(value: unknown): CartDraftLineInput[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((raw) => {
+      const record = asRecord(raw)
+      const previewId = normalizePreviewId(String(record.preview_id ?? record.previewId ?? ''))
+      const previewOptionId = normalizeId(String(record.preview_option_id ?? record.previewOptionId ?? ''))
+      const sku = normalizeSku(String(record.sku ?? record.purchase_option_id ?? record.purchaseOptionId ?? ''))
+      if (!previewId || !previewOptionId || !sku) return null
+      return {
+        previewId,
+        previewOptionId,
+        sku,
+        quantity: normalizeQuantity(record.quantity),
+        selectedSize: pickFirstString([record.selected_size, record.selectedSize]),
+      }
+    })
+    .filter((line): line is CartDraftLineInput => Boolean(line))
+}
+
+function normalizeQuantity(value: unknown): number {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 1
+  return Math.max(1, Math.min(99, Math.floor(numeric)))
+}
+
+function emptyCanonicalPurchaseOption(): NormalizedPurchaseOption {
+  return {
+    purchaseOptionId: '',
+    previewOptionId: '',
+    sku: null,
+    product: 'DOT',
+    label: null,
+    description: null,
+    previewUrl: null,
+    mockupUrl: null,
+    productionSpeed: null,
+    productionSpeedCode: null,
+    productionSpeedLabel: null,
+    orderLine: null,
+    unitPrice: null,
+    currency: null,
+  }
+}
+
+function emptyOrderDraft(): NormalizedOrderDraft {
+  return {
+    orderDraftId: '',
+    previewId: '',
+    previewOptionId: '',
+    purchaseOptionId: '',
+    sku: null,
+    status: 'EMPTY',
+    product: 'DOT',
+    selectedSize: null,
+    productionSpeedCode: null,
+    productionSpeedLabel: null,
+    orderLine: null,
+    lineItems: [],
+    itemCount: 0,
+    unitPrice: null,
+    currency: null,
+  }
 }
 
 function sanitizeShippingAddress(value: unknown): JsonRecord {

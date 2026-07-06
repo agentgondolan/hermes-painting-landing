@@ -40,12 +40,16 @@ type StripeWebhookEvent = {
   type?: string
   data?: {
     object?: {
+      id?: unknown
       metadata?: Record<string, unknown>
       customer_details?: { email?: unknown }
       customer_email?: unknown
+      payment_status?: unknown
     }
   }
 }
+
+type StripeWebhookSession = NonNullable<NonNullable<StripeWebhookEvent['data']>['object']>
 
 type CheckoutOrderDraft = {
   orderDraftId?: unknown
@@ -59,6 +63,8 @@ type CheckoutOrderDraft = {
   productionSpeedCode?: unknown
   productionSpeedLabel?: unknown
   orderLine?: unknown
+  lineItems?: unknown
+  itemCount?: unknown
   unitPrice?: unknown
   currency?: unknown
 }
@@ -84,6 +90,13 @@ export type RetailPriceQuote = {
   totalSgd: number
   unitAmount: number
   displayAmount: string
+}
+
+type CheckoutLineItem = {
+  productName: string
+  productDescription: string | null
+  quote: RetailPriceQuote
+  quantity: number
 }
 
 const STRIPE_API_BASE = 'https://api.stripe.com/v1'
@@ -113,7 +126,6 @@ export async function createStripeCheckoutSession(
 
     const body = new URLSearchParams()
     body.set('mode', 'payment')
-    body.set('line_items[0][quantity]', '1')
     body.set('success_url', `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`)
     body.set('cancel_url', `${origin}/checkout/cancel`)
     body.set('allow_promotion_codes', 'true')
@@ -129,15 +141,19 @@ export async function createStripeCheckoutSession(
     body.set('metadata[product]', checkoutContext.metadata.product ?? 'DOT')
 
     if (checkoutContext.dynamicPrice) {
-      body.set('line_items[0][price_data][currency]', 'sgd')
-      body.set('line_items[0][price_data][unit_amount]', String(checkoutContext.quote.unitAmount))
-      body.set('line_items[0][price_data][product_data][name]', checkoutContext.productName)
-      if (checkoutContext.productDescription) {
-        body.set('line_items[0][price_data][product_data][description]', checkoutContext.productDescription)
-      }
+      checkoutContext.lineItems.forEach((item, index) => {
+        body.set(`line_items[${index}][quantity]`, String(item.quantity))
+        body.set(`line_items[${index}][price_data][currency]`, 'sgd')
+        body.set(`line_items[${index}][price_data][unit_amount]`, String(item.quote.unitAmount))
+        body.set(`line_items[${index}][price_data][product_data][name]`, item.productName)
+        if (item.productDescription) {
+          body.set(`line_items[${index}][price_data][product_data][description]`, item.productDescription)
+        }
+      })
     } else {
       const priceId = requireValue(env.STRIPE_PRICE_ID, 'STRIPE_PRICE_ID')
       body.set('line_items[0][price]', priceId)
+      body.set('line_items[0][quantity]', '1')
     }
 
     for (const [key, value] of Object.entries(checkoutContext.metadata)) {
@@ -188,6 +204,14 @@ export async function createStripeCheckoutSession(
 }
 
 export async function handleStripeWebhook(request: Request, env: StripeEnv): Promise<Response> {
+  return handleStripeWebhookWithFetcher(request, env, fetch)
+}
+
+export async function handleStripeWebhookWithFetcher(
+  request: Request,
+  env: StripeEnv,
+  fetcher: Fetcher,
+): Promise<Response> {
   if (request.method !== 'POST') {
     return json({ error: 'Method not allowed' }, 405)
   }
@@ -211,6 +235,7 @@ export async function handleStripeWebhook(request: Request, env: StripeEnv): Pro
     }
 
     let magicLinkDelivery: 'email_sent' | 'accepted' | 'not_applicable' = 'not_applicable'
+    let mgeOrderSubmission: MgeOrderSubmissionResult = { status: 'not_applicable' }
     if (event.type === 'checkout.session.completed') {
       const session = event.data?.object
       const metadata = session?.metadata ?? {}
@@ -219,13 +244,67 @@ export async function handleStripeWebhook(request: Request, env: StripeEnv): Pro
       if (email && previewId) {
         magicLinkDelivery = await sendContinuationMagicLink(request, env, { email, previewId })
       }
+      mgeOrderSubmission = await submitMgeOrderFromPaidSession(session ?? {}, event.id, env, fetcher)
     }
 
-    return json({ received: true, event: event.type, magicLinkDelivery })
+    return json({ received: true, event: event.type, magicLinkDelivery, mgeOrderSubmission })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Stripe webhook failed'
     return json({ error: message }, 400)
   }
+}
+
+type MgeOrderSubmissionResult = {
+  status: 'not_applicable' | 'not_paid' | 'submitted' | 'already_submitted'
+  orderDraftId?: string
+  orderId?: string
+}
+
+async function submitMgeOrderFromPaidSession(
+  session: StripeWebhookSession,
+  eventId: string | undefined,
+  env: StripeEnv,
+  fetcher: Fetcher,
+): Promise<MgeOrderSubmissionResult> {
+  const metadata = session.metadata ?? {}
+  const orderDraftId = normalizeMgeId(stringValue(metadata.order_draft_id))
+  if (!orderDraftId) return { status: 'not_applicable' }
+
+  const paymentStatus = stringValue(session.payment_status).toLowerCase()
+  if (paymentStatus && paymentStatus !== 'paid' && paymentStatus !== 'no_payment_required') {
+    return { status: 'not_paid', orderDraftId }
+  }
+
+  const token = requireValue(env.MGEVERYDAY_API_TOKEN, 'MGEVERYDAY_API_TOKEN')
+  const sessionId = stringValue(session.id)
+  const idempotencyKey = ['stripe-checkout', sessionId || eventId || 'unknown', orderDraftId].join(':')
+  const upstream = await fetcher(`${mgeBaseUrl(env)}/api/v1/order-drafts/${encodeURIComponent(orderDraftId)}/submit/`, {
+    method: 'POST',
+    headers: new Headers({
+      Authorization: `Bearer ${token}`,
+      'Idempotency-Key': idempotencyKey,
+    }),
+  })
+  const text = await upstream.text()
+  const raw = parseJson(text)
+
+  if (upstream.ok) {
+    return {
+      status: 'submitted',
+      orderDraftId,
+      orderId: extractMgeOrderId(raw),
+    }
+  }
+
+  if (looksAlreadySubmitted(raw, text)) {
+    return {
+      status: 'already_submitted',
+      orderDraftId,
+      orderId: extractMgeOrderId(raw),
+    }
+  }
+
+  throw new Error(`MGE order submit failed (${upstream.status}): ${summarizeMgeSubmitError(raw, text, token)}`)
 }
 
 export async function signStripeWebhookPayloadForTest(
@@ -274,9 +353,7 @@ async function readCheckoutContext(
   fetcher: Fetcher = fetch,
 ): Promise<{
   dynamicPrice: boolean
-  productName: string
-  productDescription: string | null
-  quote: RetailPriceQuote
+  lineItems: CheckoutLineItem[]
   metadata: Record<string, string>
 }> {
   const contentType = request.headers.get('Content-Type') || ''
@@ -294,13 +371,16 @@ async function readCheckoutContext(
   const orderDraftId = stringValue(source.order_draft_id)
   const draftRecord = draft && typeof draft === 'object' ? draft : null
 
-  if ((orderDraftId && !draftRecord) || (!orderDraftId && draftRecord)) {
-    throw new Error('order_draft_id and order_draft must be provided together')
-  }
-
   const draftOrderDraftId = draftRecord ? stringValue(draftRecord.orderDraftId) : ''
   if (draftRecord && draftOrderDraftId && draftOrderDraftId !== orderDraftId) {
     throw new Error('order_draft_id does not match the order draft')
+  }
+
+  const identity = await verifyIdentitySessionToken(stringValue(source.identity_token), env)
+  const token = requireValue(env.MGEVERYDAY_API_TOKEN, 'MGEVERYDAY_API_TOKEN')
+
+  if (orderDraftId && !draftRecord && !source.preview_id && !source.preview_option_id && !source.sku) {
+    return readMgeDraftCheckoutContext(orderDraftId, identity.email, env, token, fetcher)
   }
 
   const previewId = stringValue(source.preview_id) || stringValue(draftRecord?.previewId)
@@ -311,9 +391,6 @@ async function readCheckoutContext(
   if (!previewOptionId) throw new Error('preview_option_id is required for dynamic checkout')
   if (!sku) throw new Error('sku is required for dynamic checkout')
 
-  const identity = await verifyIdentitySessionToken(stringValue(source.identity_token), env)
-
-  const token = requireValue(env.MGEVERYDAY_API_TOKEN, 'MGEVERYDAY_API_TOKEN')
   const canonical = await loadCanonicalPurchaseOptionForCheckout(previewId, previewOptionId, sku, env, token, fetcher)
   if (!canonical) {
     throw new Error('Selected MGE purchase option is no longer orderable')
@@ -333,11 +410,14 @@ async function readCheckoutContext(
 
   return {
     dynamicPrice: true,
-    productName: 'Custom Paint-by-Number Kit',
-    productDescription: [selectedSize, speedLabel || speedCode ? `${speedLabel || speedCode} production` : null]
-      .filter(Boolean)
-      .join(' · ') || null,
-    quote,
+    lineItems: [{
+      productName: 'Custom Paint-by-Number Kit',
+      productDescription: [selectedSize, speedLabel || speedCode ? `${speedLabel || speedCode} production` : null]
+        .filter(Boolean)
+        .join(' · ') || null,
+      quote,
+      quantity: 1,
+    }],
     metadata: compactMetadata({
       order_draft_id: orderDraftId,
       selected_size: selectedSize,
@@ -386,6 +466,85 @@ function validateDraftMatchesCanonical(draft: CheckoutOrderDraft, canonical: Nor
   if (draftSku && canonicalSku && draftSku !== canonicalSku) {
     throw new Error('order_draft SKU does not match the canonical purchase option')
   }
+}
+
+async function readMgeDraftCheckoutContext(
+  orderDraftId: string,
+  verifiedEmail: string,
+  env: StripeEnv,
+  token: string,
+  fetcher: Fetcher,
+): Promise<{
+  dynamicPrice: boolean
+  lineItems: CheckoutLineItem[]
+  metadata: Record<string, string>
+}> {
+  const draft = await loadMgeOrderDraftForCheckout(orderDraftId, env, token, fetcher)
+  const draftLineItems = extractDraftLineItems(draft)
+  if (!draftLineItems.length) {
+    throw new Error('MGE order draft has no line items')
+  }
+
+  const exchangeRate = parseOptionalPositiveNumber(env.EUR_TO_SGD_RATE, DEFAULT_EUR_TO_SGD_RATE)
+  const lineItems = draftLineItems.map((line, index) => {
+    const unitPrice = stringValue(line.unit_price) || stringValue(line.unitPrice) || stringValue(line.price)
+    const currency = stringValue(line.currency) || 'EUR'
+    const quantity = normalizePositiveInteger(line.quantity, 1)
+    const quote = calculateRetailPriceQuote(unitPrice, currency, exchangeRate)
+    const sku = stringValue(line.sku)
+    const selectedSize = stringValue(line.selected_size) || stringValue(line.selectedSize) || sizeFromSku(sku)
+    const label = stringValue(line.label) || stringValue(line.name)
+    return {
+      productName: label || `Custom Dottingo Design ${index + 1}`,
+      productDescription: [selectedSize, sku].filter(Boolean).join(' · ') || null,
+      quote,
+      quantity,
+    }
+  })
+
+  const totalAmount = lineItems.reduce((sum, item) => sum + item.quote.unitAmount * item.quantity, 0)
+  const skus = draftLineItems.map((line) => stringValue(line.sku)).filter(Boolean)
+  const previewOptionIds = draftLineItems.map((line) => stringValue(line.preview_option_id) || stringValue(line.previewOptionId)).filter(Boolean)
+  const draftRecord = asRecord(draft) ?? {}
+
+  return {
+    dynamicPrice: true,
+    lineItems,
+    metadata: compactMetadata({
+      order_draft_id: orderDraftId,
+      verified_email: verifiedEmail,
+      product: stringValue(draftRecord.product) || 'DOT',
+      item_count: lineItems.length,
+      sku: skus.join(','),
+      preview_option_id: previewOptionIds.join(','),
+      source_currency: lineItems[0]?.quote.sourceCurrency,
+      eur_to_sgd_rate: exchangeRate.toFixed(4),
+      retail_total_amount_sgd: totalAmount,
+    }),
+  }
+}
+
+async function loadMgeOrderDraftForCheckout(
+  orderDraftId: string,
+  env: StripeEnv,
+  token: string,
+  fetcher: Fetcher,
+): Promise<unknown> {
+  const upstream = await fetcher(`${mgeBaseUrl(env)}/api/v1/order-drafts/${encodeURIComponent(orderDraftId)}/`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const text = await upstream.text()
+  const raw = parseJson(text)
+  if (!upstream.ok) {
+    throw new Error(`MGE order draft fetch failed (${upstream.status}): ${summarizeMgeSubmitError(raw, text, token)}`)
+  }
+  return raw
+}
+
+function extractDraftLineItems(raw: unknown): Record<string, unknown>[] {
+  const obj = asRecord(raw) ?? {}
+  const lines = Array.isArray(obj.line_items) ? obj.line_items : Array.isArray(obj.lineItems) ? obj.lineItems : []
+  return lines.map((line) => asRecord(line)).filter((line): line is Record<string, unknown> => Boolean(line && Object.keys(line).length))
 }
 
 async function loadCanonicalPurchaseOptionForCheckout(
@@ -446,16 +605,17 @@ function mgeBaseUrl(env: StripeEnv): string {
 
 function fallbackCheckoutContext(): {
   dynamicPrice: boolean
-  productName: string
-  productDescription: string | null
-  quote: RetailPriceQuote
+  lineItems: CheckoutLineItem[]
   metadata: Record<string, string>
 } {
   return {
     dynamicPrice: false,
-    productName: 'Custom Paint-by-Number Kit',
-    productDescription: null,
-    quote: calculateRetailPriceQuote(1, 'SGD'),
+    lineItems: [{
+      productName: 'Custom Paint-by-Number Kit',
+      productDescription: null,
+      quote: calculateRetailPriceQuote(1, 'SGD'),
+      quantity: 1,
+    }],
     metadata: {},
   }
 }
@@ -492,6 +652,10 @@ function stringValue(value: unknown): string {
   return typeof value === 'string' || typeof value === 'number' ? String(value).trim() : ''
 }
 
+function normalizeMgeId(value: string): string {
+  return /^[a-zA-Z0-9_:-]+$/.test(value) ? value : ''
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
 }
@@ -500,6 +664,17 @@ function parseOptionalPositiveNumber(value: string | undefined, fallback: number
   if (!value) return fallback
   const parsed = Number.parseFloat(value)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function normalizePositiveInteger(value: unknown, fallback: number): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(1, Math.min(99, Math.floor(parsed)))
+}
+
+function sizeFromSku(sku: string): string {
+  const match = sku.match(/(\d{2,3})X(\d{2,3})/i)
+  return match ? `${match[1]}x${match[2]}` : ''
 }
 
 function roundUpToNinetyNineCents(amount: number): number {
@@ -570,6 +745,30 @@ function parseJson(text: string): unknown {
   } catch {
     return null
   }
+}
+
+function extractMgeOrderId(raw: unknown): string | undefined {
+  const obj = asRecord(raw) ?? {}
+  const nestedOrder = asRecord(obj.order)
+  return stringValue(obj.order_id)
+    || stringValue(obj.submitted_order_id)
+    || stringValue(obj.mge_order_id)
+    || stringValue(nestedOrder?.id)
+    || undefined
+}
+
+function looksAlreadySubmitted(raw: unknown, text: string): boolean {
+  const obj = asRecord(raw) ?? {}
+  const status = stringValue(obj.status).toLowerCase()
+  if (['submitted', 'ordered', 'completed'].includes(status)) return true
+  if (extractMgeOrderId(raw)) return true
+  return /already\s+submitted|duplicate|already\s+converted/i.test(text)
+}
+
+function summarizeMgeSubmitError(raw: unknown, text: string, token: string): string {
+  const obj = asRecord(raw) ?? {}
+  const detail = stringValue(obj.detail) || stringValue(obj.error) || stringValue(obj.message) || text
+  return detail.split(token).join('[REDACTED]').slice(0, 500) || 'No response body'
 }
 
 function summarizeStripeError(payload: StripeCheckoutSession | null, text: string): string {
