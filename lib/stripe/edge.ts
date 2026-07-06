@@ -12,17 +12,6 @@ type NormalizedPurchaseOption = {
   currency: string | null
 }
 
-type NormalizedProductPricing = {
-  productCode: string
-  product: string | null
-  productType: string | null
-  size: string | null
-  frame: string | null
-  manufacturing: string | null
-  effectivePrice: string | null
-  currency: string | null
-}
-
 export interface StripeEnv {
   STRIPE_SECRET_KEY?: string
   STRIPE_PRICE_ID?: string
@@ -585,10 +574,7 @@ async function loadCanonicalPurchaseOptionForCheckout(
     return option
   }
 
-  const baseOption = rawOptions
-    .map(normalizeCanonicalPurchaseOption)
-    .find((option) => option.previewOptionId === previewOptionId && option.orderLine && option.unitPrice)
-  return baseOption ? loadProductPricingPurchaseOptionForCheckout(baseOption, sku, env, token, fetcher) : null
+  return null
 }
 
 function normalizeCanonicalPurchaseOption(raw: unknown): NormalizedPurchaseOption {
@@ -611,93 +597,6 @@ function normalizeCanonicalPurchaseOption(raw: unknown): NormalizedPurchaseOptio
     unitPrice: stringValue(obj.unit_price) || stringValue(obj.price) || null,
     currency: stringValue(obj.currency) || null,
   }
-}
-
-async function loadProductPricingPurchaseOptionForCheckout(
-  baseOption: NormalizedPurchaseOption,
-  sku: string,
-  env: StripeEnv,
-  token: string,
-  fetcher: Fetcher,
-): Promise<NormalizedPurchaseOption | null> {
-  const parsed = parseDotSku(sku)
-  if (!parsed) return null
-  const pricing = await loadDotProductPricing(env, token, fetcher)
-  const match = pricing.find((item) => (
-    item.product === parsed.product
-    && item.productType === parsed.productType
-    && item.size === parsed.size
-    && item.frame === parsed.frame
-    && item.manufacturing === parsed.manufacturing
-    && item.effectivePrice
-  ))
-  return match ? productPricingPurchaseOption(baseOption, match, sku) : null
-}
-
-async function loadDotProductPricing(env: StripeEnv, token: string, fetcher: Fetcher): Promise<NormalizedProductPricing[]> {
-  const response = await fetcher(`${mgeBaseUrl(env)}/api/v1/products/pricing/?product=DOT`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!response.ok) return []
-  const raw = parseJson(await response.text())
-  const record = asRecord(raw) ?? {}
-  const items = Array.isArray(raw) ? raw : Array.isArray(record.results) ? record.results : []
-  return items.map(normalizeProductPricing).filter((item): item is NormalizedProductPricing => Boolean(item.productCode))
-}
-
-function normalizeProductPricing(raw: unknown): NormalizedProductPricing {
-  const obj = asRecord(raw) ?? {}
-  return {
-    productCode: stringValue(obj.product_code) || stringValue(obj.productCode) || stringValue(obj.name) || stringValue(obj.code) || '',
-    product: normalizeSkuPart(stringValue(obj.product)),
-    productType: normalizeSkuPart(stringValue(obj.product_type) || stringValue(obj.productType)),
-    size: normalizeSkuPart(stringValue(obj.size)),
-    frame: normalizeSkuPart(stringValue(obj.frame)),
-    manufacturing: normalizeSkuPart(stringValue(obj.manufacturing)),
-    effectivePrice: stringValue(obj.effective_price) || stringValue(obj.effectivePrice) || stringValue(obj.unit_price) || stringValue(obj.price) || null,
-    currency: stringValue(obj.currency) || null,
-  }
-}
-
-function productPricingPurchaseOption(baseOption: NormalizedPurchaseOption, pricing: NormalizedProductPricing, requestedSku: string): NormalizedPurchaseOption {
-  const productionSpeedLabel = manufacturingLabel(pricing.manufacturing)
-  return {
-    ...baseOption,
-    purchaseOptionId: requestedSku,
-    sku: requestedSku,
-    productionSpeedCode: pricing.manufacturing,
-    productionSpeedLabel,
-    orderLine: {
-      ...(baseOption.orderLine ?? {}),
-      preview_option_id: baseOption.previewOptionId,
-      sku: requestedSku,
-      quantity: 1,
-    },
-    unitPrice: pricing.effectivePrice,
-    currency: pricing.currency ?? baseOption.currency,
-  }
-}
-
-function parseDotSku(sku: string | null): { product: string; productType: string; size: string; frame: string; manufacturing: string } | null {
-  const parts = sku?.split('/').map((part) => normalizeSkuPart(part)).filter(Boolean) ?? []
-  if (parts.length < 5 || parts[0] !== 'DOT') return null
-  return {
-    product: parts[0],
-    productType: parts[1],
-    size: parts[2],
-    frame: parts[3],
-    manufacturing: parts[parts.length - 1],
-  }
-}
-
-function normalizeSkuPart(value: string | null): string {
-  return value?.trim().toUpperCase() ?? ''
-}
-
-function manufacturingLabel(code: string | null): string | null {
-  if (code === 'STD') return 'Standard'
-  if (code === 'EXP') return 'Express'
-  return code
 }
 
 function mgeBaseUrl(env: StripeEnv): string {

@@ -14,13 +14,6 @@ const env: Env = {
 
 const fixturePath = join(process.cwd(), 'tests/fixtures/mge-purchase-options.sample.json')
 
-const dotPricingFixture = [
-  { product_code: 'DOT/VF/40X50/W/STD', product: 'DOT', product_type: 'VF', size: '40X50', frame: 'W', manufacturing: 'STD', effective_price: '10.72', currency: 'EUR' },
-  { product_code: 'DOT/VF/40X50/WO/STD', product: 'DOT', product_type: 'VF', size: '40X50', frame: 'WO', manufacturing: 'STD', effective_price: '7.14', currency: 'EUR' },
-  { product_code: 'DOT/VF/40X50/W/EXP', product: 'DOT', product_type: 'VF', size: '40X50', frame: 'W', manufacturing: 'EXP', effective_price: '14.72', currency: 'EUR' },
-  { product_code: 'DOT/VF/40X50/WO/EXP', product: 'DOT', product_type: 'VF', size: '40X50', frame: 'WO', manufacturing: 'EXP', effective_price: '11.14', currency: 'EUR' },
-]
-
 test('normalizes MGE purchase options into browser-safe camelCase payload', async () => {
   const fixture = JSON.parse(await readFile(fixturePath, 'utf8'))
   const normalized = normalizePurchaseOptions(fixture)
@@ -58,9 +51,6 @@ test('purchase-options BFF proxies to MGE with server-side token and hides autho
 
   globalThis.fetch = (async (url, init) => {
     calls.push({ url: String(url), init: init ?? {} })
-    if (String(url).includes('/api/v1/products/pricing/')) {
-      return new Response(JSON.stringify(dotPricingFixture), { status: 200, headers: { 'Content-Type': 'application/json' } })
-    }
     return new Response(JSON.stringify(fixture), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }) as typeof fetch
 
@@ -72,13 +62,11 @@ test('purchase-options BFF proxies to MGE with server-side token and hides autho
 
     assert.equal(response.status, 200)
     const payload = await response.json() as ReturnType<typeof normalizePurchaseOptions> extends infer T ? Awaited<T> : never
-    assert.equal(payload.purchaseOptions.length, 4)
+    assert.equal(payload.purchaseOptions.length, 2)
     assert.equal(payload.purchaseOptions[0].orderLine?.sku, 'DOT/VF/40X50/W/BLACK/STD')
-    assert.equal(payload.purchaseOptions.some((option) => option.sku === 'DOT/VF/40X50/WO/BLACK/STD' && option.unitPrice === '7.14'), true)
 
-    assert.equal(calls.length, 2)
+    assert.equal(calls.length, 1)
     assert.equal(calls[0].url, 'https://mge.example.test/api/v1/preview/preview-123/purchase-options/')
-    assert.equal(calls[1].url, 'https://mge.example.test/api/v1/products/pricing/?product=DOT')
     const headers = new Headers(calls[0].init.headers)
     assert.equal(headers.get('Authorization'), 'Bearer mge_test_token')
 
@@ -541,67 +529,6 @@ test('order-draft BFF syncs multi-preview cart lines by replacing draft line_ite
   }
 })
 
-test('order-draft BFF accepts catalog-priced WO frame variants for a preview option', async () => {
-  const calls: Array<{ url: string; init: RequestInit }> = []
-  const originalFetch = globalThis.fetch
-  const fixture = JSON.parse(await readFile(fixturePath, 'utf8'))
-
-  globalThis.fetch = (async (url, init) => {
-    calls.push({ url: String(url), init: init ?? {} })
-    const target = String(url)
-    if (target.includes('/api/v1/preview/preview-123/purchase-options/')) {
-      return new Response(JSON.stringify(fixture), { status: 200, headers: { 'Content-Type': 'application/json' } })
-    }
-    if (target.includes('/api/v1/products/pricing/')) {
-      return new Response(JSON.stringify(dotPricingFixture), { status: 200, headers: { 'Content-Type': 'application/json' } })
-    }
-    return new Response(JSON.stringify({
-      id: 'draft-wo',
-      status: 'DRAFT',
-      item_count: 1,
-      line_items: [
-        { preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', sku: 'DOT/VF/40X50/WO/BLACK/STD', quantity: 1 },
-      ],
-    }), { status: 201, headers: { 'Content-Type': 'application/json' } })
-  }) as typeof fetch
-
-  try {
-    const response = await handleMgeBffRequest(
-      new Request('https://makeyourcraft.com/api/mge/order-draft', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cart_lines: [
-            {
-              preview_id: 'preview-123',
-              preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-              sku: 'DOT/VF/40X50/WO/BLACK/STD',
-              quantity: 1,
-            },
-          ],
-        }),
-      }),
-      env,
-    )
-
-    assert.equal(response.status, 201)
-    assert.equal(calls.length, 3)
-    assert.equal(calls[0].url, 'https://mge.example.test/api/v1/preview/preview-123/purchase-options/')
-    assert.equal(calls[1].url, 'https://mge.example.test/api/v1/products/pricing/?product=DOT')
-    assert.equal(calls[2].url, 'https://mge.example.test/api/v1/order-drafts/')
-    const upstreamBody = JSON.parse(String(calls[2].init.body))
-    assert.deepEqual(upstreamBody.line_items, [
-      { preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', sku: 'DOT/VF/40X50/WO/BLACK/STD', quantity: 1 },
-    ])
-    const payload = await response.json() as { sku?: string | null; unitPrice?: string | null; currency?: string | null }
-    assert.equal(payload.sku, 'DOT/VF/40X50/WO/BLACK/STD')
-    assert.equal(payload.unitPrice, '7.14')
-    assert.equal(payload.currency, 'EUR')
-  } finally {
-    globalThis.fetch = originalFetch
-  }
-})
-
 test('order-draft BFF rejects tampered cart lines before mutating an MGE draft', async () => {
   const calls: Array<{ url: string; init: RequestInit }> = []
   const originalFetch = globalThis.fetch
@@ -609,9 +536,6 @@ test('order-draft BFF rejects tampered cart lines before mutating an MGE draft',
 
   globalThis.fetch = (async (url, init) => {
     calls.push({ url: String(url), init: init ?? {} })
-    if (String(url).includes('/api/v1/products/pricing/')) {
-      return new Response(JSON.stringify(dotPricingFixture), { status: 200, headers: { 'Content-Type': 'application/json' } })
-    }
     return new Response(JSON.stringify(fixture), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }) as typeof fetch
 
@@ -636,9 +560,8 @@ test('order-draft BFF rejects tampered cart lines before mutating an MGE draft',
     )
 
     assert.equal(response.status, 409)
-    assert.equal(calls.length, 2)
+    assert.equal(calls.length, 1)
     assert.equal(calls[0].url, 'https://mge.example.test/api/v1/preview/preview-123/purchase-options/')
-    assert.equal(calls[1].url, 'https://mge.example.test/api/v1/products/pricing/?product=DOT')
     const text = await response.text()
     assert.match(text, /no longer orderable/i)
     assert.doesNotMatch(text, /mge_test_token/)

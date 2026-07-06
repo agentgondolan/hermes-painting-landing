@@ -45,17 +45,6 @@ export interface NormalizedPurchaseOption {
   currency: string | null
 }
 
-interface NormalizedProductPricing {
-  productCode: string
-  product: string | null
-  productType: string | null
-  size: string | null
-  frame: string | null
-  manufacturing: string | null
-  effectivePrice: string | null
-  currency: string | null
-}
-
 interface NormalizedPurchaseOptionsResponse {
   previewId: string
   status: string
@@ -204,7 +193,7 @@ async function getPurchaseOptions(previewId: string, env: Env): Promise<Response
     headers: { Authorization: `Bearer ${token}` },
   })
 
-  return normalizeMgePurchaseOptionsResponse(response, env, token)
+  return normalizeMgePurchaseOptionsResponse(response, token)
 }
 
 
@@ -327,15 +316,11 @@ export async function loadCanonicalPurchaseOption(
   if (!response.ok) return null
   const raw = parseJson(await response.text())
   const options = normalizePurchaseOptions(raw).purchaseOptions
-  const previewScoped = options.find((option) => {
+  return options.find((option) => {
     if (option.previewOptionId !== previewOptionId) return false
     if (option.sku !== sku) return false
     return Boolean(option.orderLine && option.unitPrice)
   }) ?? null
-  if (previewScoped) return previewScoped
-
-  const baseOption = options.find((option) => option.previewOptionId === previewOptionId && option.orderLine && option.unitPrice)
-  return baseOption ? loadProductPricingPurchaseOption(baseOption, sku, env, token, fetcher) : null
 }
 
 async function loadOrderDraftLineItems(draftId: string, env: Env, token: string): Promise<JsonRecord[]> {
@@ -412,7 +397,7 @@ async function normalizeMgeResponse(response: Response, successStatus = 200, sec
   return json(normalizePreview(raw), successStatus)
 }
 
-async function normalizeMgePurchaseOptionsResponse(response: Response, env: Env, secretToRedact?: string): Promise<Response> {
+async function normalizeMgePurchaseOptionsResponse(response: Response, secretToRedact?: string): Promise<Response> {
   const text = await response.text()
   const raw = parseJson(text)
 
@@ -427,8 +412,7 @@ async function normalizeMgePurchaseOptionsResponse(response: Response, env: Env,
     )
   }
 
-  const normalized = normalizePurchaseOptions(raw)
-  return json(await enrichPurchaseOptionsWithProductPricing(normalized, env, secretToRedact))
+  return json(normalizePurchaseOptions(raw))
 }
 
 export function normalizePurchaseOptions(raw: unknown): NormalizedPurchaseOptionsResponse {
@@ -442,174 +426,6 @@ export function normalizePurchaseOptions(raw: unknown): NormalizedPurchaseOption
     status: String(obj.status ?? (purchaseOptions.length ? 'COMPLETED' : 'UNKNOWN')),
     purchaseOptions,
   }
-}
-
-async function enrichPurchaseOptionsWithProductPricing(
-  normalized: NormalizedPurchaseOptionsResponse,
-  env: Env,
-  secretToRedact?: string,
-): Promise<NormalizedPurchaseOptionsResponse> {
-  const dotBaseOptions = normalized.purchaseOptions.filter((option) => isDotVariableFormatOption(option) && option.orderLine && option.unitPrice)
-  if (!dotBaseOptions.length) return normalized
-
-  try {
-    const pricing = await loadDotProductPricing(env, secretToRedact)
-    const byIdentity = new Map<string, NormalizedPurchaseOption>()
-    for (const option of normalized.purchaseOptions) {
-      byIdentity.set(purchaseOptionIdentity(option), option)
-    }
-
-    for (const baseOption of dotBaseOptions) {
-      const parsed = parseDotSku(baseOption.sku)
-      if (!parsed) continue
-      const matches = pricing.filter((item) => (
-        item.product === parsed.product
-        && item.productType === parsed.productType
-        && item.size === parsed.size
-        && item.manufacturing === parsed.manufacturing
-        && item.frame
-        && item.effectivePrice
-      ))
-      for (const item of matches) {
-        const option = productPricingPurchaseOption(baseOption, item)
-        byIdentity.set(purchaseOptionIdentity(option), option)
-      }
-    }
-
-    return { ...normalized, purchaseOptions: Array.from(byIdentity.values()) }
-  } catch {
-    return normalized
-  }
-}
-
-async function loadProductPricingPurchaseOption(
-  baseOption: NormalizedPurchaseOption,
-  sku: string,
-  env: Env,
-  token: string,
-  fetcher: typeof fetch = fetch,
-): Promise<NormalizedPurchaseOption | null> {
-  const parsed = parseDotSku(sku)
-  if (!parsed) return null
-  const pricing = await loadDotProductPricing(env, token, fetcher)
-  const match = pricing.find((item) => (
-    item.product === parsed.product
-    && item.productType === parsed.productType
-    && item.size === parsed.size
-    && item.frame === parsed.frame
-    && item.manufacturing === parsed.manufacturing
-    && item.effectivePrice
-  ))
-  return match ? productPricingPurchaseOption(baseOption, match, sku) : null
-}
-
-async function loadDotProductPricing(env: Env, secretToRedact?: string, fetcher: typeof fetch = fetch): Promise<NormalizedProductPricing[]> {
-  const token = requireToken(env)
-  const response = await fetcher(`${baseUrl(env)}/api/v1/products/pricing/?product=DOT`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!response.ok) {
-    const text = await response.text().catch(() => '')
-    throw new Error(summarizeMgeError(parseJson(text), text, secretToRedact))
-  }
-  const raw = parseJson(await response.text())
-  const record = asRecord(raw)
-  const items = Array.isArray(raw) ? raw : Array.isArray(record.results) ? record.results : []
-  return items.map(normalizeProductPricing).filter((item): item is NormalizedProductPricing => Boolean(item.productCode))
-}
-
-function normalizeProductPricing(raw: unknown): NormalizedProductPricing {
-  const obj = asRecord(raw)
-  return {
-    productCode: pickFirstString([obj.product_code, obj.productCode, obj.name, obj.code]) ?? '',
-    product: normalizeSkuPart(pickFirstString([obj.product])),
-    productType: normalizeSkuPart(pickFirstString([obj.product_type, obj.productType])),
-    size: normalizeSkuPart(pickFirstString([obj.size])),
-    frame: normalizeSkuPart(pickFirstString([obj.frame])),
-    manufacturing: normalizeSkuPart(pickFirstString([obj.manufacturing])),
-    effectivePrice: pickFirstString([obj.effective_price, obj.effectivePrice, obj.unit_price, obj.price]),
-    currency: pickFirstString([obj.currency]),
-  }
-}
-
-function productPricingPurchaseOption(baseOption: NormalizedPurchaseOption, pricing: NormalizedProductPricing, requestedSku?: string): NormalizedPurchaseOption {
-  const sku = requestedSku ?? synthesizeSku(baseOption.sku, pricing)
-  const productionSpeed = {
-    ...(baseOption.productionSpeed ?? {}),
-    code: pricing.manufacturing,
-    label: manufacturingLabel(pricing.manufacturing),
-  }
-  return {
-    ...baseOption,
-    purchaseOptionId: sku,
-    sku,
-    label: [baseVariantLabel(baseOption), frameLabel(pricing.frame), manufacturingLabel(pricing.manufacturing)].filter(Boolean).join(' / '),
-    productionSpeed,
-    productionSpeedCode: pricing.manufacturing,
-    productionSpeedLabel: manufacturingLabel(pricing.manufacturing),
-    orderLine: {
-      ...(baseOption.orderLine ?? {}),
-      preview_option_id: baseOption.previewOptionId,
-      sku,
-      quantity: 1,
-    },
-    unitPrice: pricing.effectivePrice,
-    currency: pricing.currency ?? baseOption.currency,
-  }
-}
-
-function purchaseOptionIdentity(option: NormalizedPurchaseOption): string {
-  return `${option.previewOptionId}:${option.sku ?? option.purchaseOptionId}`
-}
-
-function isDotVariableFormatOption(option: NormalizedPurchaseOption): boolean {
-  const parsed = parseDotSku(option.sku)
-  return parsed?.product === 'DOT' && parsed.productType === 'VF'
-}
-
-function parseDotSku(sku: string | null): { product: string; productType: string; size: string; frame: string; color: string | null; manufacturing: string } | null {
-  const parts = sku?.split('/').map((part) => normalizeSkuPart(part)).filter(Boolean) ?? []
-  if (parts.length < 5 || parts[0] !== 'DOT') return null
-  return {
-    product: parts[0],
-    productType: parts[1],
-    size: parts[2],
-    frame: parts[3],
-    color: parts.length > 5 ? parts[4] : null,
-    manufacturing: parts[parts.length - 1],
-  }
-}
-
-function synthesizeSku(baseSku: string | null, pricing: NormalizedProductPricing): string {
-  const parsed = parseDotSku(baseSku)
-  if (!parsed || !pricing.frame || !pricing.manufacturing) return pricing.productCode
-  return [parsed.product, parsed.productType, parsed.size, pricing.frame, parsed.color, pricing.manufacturing].filter(Boolean).join('/')
-}
-
-function normalizeSkuPart(value: string | null): string {
-  return value?.trim().toUpperCase() ?? ''
-}
-
-function baseVariantLabel(option: NormalizedPurchaseOption): string | null {
-  const text = option.label ?? option.description ?? ''
-  if (/drama/i.test(text)) return 'BLACK / drama'
-  if (/source/i.test(text)) return 'BLACK / source'
-  return option.label ?? option.description
-}
-
-function frameLabel(frame: string | null): string | null {
-  if (frame === 'WO') return 'Without frame'
-  if (frame === 'W') return 'With frame'
-  if (frame === 'WW') return 'White frame'
-  if (frame === 'WDIYF') return 'DIY frame'
-  if (frame === 'WPM') return 'Premium frame'
-  return frame
-}
-
-function manufacturingLabel(code: string | null): string | null {
-  if (code === 'STD') return 'Standard'
-  if (code === 'EXP') return 'Express'
-  return code
 }
 
 

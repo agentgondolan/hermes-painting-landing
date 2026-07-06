@@ -46,7 +46,6 @@ test('cart page supports explicit selection, purchase option choice, and quantit
   assert.equal(cartSource.includes('type="number"'), true)
   assert.equal(cartSource.includes('min={1}'), true)
   assert.equal(cartSource.includes('max={99}'), true)
-  assert.equal(cartSource.includes('`${option.previewOptionId}:${option.sku'), true)
 })
 
 test('cart page labels framed purchase options without exposing raw order lines in the UI', () => {
@@ -55,9 +54,6 @@ test('cart page labels framed purchase options without exposing raw order lines 
   assert.match(cartSource, /With frame/)
   assert.equal(cartSource.includes('skuParts.includes("FRAME")'), true)
   assert.match(cartSource, /NOFRAME|NO-FRAME|UNFRAMED|WO/)
-  assert.match(cartSource, /White frame/)
-  assert.match(cartSource, /DIY frame/)
-  assert.match(cartSource, /Premium frame/)
 })
 
 test('cart page syncs selected lines to one MGE draft before Stripe handoff', () => {
