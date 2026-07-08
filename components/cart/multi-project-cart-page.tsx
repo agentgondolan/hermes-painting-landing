@@ -355,7 +355,6 @@ export function MultiProjectCartPage() {
             >
               {checkoutLoading ? "Opening checkout..." : "Continue to payment"}
             </button>
-            {draftDirty && syncedDraft ? <p className="mt-2 text-xs font-bold text-[#8a4a00]">Cart changed. Saving draft...</p> : null}
             {draftError ? <p className="mt-2 text-xs font-bold text-red-700">{draftError}</p> : null}
             {checkoutError ? <p className="mt-2 text-xs font-bold text-red-700">{checkoutError}</p> : null}
           </aside>
