@@ -40,13 +40,8 @@ export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity 
   const [selectedPurchaseOptionId, setSelectedPurchaseOptionId] = useState<string | null>(null)
   const [loadingOptions, setLoadingOptions] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState(false)
-  const [checkoutComingSoon, setCheckoutComingSoon] = useState(false)
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle")
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    setCheckoutComingSoon(/(^|\.)dottingo\.sg$/i.test(window.location.hostname))
-  }, [])
 
   useEffect(() => {
     if (!verifiedIdentity) return
@@ -182,10 +177,6 @@ export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity 
       setError("Verify your email from Account first, then checkout.")
       return
     }
-    if (checkoutComingSoon) {
-      setError("Checkout coming soon.")
-      return
-    }
 
     setCheckoutLoading(true)
     setError(null)
@@ -201,59 +192,11 @@ export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity 
       amount_sgd: quote.amount,
     })
 
-    try {
-      const storedCheckout = readStoredCheckoutState()
-      persistCheckoutSelection({
-        selectedPurchaseOptionId: purchaseOptionId,
-        checkoutInProgress: true,
-      })
-
-      const client = createPreviewClient()
-      if (!client) throw new Error("Checkout is not available in local fallback mode.")
-      const orderDraft = await client.createOrderDraft({
-        order_draft_id: storedCheckout?.orderDraftId ?? null,
-        selected_size: selectedSize?.id,
-        preview_id: previewId,
-        preview_option_id: selectedPurchaseOption.previewOptionId,
-        sku: optionSku(selectedPurchaseOption),
-      })
-      persistCheckoutSelection({
-        selectedPurchaseOptionId: purchaseOptionId,
-        orderDraftId: orderDraft.orderDraftId,
-        checkoutInProgress: true,
-      })
-
-      const response = await fetch("/api/stripe/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          selected_size: selectedSize?.id,
-          preview_id: previewId,
-          preview_option_id: selectedPurchaseOption.previewOptionId,
-          purchase_option_id: purchaseOptionId,
-          sku: optionSku(selectedPurchaseOption),
-          order_draft_id: orderDraft.orderDraftId,
-          order_draft: orderDraft,
-          identity_token: verifiedIdentity.identityToken,
-        }),
-      })
-      const payload = await response.json().catch(() => null) as { url?: string; error?: string; detail?: string } | null
-      if (!response.ok || !payload?.url) {
-        throw new Error(formatCheckoutError(payload, response.status))
-      }
-      window.location.assign(payload.url)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Checkout failed"
-      setError(message)
-      setCheckoutLoading(false)
-      captureEvent("stripe_checkout_failed", {
-        preview_id: previewId,
-        preview_option_id: selectedPurchaseOption.previewOptionId,
-        purchase_option_id: purchaseOptionId,
-        selected_size: selectedSize?.id,
-        error_message: message,
-      })
-    }
+    persistCheckoutSelection({
+      selectedPurchaseOptionId: purchaseOptionId,
+      checkoutInProgress: true,
+    })
+    window.location.assign("/checkout")
   }
 
   if (!selectedPreview || selectedPreview.status !== "ready") {
@@ -261,8 +204,6 @@ export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity 
   }
 
   const panelClassName = "w-full rounded-[1.5rem] border border-[#9432c1]/12 bg-white/72 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]"
-  const isSavedCurrentPreview = Boolean(verifiedIdentity && currentPreviewSaved)
-
   return (
     <div className={panelClassName}>
       <div className="flex items-start justify-between gap-3">
@@ -276,7 +217,7 @@ export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity 
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2">
+      <div className={`mt-3 grid gap-2 ${currentPreviewSaved ? "grid-cols-1" : "grid-cols-2"}`}>
         <button
           type="button"
           onClick={handleCheckout}
@@ -285,14 +226,16 @@ export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity 
         >
           {checkoutLoading ? "Opening…" : "Checkout"}
         </button>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={!previewId || saveStatus === "saving" || currentPreviewSaved}
-          className="rounded-full border border-[#9432c1]/16 bg-white/76 px-4 py-3 text-sm font-extrabold text-[#9432c1] transition hover:border-[#9432c1]/35 hover:bg-white disabled:cursor-not-allowed disabled:border-[#2e2d2c]/8 disabled:text-[#2e2d2c]/35"
-        >
-          {saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "Saved" : "Save"}
-        </button>
+        {!currentPreviewSaved ? (
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!previewId || saveStatus === "saving"}
+            className="rounded-full border border-[#9432c1]/16 bg-white/76 px-4 py-3 text-sm font-extrabold text-[#9432c1] transition hover:border-[#9432c1]/35 hover:bg-white disabled:cursor-not-allowed disabled:border-[#2e2d2c]/8 disabled:text-[#2e2d2c]/35"
+          >
+            {saveStatus === "saving" ? "Saving…" : "Save"}
+          </button>
+        ) : null}
       </div>
 
       {visiblePurchaseOptions.length > 1 ? (
@@ -319,11 +262,6 @@ export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity 
       {(error || quote.error) && (
         <p className="mt-2 text-xs font-medium text-[#8a4a00]">{error || quote.error}</p>
       )}
-      {isSavedCurrentPreview ? (
-        <p className="mt-3 rounded-full bg-[#9432c1]/8 px-3 py-2 text-center text-xs font-extrabold text-[#9432c1]">
-          Saved to your verified email.
-        </p>
-      ) : null}
     </div>
   )
 }
@@ -366,14 +304,6 @@ function isExpressOption(option: PurchaseOption): boolean {
 
 function modeLabel(option: PurchaseOption): string {
   return option.productionSpeedLabel || option.productionSpeedCode || option.label?.split("/").at(-1)?.trim() || "Option"
-}
-
-function formatCheckoutError(payload: { error?: string; detail?: string } | null, status: number): string {
-  const message = payload?.detail || payload?.error || `Checkout failed (${status})`
-  if (/STRIPE_SECRET_KEY is not configured/i.test(message)) return "Checkout is not configured yet."
-  if (/Stripe sandbox checkout requires/i.test(message)) return "Checkout is still in Stripe test-mode setup."
-  if (/order_draft/i.test(message)) return "Could not confirm the order draft. Please try again."
-  return message
 }
 
 function roundUpToNinetyNineCents(amount: number): number {

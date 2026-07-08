@@ -14,6 +14,10 @@
       "preview_option_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
       "preview_url": "[REDACTED_URL]",
       "product": "DOT",
+      "frame": {
+        "code": "W",
+        "label": "With frame"
+      },
       "production_speed": {
         "code": "STD",
         "label": "Standard"
@@ -23,21 +27,48 @@
     {
       "currency": "EUR",
       "description": "source",
-      "label": "BLACK / source / Express",
+      "label": "Source / Without frame / Standard",
       "mockup_url": "",
       "order_line": {
         "preview_option_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
         "quantity": 1,
-        "sku": "DOT/VF/40X50/W/BLACK/EXP"
+        "sku": "DOT/VF/40X50/WO/BLACK/STD"
       },
       "preview_option_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
       "preview_url": "[REDACTED_URL]",
       "product": "DOT",
-      "production_speed": {
-        "code": "EXP",
-        "label": "Express"
+      "frame": {
+        "code": "WO",
+        "label": "Without frame"
       },
-      "unit_price": "14.72"
+      "production_speed": {
+        "code": "STD",
+        "label": "Standard"
+      },
+      "unit_price": "7.14"
+    },
+    {
+      "currency": "EUR",
+      "description": "source",
+      "label": "Source / Wrapped wood / Standard",
+      "mockup_url": "",
+      "order_line": {
+        "preview_option_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "quantity": 1,
+        "sku": "DOT/VF/40X50/WW/BLACK/STD"
+      },
+      "preview_option_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "preview_url": "[REDACTED_URL]",
+      "product": "DOT",
+      "frame": {
+        "code": "WW",
+        "label": "Wrapped wood"
+      },
+      "production_speed": {
+        "code": "STD",
+        "label": "Standard"
+      },
+      "unit_price": "11.11"
     }
   ],
   "status": "COMPLETED"

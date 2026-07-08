@@ -16,10 +16,11 @@ test('purchase panel keeps two primary actions without inline email capture', ()
 })
 
 test('verified bottom save action saves the current preview directly before opening account email flow', () => {
-  assert.equal(source.includes('onSaveCurrentPreview?: () => void'), true)
+  assert.equal(source.includes('onSaveCurrentPreview?: () => boolean | void | Promise<boolean | void>'), true)
   assert.equal(source.includes('onSaveCurrentPreview?.()'), true)
-  assert.equal(shellSource.includes('const handleSaveCurrentPreview = () => {'), true)
-  assert.equal(shellSource.includes('upsertAccountPreview(magicLinkIdentity.email, selectedPreview, state.selectedSize)'), true)
+  assert.equal(shellSource.includes('const handleSaveCurrentPreview = async () => {'), true)
+  assert.equal(shellSource.includes('sourceImageUrl: attachedPreview?.sourceImageUrl ?? selectedPreview.sourceImageUrl ?? localSourceThumbnailUrl ?? null'), true)
+  assert.equal(shellSource.includes('upsertAccountPreview(magicLinkIdentity.email, previewForRegistry, state.selectedSize)'), true)
   assert.equal(shellSource.includes('onSaveCurrentPreview={handleSaveCurrentPreview}'), true)
   assert.equal(shellSource.includes('saveEmailFlowNonce'), true)
   assert.match(shellSource, /setSaveEmailFlowNonce\(\(nonce\) => nonce \+ 1\)/)
@@ -29,7 +30,9 @@ test('verified bottom save action saves the current preview directly before open
 test('checkout accepts a global verified identity and no longer binds verification to one preview', () => {
   assert.equal(source.includes('verifiedIdentity.previewId !== previewId'), false)
   assert.equal(source.includes('Verify your email from Account first, then checkout.'), true)
-  assert.equal(source.includes('identity_token: verifiedIdentity.identityToken'), true)
+  assert.equal(source.includes('window.location.assign("/checkout")'), true)
+  assert.equal(source.includes('fetch("/api/stripe/checkout"'), false)
+  assert.equal(source.includes('Checkout is not configured yet.'), false)
 })
 
 test('purchase panel hides express options but keeps option filtering available', () => {
@@ -38,9 +41,18 @@ test('purchase panel hides express options but keeps option filtering available'
   assert.equal(source.includes('Standard'), false)
 })
 
-test('saved current preview shows saved confirmation without change-email controls', () => {
+test('saved current preview hides save without adding a redundant confirmation message', () => {
   assert.equal(source.includes('currentPreviewSaved'), true)
-  assert.equal(source.includes('Saved to your verified email.'), true)
+  assert.match(source, /!currentPreviewSaved \? \([\s\S]*Save[\s\S]*\) : null/)
+  assert.equal(source.includes('saveStatus === "saved" ? "Saved"'), false)
+  assert.match(source, /currentPreviewSaved \? "grid-cols-1" : "grid-cols-2"/)
+  assert.equal(source.includes('Saved to your verified email.'), false)
   assert.equal(source.includes('Change email'), false)
   assert.equal(source.includes('changeEmailRequestNonce'), false)
+})
+
+test('loaded MGE identity previews count as already saved for the bottom save action', () => {
+  assert.equal(shellSource.includes('identityPreviewLibrary.projects.flatMap((project) => project.previews ?? [])'), true)
+  assert.equal(shellSource.includes('savedInIdentityLibrary'), true)
+  assert.equal(shellSource.includes('normalizeSizeId(preview.selectedSize ?? preview.preferredSize) === state.selectedSize?.id'), true)
 })

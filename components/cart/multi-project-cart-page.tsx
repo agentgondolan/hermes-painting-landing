@@ -14,6 +14,14 @@ import {
   type BffPurchaseOptionsResult,
   type BffOrderDraftResult,
 } from "@/lib/mgeveryday/browser-preview"
+import {
+  DEFAULT_EUR_TO_SGD_RATE,
+  DOT_EXPRESS_OPTIONS_ENABLED,
+  DOT_FRAME_OPTIONS_ENABLED,
+  GST_RATE,
+  TARGET_GROSS_MARGIN,
+  isDottingoAdminEmail,
+} from "@/lib/dottingo/project-settings"
 
 type PurchaseOption = BffPurchaseOptionsResult["purchaseOptions"][number]
 
@@ -28,9 +36,6 @@ type OptionState =
   | { status: "error"; options: PurchaseOption[]; error: string }
 
 const EMPTY_LIBRARY: IdentityPreviewLibrary = { previews: [], projects: [] }
-const DEFAULT_EUR_TO_SGD_RATE = 1.46
-const TARGET_GROSS_MARGIN = 0.5
-const GST_RATE = 0.09
 const CART_DRAFT_STORAGE_KEY = "dottingo_cart_draft_id_v1"
 
 export function MultiProjectCartPage() {
@@ -264,8 +269,15 @@ export function MultiProjectCartPage() {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <a href="/" className="text-4xl font-black text-[#9432c1]">dottingo</a>
-          <div className="rounded-full bg-white px-4 py-2 text-sm font-extrabold text-[#9432c1] shadow-[0_18px_45px_rgba(148,50,193,0.12)]">
-            {identity ? `Verified ${identity.email}` : "Account required"}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {identity && isDottingoAdminEmail(identity.email) ? (
+              <a href="/admin" className="rounded-full border border-[#9432c1]/16 bg-white px-4 py-2 text-sm font-extrabold text-[#9432c1] shadow-[0_18px_45px_rgba(148,50,193,0.10)]">
+                Admin
+              </a>
+            ) : null}
+            <div className="rounded-full bg-white px-4 py-2 text-sm font-extrabold text-[#9432c1] shadow-[0_18px_45px_rgba(148,50,193,0.12)]">
+              {identity ? `Verified ${identity.email}` : "Account required"}
+            </div>
           </div>
         </header>
 
@@ -438,17 +450,27 @@ function ProjectDesigns({
                     {selection && selectedOption ? (
                       <div className="mt-3 space-y-2">
                         {hasMultipleOptions ? (
-                          <select
-                            value={selection.purchaseOptionId}
-                            onChange={(event) => onOptionChange(preview.previewId, event.target.value)}
-                            className="w-full rounded-full border border-[#9432c1]/14 bg-white px-3 py-2 text-xs font-extrabold text-[#2e2d2c] outline-none"
-                          >
-                            {optionState.options.map((option) => (
-                              <option key={optionIdentity(option)} value={optionIdentity(option)}>
-                                {purchaseOptionLabel(option)}
-                              </option>
-                            ))}
-                          </select>
+                          <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label={`${sizeLabel(preview)} order option`}>
+                            {optionState.options.map((option) => {
+                              const identity = optionIdentity(option)
+                              const isSelected = identity === selection.purchaseOptionId
+                              return (
+                                <button
+                                  key={identity}
+                                  type="button"
+                                  onClick={() => onOptionChange(preview.previewId, identity)}
+                                  aria-pressed={isSelected}
+                                  className={`min-h-10 rounded-full border px-3 py-2 text-xs font-extrabold transition ${
+                                    isSelected
+                                      ? "border-[#9432c1] bg-[#9432c1] text-white shadow-[0_12px_30px_rgba(148,50,193,0.20)]"
+                                      : "border-[#9432c1]/14 bg-white text-[#2e2d2c]/66 hover:border-[#9432c1]/36 hover:bg-[#9432c1]/7 hover:text-[#9432c1]"
+                                  }`}
+                                >
+                                  {purchaseOptionLabel(option)}
+                                </button>
+                              )
+                            })}
+                          </div>
                         ) : (
                           <p className="rounded-full bg-[#2e2d2c]/5 px-3 py-2 text-xs font-extrabold text-[#2e2d2c]/55">
                             {purchaseOptionLabel(selectedOption)}
@@ -488,7 +510,18 @@ function isReadyPreview(preview: IdentityPreviewRow): boolean {
 }
 
 function isOrderablePurchaseOption(option: PurchaseOption): boolean {
-  return Boolean(option.previewOptionId && option.orderLine && option.unitPrice && !isExpressPurchaseOption(option))
+  return Boolean(
+    option.previewOptionId &&
+    option.orderLine &&
+    option.unitPrice &&
+    isAllowedFramePurchaseOption(option) &&
+    (DOT_EXPRESS_OPTIONS_ENABLED || !isExpressPurchaseOption(option)),
+  )
+}
+
+function isAllowedFramePurchaseOption(option: PurchaseOption): boolean {
+  const frameCode = optionFrameCode(option)
+  return Boolean(frameCode && DOT_FRAME_OPTIONS_ENABLED.includes(frameCode as (typeof DOT_FRAME_OPTIONS_ENABLED)[number]))
 }
 
 function isExpressPurchaseOption(option: PurchaseOption): boolean {
@@ -523,11 +556,39 @@ function optionSku(option: PurchaseOption): string {
 function purchaseOptionLabel(option: PurchaseOption): string {
   const label = `${option.label ?? ""} ${option.description ?? ""} ${option.sku ?? ""}`
   const skuParts = `${option.sku ?? ""}`.split("/").map((part) => part.trim().toUpperCase()).filter(Boolean)
+  const frameLabel = option.frameLabel?.trim() || frameLabelFromSkuParts(skuParts) || frameLabelFromText(label)
+  const speedLabel = option.productionSpeedLabel?.trim() || option.productionSpeedCode?.trim() || ""
+  if (frameLabel) return [frameLabel, DOT_EXPRESS_OPTIONS_ENABLED ? speedLabel : ""].filter(Boolean).join(" / ")
+
   if (/\b(no frame|unframed|without frame)\b/i.test(label) || skuParts.some((part) => ["NOFRAME", "NO-FRAME", "UNFRAMED", "WO"].includes(part))) {
     return "Without frame"
   }
-  if (/\b(frame|framed)\b/i.test(label) || skuParts.includes("FRAME")) return "With frame"
+  if (/\b(frame|framed)\b/i.test(label) || skuParts.some((part) => ["W", "FRAME"].includes(part))) return "With frame"
   return option.label || option.productionSpeedLabel || option.productionSpeedCode || option.sku || "Order option"
+}
+
+function optionFrameCode(option: PurchaseOption): string | null {
+  if (option.frameCode?.trim()) return option.frameCode.trim().toUpperCase()
+  const skuParts = `${option.sku ?? ""}`.split("/").map((part) => part.trim().toUpperCase()).filter(Boolean)
+  return ["WDIYF", "WPM", "WW", "WO", "W"].find((code) => skuParts.includes(code)) ?? null
+}
+
+function frameLabelFromSkuParts(skuParts: string[]): string | null {
+  if (skuParts.includes("WO")) return "Without frame"
+  if (skuParts.includes("WPM")) return "Plastic mount"
+  if (skuParts.includes("WDIYF")) return "DIY wooden frame"
+  if (skuParts.includes("WW")) return "Wrapped wood"
+  if (skuParts.includes("W")) return "With frame"
+  return null
+}
+
+function frameLabelFromText(label: string): string | null {
+  if (/\b(no frame|unframed|without frame)\b/i.test(label)) return "Without frame"
+  if (/\b(plastic mount)\b/i.test(label)) return "Plastic mount"
+  if (/\b(diy wooden frame)\b/i.test(label)) return "DIY wooden frame"
+  if (/\b(wrapped wood)\b/i.test(label)) return "Wrapped wood"
+  if (/\b(frame|framed)\b/i.test(label)) return "With frame"
+  return null
 }
 
 function optionStatusLabel(state: OptionState): string {

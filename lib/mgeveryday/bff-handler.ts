@@ -37,6 +37,9 @@ export interface NormalizedPurchaseOption {
   description: string | null
   previewUrl: string | null
   mockupUrl: string | null
+  frame: JsonRecord | null
+  frameCode: string | null
+  frameLabel: string | null
   productionSpeed: JsonRecord | null
   productionSpeedCode: string | null
   productionSpeedLabel: string | null
@@ -479,6 +482,9 @@ function normalizePurchaseOption(raw: unknown): NormalizedPurchaseOption {
   const obj = asRecord(raw)
   const orderLine = asNullableRecord(obj.order_line)
   const previewOptionId = String(obj.preview_option_id ?? obj.option_id ?? obj.id ?? orderLine?.preview_option_id ?? '')
+  const frame = asNullableRecord(obj.frame)
+  const frameCode = pickFirstString([frame?.code, obj.frame_code])
+  const frameLabel = pickFirstString([frame?.label, obj.frame_label, frameCode])
   const productionSpeed = asNullableRecord(obj.production_speed)
   const productionSpeedCode = pickFirstString([productionSpeed?.code, obj.production_speed_code])
   const productionSpeedLabel = pickFirstString([productionSpeed?.label, obj.production_speed_label, productionSpeedCode])
@@ -493,6 +499,9 @@ function normalizePurchaseOption(raw: unknown): NormalizedPurchaseOption {
     description: pickFirstString([obj.description]),
     previewUrl: pickFirstString([obj.preview_url, obj.image_url, obj.preview_image_url]),
     mockupUrl: pickFirstString([obj.mockup_url, obj.mockup_image_url]),
+    frame,
+    frameCode,
+    frameLabel,
     productionSpeed,
     productionSpeedCode,
     productionSpeedLabel,
@@ -637,6 +646,9 @@ function emptyCanonicalPurchaseOption(): NormalizedPurchaseOption {
     description: null,
     previewUrl: null,
     mockupUrl: null,
+    frame: null,
+    frameCode: null,
+    frameLabel: null,
     productionSpeed: null,
     productionSpeedCode: null,
     productionSpeedLabel: null,

@@ -4,6 +4,7 @@ node_modules
 *.local
 .env
 .env.*
+.dev.vars
 .next.bak-*
 tsconfig.tsbuildinfo
 

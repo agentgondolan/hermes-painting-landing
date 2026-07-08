@@ -81,6 +81,9 @@ export interface BffPurchaseOptionsResult {
     description: string | null
     previewUrl: string | null
     mockupUrl: string | null
+    frame: Record<string, unknown> | null
+    frameCode: string | null
+    frameLabel: string | null
     productionSpeed: Record<string, unknown> | null
     productionSpeedCode: string | null
     productionSpeedLabel: string | null

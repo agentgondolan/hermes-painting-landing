@@ -1,4 +1,4 @@
-import type { DotPreviewResult, FrameSizeOption } from "@/components/single-screen-preview/preview-state"
+import type { DotPreviewResult, FrameOrientation, FrameSizeOption } from "@/components/single-screen-preview/preview-state"
 
 const PREVIEW_REGISTRY_STORAGE_KEY = "dottingo_preview_registry_v1"
 const MAX_ACCOUNT_PREVIEWS = 12
@@ -13,6 +13,7 @@ export type AccountPreviewRecord = {
   imageUrl: string | null
   sourceImageUrl?: string | null
   sourceGroupId?: string | null
+  orientation?: FrameOrientation | null
   selectedPreviewOptionId: string | null
   orderable: boolean | null
   updatedAt: number
@@ -73,6 +74,7 @@ export function upsertAccountPreview(
     imageUrl: resolvePreviewImage(preview),
     sourceImageUrl: preview.sourceImageUrl ?? null,
     sourceGroupId: preview.sourceGroupId ?? null,
+    orientation: preview.orientation ?? null,
     selectedPreviewOptionId: preview.selectedOptionId,
     orderable: preview.orderable,
     updatedAt: Date.now(),
@@ -81,7 +83,11 @@ export function upsertAccountPreview(
 
   registry[normalizedEmail] = [
     record,
-    ...existingRecords.filter((item) => item.previewId !== preview.previewId || item.sizeId !== sizeId),
+    ...existingRecords.filter((item) => {
+      if (item.previewId === preview.previewId && item.sizeId === sizeId) return false
+      if (record.sourceGroupId && item.sourceGroupId === record.sourceGroupId && item.sizeId === sizeId) return false
+      return true
+    }),
   ].slice(0, MAX_ACCOUNT_PREVIEWS)
 
   writePreviewRegistry(registry)
@@ -125,8 +131,9 @@ export function hideAccountPreview(email: string, previewId: string): boolean {
   return changed
 }
 
-export function buildPreviewOpenPath(previewId: string, sizeId?: string | null): string {
+export function buildPreviewOpenPath(previewId: string, sizeId?: string | null, orientation?: FrameOrientation | null): string {
   const params = new URLSearchParams({ preview_id: previewId })
   if (sizeId) params.set("size_id", sizeId)
+  if (orientation) params.set("orientation", orientation)
   return `/?${params.toString()}`
 }

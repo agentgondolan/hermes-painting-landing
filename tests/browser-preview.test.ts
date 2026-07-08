@@ -64,6 +64,30 @@ test('preview client keeps polling when create response has imageUrl but non-ter
   }
 })
 
+test('preview client sends clientCropped flag for browser-rendered crops', async () => {
+  const originalFetch = globalThis.fetch
+  let submittedForm: FormData | null = null
+
+  globalThis.fetch = (async (_url, init) => {
+    submittedForm = init?.body instanceof FormData ? init.body : null
+    return new Response(JSON.stringify({
+      previewId: 'preview-crop-123',
+      status: 'COMPLETED',
+      imageUrl: 'https://mge.example.test/cropped.jpg',
+      options: [],
+    }), { status: 201, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const client = new PreviewClientImpl('')
+    await client.createPreview(new File(['x'], 'cropped.png', { type: 'image/png' }), '40X50', true)
+    assert.equal(submittedForm?.get('preferredSize'), '40X50')
+    assert.equal(submittedForm?.get('clientCropped'), 'true')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('preview client polls purchase options until MGE exposes orderable options', async () => {
   const originalFetch = globalThis.fetch
   const calls: string[] = []

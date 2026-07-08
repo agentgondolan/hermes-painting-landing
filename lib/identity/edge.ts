@@ -7,11 +7,12 @@ export interface IdentityEnv {
   MGEVERYDAY_API_TOKEN?: string
   MGEVERYDAY_BASE_URL?: string
   MGEVERYDAY_BRAND_ID?: string
+  DOT_DEV_IDENTITY_LOGIN_EMAILS?: string
 }
 
 export type VerifiedIdentity = {
   email: string
-  previewId: string
+  previewId: string | null
   exp: number
 }
 
@@ -28,11 +29,43 @@ type SendMagicLinkRequest = {
   continue_path?: unknown
 }
 
+type DevIdentityLoginRequest = {
+  email?: unknown
+  preview_id?: unknown
+  previewId?: unknown
+}
+
+type AttachIdentityPreviewRequest = {
+  preview_id?: unknown
+  previewId?: unknown
+}
+
+type CreateIdentityProjectPreviewRequest = {
+  preferred_size?: unknown
+  preferredSize?: unknown
+  product?: unknown
+  preferred_orientation?: unknown
+  preferredOrientation?: unknown
+  auto_crop?: unknown
+  autoCrop?: unknown
+  product_params?: unknown
+  productParams?: unknown
+  preview_options?: unknown
+  previewOptions?: unknown
+}
+
+type MagicLinkRequestIdentity = {
+  email: string
+  previewId: string | null
+  continuePath: string
+}
+
 const MAGIC_LINK_TTL_SECONDS = 30 * 60
 const IDENTITY_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
 const DEFAULT_MGEVERYDAY_BASE_URL = 'https://www.mgeveryday.sg'
 const DOTTINGO_BRAND_ID = 64
 const RESEND_API_URL = 'https://api.resend.com/emails'
+const DEFAULT_DEV_IDENTITY_LOGIN_EMAIL = 'matejgondolan@gmail.com'
 
 export async function requestMagicLink(
   request: Request,
@@ -49,7 +82,6 @@ export async function requestMagicLink(
     const continuePath = normalizeContinuePath(body?.continue_path)
 
     if (!email) return withCors(json({ error: 'A valid email is required' }, 400), request, env)
-    if (!previewId) return withCors(json({ error: 'preview_id is required' }, 400), request, env)
 
     const upstream = await requestMgeMagicLink({ email, previewId, continuePath }, env, fetcher)
     const emailStatus = normalizeMagicLinkDelivery(upstream.status) === 'email_sent'
@@ -144,6 +176,248 @@ export async function getIdentityPreviews(
     return withCors(json({ ok: true, ...normalizeIdentityPreviewLibrary(payload) }), request, env)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Could not load identity previews'
+    return withCors(json({ error: message }, 500), request, env)
+  }
+}
+
+export async function createDevelopmentIdentitySession(
+  request: Request,
+  env: IdentityEnv,
+  fetcher: typeof fetch = fetch,
+): Promise<Response> {
+  if (request.method === 'OPTIONS') return corsResponse(request, env)
+  if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405), request, env)
+  if (!isLocalDevelopmentRequest(request)) {
+    return withCors(json({ error: 'Development identity login is only available on localhost' }, 403), request, env)
+  }
+
+  try {
+    const body = (await request.json().catch(() => null)) as DevIdentityLoginRequest | null
+    const email = normalizeEmail(body?.email)
+    const previewId = normalizeId(body?.preview_id ?? body?.previewId) || null
+    if (!email) return withCors(json({ error: 'A valid email is required' }, 400), request, env)
+    if (!isAllowedDevelopmentIdentityEmail(email, env)) {
+      return withCors(json({ error: 'This email is not enabled for development login' }, 403), request, env)
+    }
+
+    const response = await fetcher(`${mgeBaseUrl(env)}/api/internal/v1/identity/testing/session/`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${requireMgeToken(env)}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        brand_id: mgeBrandId(),
+        email,
+        ...(previewId ? { preview_id: previewId } : {}),
+      }),
+    })
+    const payload = parseJson(await response.text())
+    if (!response.ok) {
+      return withCors(json({ error: mgeErrorMessage(payload, 'MGE rejected the development identity session request') }, response.status), request, env)
+    }
+
+    const record = asRecord(payload)
+    const verifiedEmail = normalizeEmail(record?.email) || email
+    const verifiedPreviewId = normalizeId(record?.preview_id) || previewId
+    const mgeIdentityToken = stringValue(record?.identity_token) || stringValue(record?.token)
+    if (!mgeIdentityToken) {
+      return withCors(json({ error: 'MGE development identity response is missing identity_token' }, 502), request, env)
+    }
+
+    const identityToken = await createIdentitySessionToken(
+      { email: verifiedEmail, previewId: verifiedPreviewId },
+      env,
+    )
+
+    return withCors(
+      json({
+        ok: true,
+        email: verifiedEmail,
+        previewId: verifiedPreviewId,
+        identityToken,
+        mgeIdentityToken,
+        expiresInSeconds: IDENTITY_SESSION_TTL_SECONDS,
+      }),
+      request,
+      env,
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Could not create development identity session'
+    return withCors(json({ error: message }, 500), request, env)
+  }
+}
+
+export async function attachIdentityPreview(
+  request: Request,
+  env: IdentityEnv,
+  fetcher: typeof fetch = fetch,
+): Promise<Response> {
+  if (request.method === 'OPTIONS') return corsResponse(request, env)
+  if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405), request, env)
+
+  const identityToken = request.headers.get('X-MGE-Identity-Token')?.trim()
+  if (!identityToken) return withCors(json({ error: 'X-MGE-Identity-Token is required' }, 401), request, env)
+
+  try {
+    const body = (await request.json().catch(() => null)) as AttachIdentityPreviewRequest | null
+    const previewId = normalizeId(body?.preview_id ?? body?.previewId)
+    if (!previewId) return withCors(json({ error: 'preview_id is required' }, 400), request, env)
+
+    const response = await fetcher(`${mgeBaseUrl(env)}/api/internal/v1/identity/previews/`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${requireMgeToken(env)}`,
+        'X-API-Key': requireMgeToken(env),
+        'X-MGE-Identity-Token': identityToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        brand_id: mgeBrandId(),
+        preview_id: previewId,
+      }),
+    })
+    const payload = parseJson(await response.text())
+    if (!response.ok) {
+      return withCors(json({ error: mgeErrorMessage(payload, 'MGE rejected the identity preview attach request') }, response.status), request, env)
+    }
+
+    return withCors(json({ ok: true, preview: normalizeIdentityPreviewRow(payload) ?? payload }), request, env)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Could not save identity preview'
+    return withCors(json({ error: message }, 500), request, env)
+  }
+}
+
+export async function createIdentityProjectPreview(
+  request: Request,
+  env: IdentityEnv,
+  sourceGroupId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<Response> {
+  if (request.method === 'OPTIONS') return corsResponse(request, env)
+  if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405), request, env)
+
+  const identityToken = request.headers.get('X-MGE-Identity-Token')?.trim()
+  if (!identityToken) return withCors(json({ error: 'X-MGE-Identity-Token is required' }, 401), request, env)
+
+  const normalizedSourceGroupId = normalizeId(sourceGroupId)
+  if (!normalizedSourceGroupId) return withCors(json({ error: 'source_group_id is required' }, 400), request, env)
+
+  try {
+    const body = (await request.json().catch(() => null)) as CreateIdentityProjectPreviewRequest | null
+    const preferredSize = normalizePreferredSize(body?.preferred_size ?? body?.preferredSize)
+    const product = normalizeProduct(body?.product) || 'DOT'
+    const preferredOrientation = normalizePreferredOrientation(body?.preferred_orientation ?? body?.preferredOrientation)
+    const autoCrop = normalizeOptionalBoolean(body?.auto_crop ?? body?.autoCrop)
+    const productParams = normalizePlainObject(body?.product_params ?? body?.productParams)
+    const previewOptions = normalizePlainObject(body?.preview_options ?? body?.previewOptions)
+    if (!preferredSize) return withCors(json({ error: 'preferred_size is required' }, 400), request, env)
+
+    const requestBody: Record<string, unknown> = {
+      brand_id: mgeBrandId(),
+      product,
+      preferred_size: preferredSize,
+    }
+    if (preferredOrientation) requestBody.preferred_orientation = preferredOrientation
+    if (autoCrop !== null) requestBody.auto_crop = autoCrop
+    if (productParams) requestBody.product_params = productParams
+    if (previewOptions) requestBody.preview_options = previewOptions
+
+    const response = await fetcher(`${mgeBaseUrl(env)}/api/internal/v1/identity/projects/${encodeURIComponent(normalizedSourceGroupId)}/previews/`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${requireMgeToken(env)}`,
+        'X-API-Key': requireMgeToken(env),
+        'X-MGE-Identity-Token': identityToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    })
+    const payload = parseJson(await response.text())
+    if (!response.ok) {
+      return withCors(json({ error: mgeErrorMessage(payload, 'MGE rejected the project preview request') }, response.status), request, env)
+    }
+
+    return withCors(json({ ok: true, preview: normalizeIdentityPreviewRow(payload) ?? payload }), request, env)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Could not generate project preview'
+    return withCors(json({ error: message }, 500), request, env)
+  }
+}
+
+export async function deleteIdentityPreview(
+  request: Request,
+  env: IdentityEnv,
+  previewId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<Response> {
+  if (request.method === 'OPTIONS') return corsResponse(request, env)
+  if (request.method !== 'DELETE') return withCors(json({ error: 'Method not allowed' }, 405), request, env)
+
+  const identityToken = request.headers.get('X-MGE-Identity-Token')?.trim()
+  if (!identityToken) return withCors(json({ error: 'X-MGE-Identity-Token is required' }, 401), request, env)
+
+  const normalizedPreviewId = normalizeId(previewId)
+  if (!normalizedPreviewId) return withCors(json({ error: 'preview_id is required' }, 400), request, env)
+
+  try {
+    const response = await fetcher(`${mgeBaseUrl(env)}/api/internal/v1/identity/previews/${encodeURIComponent(normalizedPreviewId)}/`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${requireMgeToken(env)}`,
+        'X-API-Key': requireMgeToken(env),
+        'X-MGE-Identity-Token': identityToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ brand_id: mgeBrandId() }),
+    })
+    const payload = parseJson(await response.text())
+    if (!response.ok) {
+      return withCors(json({ error: mgeErrorMessage(payload, 'MGE rejected the identity preview delete request') }, response.status), request, env)
+    }
+
+    return withCors(json({ ok: true, previewId: normalizedPreviewId }), request, env)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Could not delete identity preview'
+    return withCors(json({ error: message }, 500), request, env)
+  }
+}
+
+export async function deleteIdentityProject(
+  request: Request,
+  env: IdentityEnv,
+  sourceGroupId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<Response> {
+  if (request.method === 'OPTIONS') return corsResponse(request, env)
+  if (request.method !== 'DELETE') return withCors(json({ error: 'Method not allowed' }, 405), request, env)
+
+  const identityToken = request.headers.get('X-MGE-Identity-Token')?.trim()
+  if (!identityToken) return withCors(json({ error: 'X-MGE-Identity-Token is required' }, 401), request, env)
+
+  const normalizedSourceGroupId = normalizeId(sourceGroupId)
+  if (!normalizedSourceGroupId) return withCors(json({ error: 'source_group_id is required' }, 400), request, env)
+
+  try {
+    const response = await fetcher(`${mgeBaseUrl(env)}/api/internal/v1/identity/projects/${encodeURIComponent(normalizedSourceGroupId)}/`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${requireMgeToken(env)}`,
+        'X-API-Key': requireMgeToken(env),
+        'X-MGE-Identity-Token': identityToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ brand_id: mgeBrandId() }),
+    })
+    const payload = parseJson(await response.text())
+    if (!response.ok) {
+      return withCors(json({ error: mgeErrorMessage(payload, 'MGE rejected the identity project delete request') }, response.status), request, env)
+    }
+
+    return withCors(json({ ok: true, sourceGroupId: normalizedSourceGroupId }), request, env)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Could not delete identity project'
     return withCors(json({ error: message }, 500), request, env)
   }
 }
@@ -269,22 +543,23 @@ function magicLinkStatusFromPayload(payload: unknown, fallbackStatus: string): s
 }
 
 async function requestMgeMagicLink(
-  identity: Pick<VerifiedIdentity, 'email' | 'previewId'> & { continuePath: string },
+  identity: MagicLinkRequestIdentity,
   env: IdentityEnv,
   fetcher: typeof fetch,
 ): Promise<MgeMagicLinkRequestResult> {
+  const previewId = normalizeId(identity.previewId)
   const response = await fetcher(`${mgeBaseUrl(env)}/api/internal/v1/identity/magic-link/request/`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${requireMgeToken(env)}`,
       'Content-Type': 'application/json',
-      'Idempotency-Key': await idempotencyKey(identity.email, identity.previewId, identity.continuePath),
+      'Idempotency-Key': await idempotencyKey(identity.email, previewId, identity.continuePath),
     },
     body: JSON.stringify({
       brand_id: mgeBrandId(),
       email: normalizeEmail(identity.email),
-      preview_id: normalizeId(identity.previewId),
       continue_path: normalizeContinuePath(identity.continuePath),
+      ...(previewId ? { preview_id: previewId } : {}),
     }),
   })
   const payload = parseJson(await response.text())
@@ -306,6 +581,7 @@ async function checkMgeMagicLinkStatus(
   env: IdentityEnv,
   fetcher: typeof fetch,
 ): Promise<string> {
+  const previewId = normalizeId(identity.previewId)
   const response = await fetcher(`${mgeBaseUrl(env)}/api/internal/v1/identity/magic-link/status/`, {
     method: 'POST',
     headers: {
@@ -315,7 +591,7 @@ async function checkMgeMagicLinkStatus(
     body: JSON.stringify({
       brand_id: mgeBrandId(),
       email: normalizeEmail(identity.email),
-      preview_id: normalizeId(identity.previewId),
+      ...(previewId ? { preview_id: previewId } : {}),
       ...(identity.requestId ? { request_id: normalizeId(identity.requestId) } : {}),
     }),
   })
@@ -344,8 +620,8 @@ async function verifyMgeMagicLink(token: string, env: IdentityEnv): Promise<MgeM
 
   const record = asRecord(payload)
   const email = normalizeEmail(record?.email)
-  const previewId = normalizeId(record?.preview_id)
-  if (!email || !previewId) throw new Error('MGE magic link response is incomplete')
+  const previewId = normalizeId(record?.preview_id) || null
+  if (!email) throw new Error('MGE magic link response is incomplete')
 
   return {
     email,
@@ -378,17 +654,17 @@ async function verifyMagicToken(token: string, env: IdentityEnv, type: MagicLink
   const payload = JSON.parse(base64UrlDecodeText(payloadPart)) as Partial<MagicLinkPayload>
   const now = Math.floor(Date.now() / 1000)
   const email = normalizeEmail(payload.email)
-  const previewId = normalizeId(payload.previewId)
+  const previewId = normalizeId(payload.previewId) || null
 
   if (payload.typ !== type) throw new Error('Magic link has the wrong purpose')
-  if (!email || !previewId || typeof payload.exp !== 'number') throw new Error('Magic link is incomplete')
+  if (!email || typeof payload.exp !== 'number') throw new Error('Magic link is incomplete')
   if (payload.exp < now) throw new Error('Magic link has expired')
 
   return { email, previewId, exp: payload.exp }
 }
 
 async function signPayload(payload: MagicLinkPayload, env: IdentityEnv): Promise<string> {
-  if (!payload.email || !payload.previewId) throw new Error('Identity payload is incomplete')
+  if (!payload.email) throw new Error('Identity payload is incomplete')
   const payloadPart = base64UrlEncode(JSON.stringify(payload))
   const signature = await hmacSha256Base64Url(payloadPart, requireSecret(env))
   return `${payloadPart}.${signature}`
@@ -479,9 +755,30 @@ function booleanValue(value: unknown): boolean {
   return ['true', '1', 'yes', 'y'].includes(normalized)
 }
 
+function normalizeOptionalBoolean(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value
+  const normalized = stringValue(value).toLowerCase()
+  if (['true', '1', 'yes', 'y'].includes(normalized)) return true
+  if (['false', '0', 'no', 'n'].includes(normalized)) return false
+  return null
+}
+
+function normalizePlainObject(value: unknown): Record<string, unknown> | null {
+  const record = asRecord(value)
+  return record ? record : null
+}
+
 function mgeErrorMessage(payload: unknown, fallback: string): string {
   const record = asRecord(payload)
-  return stringValue(record?.error) || stringValue(record?.detail) || fallback
+  const directMessage = stringValue(record?.error) || stringValue(record?.detail)
+  if (directMessage) return directMessage
+  if (record) {
+    for (const [field, value] of Object.entries(record)) {
+      const messages = Array.isArray(value) ? value.map(stringValue).filter(Boolean) : [stringValue(value)].filter(Boolean)
+      if (messages.length) return `${field}: ${messages.join(', ')}`
+    }
+  }
+  return fallback
 }
 
 function normalizeIdentityPreviewLibrary(payload: unknown): { previews: Array<Record<string, unknown>>; projects: Array<Record<string, unknown>> } {
@@ -546,11 +843,7 @@ function normalizeIdentityPreviewRow(value: unknown): Record<string, unknown> | 
   const sourceImageUrl = proxiedImageUrl(
     stringValue(sourceImageRecord?.url) || stringValue(record.source_image_url) || stringValue(record.sourceImageUrl),
   )
-  const optionsValue = Array.isArray(record.options)
-    ? record.options
-    : Array.isArray(record.preview_options)
-      ? record.preview_options
-      : []
+  const optionsValue = extractIdentityPreviewOptions(record)
 
   return {
     ...record,
@@ -558,10 +851,15 @@ function normalizeIdentityPreviewRow(value: unknown): Record<string, unknown> | 
     status: stringValue(record.status) || null,
     selectedSize: (stringValue(record.size_id) || stringValue(record.selected_size) || stringValue(record.selectedSize) || stringValue(record.size) || null)?.toLowerCase?.() ?? null,
     preferredSize: (stringValue(record.preferred_size) || stringValue(record.preferredSize) || null)?.toLowerCase?.() ?? null,
-    isCurrent: booleanValue(record.is_current ?? record.isCurrent),
+    variantKey: stringValue(record.variant_key) || stringValue(record.variantKey) || null,
+    variantRank: numberValue(record.variant_rank ?? record.variantRank) || null,
+    isCurrentVariant: booleanValue(record.is_current_variant ?? record.isCurrentVariant),
+    supersededByPreviewId: normalizeId(record.superseded_by_preview_id ?? record.supersededByPreviewId) || null,
+    isCurrent: booleanValue(record.is_current_variant ?? record.isCurrentVariant ?? record.is_current ?? record.isCurrent),
     imageUrl: proxiedImageUrl(stringValue(record.image_url) || stringValue(record.imageUrl) || stringValue(record.preview_url) || stringValue(record.previewUrl)),
     sourceImageUrl,
     sourceGroupId: stringValue(record.source_group_id) || stringValue(record.sourceGroupId) || stringValue(record.project_id) || stringValue(record.projectId) || null,
+    orientation: normalizeOrientation(stringValue(record.orientation) || stringValue(record.frame_orientation) || stringValue(record.frameOrientation) || stringValue(record.product_orientation) || stringValue(record.productOrientation)),
     fixedSize: booleanValue(record.fixed_size ?? record.fixedSize),
     sizeChangeMode: stringValue(record.size_change_mode) || stringValue(record.sizeChangeMode) || null,
     sourceAvailable: booleanValue(record.source_available ?? record.sourceAvailable ?? Boolean(sourceImageUrl)),
@@ -573,6 +871,20 @@ function normalizeIdentityPreviewRow(value: unknown): Record<string, unknown> | 
     purchaseOptionsUnavailableReason: stringValue(record.purchase_options_unavailable_reason) || stringValue(record.purchaseOptionsUnavailableReason) || null,
     options: optionsValue.map(normalizeIdentityPreviewOption).filter((option): option is Record<string, unknown> => Boolean(option)),
   }
+}
+
+function extractIdentityPreviewOptions(record: Record<string, unknown>): unknown[] {
+  const direct = Array.isArray(record.options)
+    ? record.options
+    : Array.isArray(record.preview_options)
+      ? record.preview_options
+      : []
+  const products = Array.isArray(record.products) ? record.products : []
+  const nested = products.flatMap((product) => {
+    const productRecord = asRecord(product)
+    return Array.isArray(productRecord?.options) ? productRecord.options : []
+  })
+  return [...direct, ...nested]
 }
 
 function normalizeIdentityPreviewOption(value: unknown): Record<string, unknown> | null {
@@ -618,11 +930,50 @@ function normalizeEmail(value: unknown): string {
   return email.slice(0, 254)
 }
 
+function isLocalDevelopmentRequest(request: Request): boolean {
+  const hostname = new URL(request.url).hostname.toLowerCase()
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1'
+}
+
+function isAllowedDevelopmentIdentityEmail(email: string, env: IdentityEnv): boolean {
+  const allowed = (env.DOT_DEV_IDENTITY_LOGIN_EMAILS || DEFAULT_DEV_IDENTITY_LOGIN_EMAIL)
+    .split(',')
+    .map((value) => normalizeEmail(value))
+    .filter(Boolean)
+  return allowed.includes(normalizeEmail(email))
+}
+
 function normalizeId(value: unknown): string {
   if (typeof value !== 'string' && typeof value !== 'number') return ''
   const id = String(value).trim()
   if (!/^[a-zA-Z0-9][a-zA-Z0-9:_./-]{0,127}$/.test(id)) return ''
   return id
+}
+
+function normalizePreferredSize(value: unknown): string {
+  const normalized = stringValue(value).toUpperCase().replace(/\s+/g, '').replace(/×/g, 'X')
+  return /^[0-9]{2}X[0-9]{2}$/.test(normalized) ? normalized : ''
+}
+
+function normalizeProduct(value: unknown): string {
+  const normalized = stringValue(value).toUpperCase()
+  return /^[A-Z0-9_-]{2,24}$/.test(normalized) ? normalized : ''
+}
+
+function normalizePreferredOrientation(value: unknown): string {
+  const normalized = stringValue(value).trim().toLowerCase()
+  if (!normalized) return ''
+  if (['horizontal', 'landscape', 'h'].includes(normalized)) return 'horizontal'
+  if (['vertical', 'portrait', 'v'].includes(normalized)) return 'vertical'
+  return normalized === 'auto' ? 'auto' : ''
+}
+
+function normalizeOrientation(value: string): 'horizontal' | 'vertical' | null {
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return null
+  if (['horizontal', 'landscape', 'h'].includes(normalized)) return 'horizontal'
+  if (['vertical', 'portrait', 'v'].includes(normalized)) return 'vertical'
+  return null
 }
 
 function requireSecret(env: IdentityEnv): string {
@@ -692,8 +1043,9 @@ function withCors(response: Response, request: Request, env: IdentityEnv): Respo
   if (allowedOrigin === '*' || !origin || origin === allowedOrigin) {
     headers.set('Access-Control-Allow-Origin', allowedOrigin === '*' ? '*' : (origin || allowedOrigin))
   }
-  headers.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-  headers.set('Access-Control-Allow-Headers', 'Content-Type')
+  headers.set('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS')
+  headers.set('Access-Control-Allow-Headers', 'Content-Type,X-MGE-Identity-Token')
+  headers.set('Cache-Control', 'no-store')
   headers.set('Vary', 'Origin')
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }

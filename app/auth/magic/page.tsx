@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { buildVerifiedDesignReturnPath, verifyMagicToken } from "@/lib/identity/browser"
+import { buildVerifiedDesignReturnPath, redirectMagicLinkToCanonicalOrigin, verifyMagicToken } from "@/lib/identity/browser"
 
 export default function MagicLinkPage() {
   const [status, setStatus] = useState<"verifying" | "verified" | "failed">("verifying")
@@ -20,6 +20,7 @@ export default function MagicLinkPage() {
       setMessage("This magic link is missing its token.")
       return
     }
+    if (redirectMagicLinkToCanonicalOrigin()) return
 
     verifyMagicToken(token).then(
       (identity) => {

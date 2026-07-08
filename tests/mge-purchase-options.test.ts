@@ -20,14 +20,16 @@ test('normalizes MGE purchase options into browser-safe camelCase payload', asyn
 
   assert.equal(normalized.previewId, '11111111-2222-3333-4444-555555555555')
   assert.equal(normalized.status, 'COMPLETED')
-  assert.equal(normalized.purchaseOptions.length, 2)
+  assert.equal(normalized.purchaseOptions.length, 3)
 
-  const [standard, express] = normalized.purchaseOptions
+  const [standard, withoutFrame, wrappedWood] = normalized.purchaseOptions
   assert.equal(standard.purchaseOptionId, 'DOT/VF/40X50/W/BLACK/STD')
   assert.equal(standard.previewOptionId, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
   assert.equal(standard.sku, 'DOT/VF/40X50/W/BLACK/STD')
   assert.equal(standard.product, 'DOT')
   assert.equal(standard.label, 'BLACK / source / Standard')
+  assert.equal(standard.frameCode, 'W')
+  assert.equal(standard.frameLabel, 'With frame')
   assert.equal(standard.productionSpeedCode, 'STD')
   assert.equal(standard.productionSpeedLabel, 'Standard')
   assert.equal(standard.orderLine?.sku, 'DOT/VF/40X50/W/BLACK/STD')
@@ -36,12 +38,21 @@ test('normalizes MGE purchase options into browser-safe camelCase payload', asyn
   assert.equal(standard.currency, 'EUR')
   assert.equal(standard.previewUrl, '[REDACTED_URL]')
 
-  assert.equal(express.purchaseOptionId, 'DOT/VF/40X50/W/BLACK/EXP')
-  assert.equal(express.previewOptionId, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
-  assert.equal(express.productionSpeedCode, 'EXP')
-  assert.equal(express.productionSpeedLabel, 'Express')
-  assert.equal(express.orderLine?.sku, 'DOT/VF/40X50/W/BLACK/EXP')
-  assert.equal(express.unitPrice, '14.72')
+  assert.equal(withoutFrame.purchaseOptionId, 'DOT/VF/40X50/WO/BLACK/STD')
+  assert.equal(withoutFrame.previewOptionId, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
+  assert.equal(withoutFrame.frameCode, 'WO')
+  assert.equal(withoutFrame.frameLabel, 'Without frame')
+  assert.equal(withoutFrame.productionSpeedCode, 'STD')
+  assert.equal(withoutFrame.productionSpeedLabel, 'Standard')
+  assert.equal(withoutFrame.orderLine?.sku, 'DOT/VF/40X50/WO/BLACK/STD')
+  assert.equal(withoutFrame.unitPrice, '7.14')
+
+  assert.equal(wrappedWood.purchaseOptionId, 'DOT/VF/40X50/WW/BLACK/STD')
+  assert.equal(wrappedWood.previewOptionId, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
+  assert.equal(wrappedWood.frameCode, 'WW')
+  assert.equal(wrappedWood.frameLabel, 'Wrapped wood')
+  assert.equal(wrappedWood.orderLine?.sku, 'DOT/VF/40X50/WW/BLACK/STD')
+  assert.equal(wrappedWood.unitPrice, '11.11')
 })
 
 test('purchase-options BFF proxies to MGE with server-side token and hides authorization', async () => {
@@ -62,8 +73,9 @@ test('purchase-options BFF proxies to MGE with server-side token and hides autho
 
     assert.equal(response.status, 200)
     const payload = await response.json() as ReturnType<typeof normalizePurchaseOptions> extends infer T ? Awaited<T> : never
-    assert.equal(payload.purchaseOptions.length, 2)
+    assert.equal(payload.purchaseOptions.length, 3)
     assert.equal(payload.purchaseOptions[0].orderLine?.sku, 'DOT/VF/40X50/W/BLACK/STD')
+    assert.equal(payload.purchaseOptions[1].orderLine?.sku, 'DOT/VF/40X50/WO/BLACK/STD')
 
     assert.equal(calls.length, 1)
     assert.equal(calls[0].url, 'https://mge.example.test/api/v1/preview/preview-123/purchase-options/')

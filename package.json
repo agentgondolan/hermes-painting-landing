@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/prepare-next.mjs dev && next dev --hostname 0.0.0.0 --port 3206",
+    "dev:pages": "npm run build && wrangler pages dev .next/prod --port 3206 --compatibility-date=2026-05-25",
     "build": "node scripts/prepare-next.mjs prod && next build",
     "generate:dottingo-og": "node scripts/generate-dottingo-og.mjs",
     "start": "next start --hostname 0.0.0.0 --port 3206",

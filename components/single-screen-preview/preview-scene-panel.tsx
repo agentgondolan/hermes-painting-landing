@@ -16,6 +16,7 @@ export function PreviewScenePanel({ sceneModel }: PreviewScenePanelProps) {
           imageSrc={sceneModel.imageSrc}
           previewKind={sceneModel.previewKind}
           selectedSize={sceneModel.selectedSize}
+          orientation={sceneModel.orientation ?? undefined}
           isProcessing={sceneModel.isProcessing}
           presentationScale={0.82}
           presentationOffsetY={0.82}

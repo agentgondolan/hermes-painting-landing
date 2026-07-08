@@ -23,11 +23,13 @@ test('account panel preserves the current magic-link account MVP scope', () => {
 
   assert.equal(accountSource.includes('Account'), true)
   assert.equal(accountSource.includes('Save your design and continue later.'), true)
+  assert.equal(accountSource.includes('Log in to your saved designs.'), true)
   assert.equal(accountSource.includes('Save and get back later'), true)
   assert.equal(accountSource.includes('Save current preview'), true)
   assert.equal(accountSource.includes('Verified as {identity.email}'), false)
-  assert.equal(accountSource.includes('setSaveFormOpen(true)'), true)
-  assert.equal(accountSource.includes('Current preview'), true)
+  assert.equal(accountSource.includes('type EmailFlowIntent = "save" | "login"'), true)
+  assert.equal(accountSource.includes('setEmailFlowIntent("save")'), true)
+  assert.equal(accountSource.includes('Current preview'), false)
   assert.equal(accountSource.includes('Current source'), false)
   assert.equal(accountSource.includes('Source image'), false)
   assert.equal(accountSource.includes('Source thumbnail saved'), false)
@@ -37,4 +39,22 @@ test('account panel preserves the current magic-link account MVP scope', () => {
   assert.equal(accountSource.includes('readAccountPreviews'), true)
   assert.equal(accountSource.includes('Preview list comes next from MGE'), false)
   assert.equal(accountSource.includes('requestDesignMagicLink(email, previewId, selectedSize?.id ?? null)'), true)
+  assert.equal(accountSource.includes('account_login_magic_link_blocked_without_preview'), false)
+})
+
+test('account panel exposes a returning-user login entrypoint without a current preview', () => {
+  assert.equal(accountSource.includes('No current design yet. You can still log in to saved designs.'), false)
+  assert.equal(accountSource.includes('Log in to saved designs'), true)
+  assert.equal(accountSource.includes('setEmailFlowIntent("login")'), true)
+  assert.equal(accountSource.includes('const showEmailForm = Boolean((!isVerifiedGlobally || isChangingEmail) && emailFlowIntent)'), true)
+  assert.equal(accountSource.includes('Saved-design login needs MGE account-link confirmation before we can send this email.'), false)
+  assert.equal(accountSource.includes('Log in by email to load saved designs, or save a ready preview from this device.'), true)
+  assert.equal(accountSource.includes('Create a design first, then save it to your email.'), false)
+})
+
+test('account panel marks the opened saved project instead of offering to open it again', () => {
+  assert.equal(accountSource.includes('isCurrentPreviewGroup'), true)
+  assert.equal(accountSource.includes('Opened'), true)
+  assert.equal(accountSource.includes('aria-current="true"'), true)
+  assert.equal(accountSource.includes('shadow-[0_0_0_2px_rgba(148,50,193,0.12)]'), true)
 })

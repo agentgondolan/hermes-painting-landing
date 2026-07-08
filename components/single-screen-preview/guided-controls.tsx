@@ -15,6 +15,10 @@ interface GuidedControlsProps {
   onRetry: () => void
   onReset: () => void
   onSetSize: (size: FrameSizeOption) => void
+  onEditCrop?: () => void
+  canEditCrop?: boolean
+  isVerified?: boolean
+  readySizeIds?: string[]
 }
 
 export function GuidedControls({
@@ -25,8 +29,13 @@ export function GuidedControls({
   onRetry,
   onReset,
   onSetSize,
+  onEditCrop,
+  canEditCrop = false,
+  isVerified = false,
+  readySizeIds = [],
 }: GuidedControlsProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const readySizeIdSet = new Set(readySizeIds)
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -48,7 +57,7 @@ export function GuidedControls({
     }
   }
 
-  const triggerUpload = (source: 'initial_upload' | 'replace_photo') => {
+  const triggerUpload = (source: 'initial_upload' | 'replace_photo' | 'add_image') => {
     captureEvent('preview_upload_clicked', {
       source,
       selected_size: selectedSize?.id,
@@ -69,6 +78,13 @@ export function GuidedControls({
       selected_size: selectedSize?.id,
     })
     onRetry()
+  }
+
+  const handleEditCrop = () => {
+    captureEvent('preview_crop_edit_clicked', {
+      selected_size: selectedSize?.id,
+    })
+    onEditCrop?.()
   }
 
   const handleBuyClick = () => {
@@ -109,30 +125,47 @@ export function GuidedControls({
 
       {/* Replace */}
       {guidedModel.showReplace && (
-        <button
-          onClick={() => triggerUpload('replace_photo')}
-          className="text-xs font-semibold text-[#9432c1]/55 underline hover:text-[#9432c1]"
-        >
-          {UX_COPY.replaceImage}
-        </button>
+        <div className="flex items-center justify-center gap-3">
+          <button
+            onClick={() => triggerUpload(isVerified ? 'add_image' : 'replace_photo')}
+            className="text-xs font-semibold text-[#9432c1]/55 underline hover:text-[#9432c1]"
+          >
+            {isVerified ? "Add image" : UX_COPY.replaceImage}
+          </button>
+          {canEditCrop ? (
+            <button
+              type="button"
+              onClick={handleEditCrop}
+              className="rounded-full bg-[#9432c1]/8 px-3 py-1.5 text-xs font-extrabold text-[#9432c1] transition hover:bg-[#9432c1]/14"
+            >
+              Edit crop
+            </button>
+          ) : null}
+        </div>
       )}
 
       {/* Size selector */}
       {guidedModel.showSizeSelector && (
         <div className="flex w-full max-w-[34rem] gap-2">
-          {FRAME_SIZE_OPTIONS.map((opt) => (
-            <button
-              key={opt.id}
-              onClick={() => handleSetSize(opt)}
-              className={`min-w-0 flex-1 whitespace-nowrap rounded-full border px-2 py-2 text-[12px] font-semibold leading-none transition min-[390px]:px-3 min-[390px]:text-[13px] sm:px-4 sm:text-sm ${
-                selectedSize?.id === opt.id
-                  ? "border-[#9432c1] bg-[#9432c1] text-white shadow-[0_10px_26px_rgba(148,50,193,0.22)]"
-                  : "border-[#9432c1]/18 bg-white/60 text-[#2e2d2c]/70 hover:bg-[#f0dcfa] hover:text-[#9432c1]"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
+          {FRAME_SIZE_OPTIONS.map((opt) => {
+            const isSelected = selectedSize?.id === opt.id
+            const isReady = readySizeIdSet.has(opt.id)
+            return (
+              <button
+                key={opt.id}
+                onClick={() => handleSetSize(opt)}
+                className={`min-w-0 flex-1 whitespace-nowrap rounded-full border px-2 py-2 text-[12px] font-semibold leading-none transition min-[390px]:px-3 min-[390px]:text-[13px] sm:px-4 sm:text-sm ${
+                  isSelected
+                    ? "border-[#9432c1] bg-[#9432c1] text-white shadow-[0_10px_26px_rgba(148,50,193,0.22)]"
+                    : isReady
+                      ? "border-[#9432c1]/20 bg-[#9432c1]/8 text-[#9432c1] hover:bg-[#9432c1]/14"
+                      : "border-[#9432c1]/18 bg-white/60 text-[#2e2d2c]/70 hover:bg-[#f0dcfa] hover:text-[#9432c1]"
+                }`}
+              >
+                {opt.label}
+              </button>
+            )
+          })}
         </div>
       )}
 

@@ -463,6 +463,34 @@ function useCanvasDimensions(frameSizeId: FrameSizeId, orientation: FrameOrienta
   }, [frameSizeId, orientation])
 }
 
+function useArtworkOrientation(artworkTextureUrl: string | null): FrameOrientation | null {
+  const [orientation, setOrientation] = useState<FrameOrientation | null>(null)
+
+  useEffect(() => {
+    if (!artworkTextureUrl) {
+      setOrientation(null)
+      return
+    }
+
+    let cancelled = false
+    const image = new Image()
+    image.onload = () => {
+      if (cancelled) return
+      setOrientation(image.naturalWidth >= image.naturalHeight ? 'horizontal' : 'vertical')
+    }
+    image.onerror = () => {
+      if (!cancelled) setOrientation(null)
+    }
+    image.src = artworkTextureUrl
+
+    return () => {
+      cancelled = true
+    }
+  }, [artworkTextureUrl])
+
+  return orientation
+}
+
 function CanvasObject({
   position,
   rotation,
@@ -913,6 +941,7 @@ const LOCKED_CAMERA_POLAR_ANGLE = Math.PI * 0.45
 export function ProductSceneCanvas(props: ProductSceneCanvasProps) {
   // Bridge the new single-screen props to the legacy component
   const artworkTextureUrl = props.artworkTextureUrl ?? props.imageSrc ?? null
+  const inferredArtworkOrientation = useArtworkOrientation(artworkTextureUrl)
 
   // Map selectedSize to frameSizeId + orientation
   const selectedSize = props.selectedSize ?? null
@@ -921,10 +950,9 @@ export function ProductSceneCanvas(props: ProductSceneCanvasProps) {
     ? (selectedSize.id as FrameSizeId ?? DEFAULT_FRAME_SIZE_ID)
     : (props.frameSizeId ?? DEFAULT_FRAME_SIZE_ID)
 
-  // Determine orientation from selectedSize dimensions
-  const orientation = hasSelectedSize
+  const orientation = props.orientation ?? inferredArtworkOrientation ?? (hasSelectedSize
     ? selectedSize.widthCm >= selectedSize.heightCm ? 'horizontal' : 'vertical'
-    : (props.orientation ?? 'vertical')
+    : 'vertical')
 
   return (
     <Canvas

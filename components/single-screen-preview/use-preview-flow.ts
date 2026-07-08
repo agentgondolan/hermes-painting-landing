@@ -7,6 +7,8 @@ import {
   deriveSceneModel,
   deriveGuidedModel,
   type DotPreviewResult,
+  type CropDetails,
+  type FrameOrientation,
   type FrameSizeOption,
   type PreviewOptionChoice,
   type PreviewState,
@@ -29,7 +31,21 @@ type PreviewFlowResult = Omit<BffPreviewCreateResult, 'previewId'> & {
   previewId: string | null
   sourceImageUrl?: string | null
   sourceGroupId?: string | null
+  orientation?: FrameOrientation | null
+  crop?: CropDetails | null
   cleanup?: () => void
+}
+
+type PreviewGenerationOptions = {
+  orientation?: FrameOrientation | null
+  crop?: CropDetails | null
+}
+
+export type RestorablePreviewResult = PreviewFlowResult
+
+type HydratedSourceImage = {
+  file: File
+  sessionToken: string
 }
 
 function pickOrderable(result: Pick<PreviewFlowResult, 'options'>): boolean | null {
@@ -78,9 +94,16 @@ function normalizePreviewSizeIdFromUrl(): string | null {
   return sizeId && FRAME_SIZE_OPTIONS.some((option) => option.id === sizeId) ? sizeId : null
 }
 
+function readPreviewOrientationFromUrl(): FrameOrientation | null {
+  if (typeof window === "undefined") return null
+  const orientation = new URL(window.location.href).searchParams.get("orientation")?.trim().toLowerCase()
+  return orientation === "horizontal" || orientation === "vertical" ? orientation : null
+}
+
 function buildRestoredPreviewState(
   result: PreviewFlowResult,
   selectedSize: FrameSizeOption | null,
+  orientationHint: FrameOrientation | null = null,
 ): Pick<PreviewState, "selectedSize" | "dotPreviews" | "finalUrl"> | null {
   if (!result.previewId || !result.imageUrl) return null
   const size = selectedSize ?? initialPreviewState.selectedSize
@@ -108,6 +131,8 @@ function buildRestoredPreviewState(
     selectedOptionId,
     sourceImageUrl: result.sourceImageUrl ?? null,
     sourceGroupId: result.sourceGroupId ?? null,
+    orientation: result.orientation ?? orientationHint ?? null,
+    crop: result.crop ?? null,
   }
 
   return {
@@ -136,12 +161,32 @@ export function usePreviewFlow() {
   }, [])
 
   const processDotPreviewForSize = useCallback(
-    (file: File, sessionToken: string, preferredSizeId: FrameSizeOption["id"]) => {
+    (file: File, sessionToken: string, preferredSizeId: FrameSizeOption["id"], generationOptions?: PreviewGenerationOptions) => {
       const requestId = crypto.randomUUID()
       processingRequestRef.current[preferredSizeId] = requestId
-      dispatch({ type: "START_PROCESSING", sessionToken, sizeId: preferredSizeId })
+      dispatch({
+        type: "START_PROCESSING",
+        sessionToken,
+        sizeId: preferredSizeId,
+        orientation: generationOptions?.orientation ?? null,
+        crop: generationOptions?.crop ?? null,
+      })
 
-      prepareArtworkForFrame(file, { preferredSizeId }).then(
+      const manualCrop = generationOptions?.crop
+        ? {
+            x: generationOptions.crop.offsetX,
+            y: generationOptions.crop.offsetY,
+            width: generationOptions.crop.cropWidth,
+            height: generationOptions.crop.cropHeight,
+          }
+        : null
+
+      prepareArtworkForFrame(file, {
+        preferredSizeId,
+        orientation: generationOptions?.orientation ?? null,
+        crop: manualCrop,
+        zoom: generationOptions?.crop?.zoom ?? null,
+      }).then(
         (preparedArtwork) => {
           if (
             processingRequestRef.current[preferredSizeId] !== requestId ||
@@ -174,6 +219,8 @@ export function usePreviewFlow() {
                 options: [],
                 sourceImageUrl: null,
                 sourceGroupId: null,
+                orientation: preparedArtwork.orientation,
+                crop: preparedArtwork.crop,
               })
 
           previewPromise.then(
@@ -212,6 +259,8 @@ export function usePreviewFlow() {
                 options: normalizePreviewOptions(result),
                 sourceImageUrl: result.sourceImageUrl ?? null,
                 sourceGroupId: result.sourceGroupId ?? null,
+                orientation: preparedArtwork.orientation,
+                crop: preparedArtwork.crop,
               })
 
               captureEvent(previewClient ? 'mge_dot_preview_completed' : 'preview_processing_completed', {
@@ -327,23 +376,62 @@ export function usePreviewFlow() {
     dispatch({ type: "RESET" })
   }, [revokePreviewUrls, state.finalUrl, state.selectedSize?.id, state.status, state.temporaryUrl])
 
+  const fetchSourceImageFile = useCallback(async (sourceImageUrl: string, previewId?: string | null): Promise<HydratedSourceImage | null> => {
+    try {
+      const response = await fetch(sourceImageUrl, { credentials: 'omit' })
+      if (!response.ok) throw new Error(`Source image fetch failed: ${response.status}`)
+      const blob = await response.blob()
+      const contentType = blob.type || response.headers.get('Content-Type') || 'image/jpeg'
+      const extension = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
+      return {
+        file: new File([blob], `restored-preview-${previewId ?? 'source'}.${extension}`, { type: contentType }),
+        sessionToken: crypto.randomUUID(),
+      }
+    } catch (error) {
+      captureEvent('preview_source_image_hydration_failed', {
+        preview_id: previewId ?? undefined,
+        selected_size: stateRef.current.selectedSize?.id,
+        error_message: error instanceof Error ? error.message : 'Source image hydration failed',
+      })
+      return null
+    }
+  }, [])
+
   const handleSetSize = useCallback(
-    (size: FrameSizeOption) => {
+    async (size: FrameSizeOption) => {
+      const currentState = stateRef.current
+      const cachedPreview = currentState.dotPreviews[size.id]
+      const activePreview = currentState.selectedSize
+        ? currentState.dotPreviews[currentState.selectedSize.id] ?? null
+        : null
+
       dispatch({ type: "SET_SIZE", size })
 
-      const currentState = stateRef.current
-      if (!currentState.selectedFile || !currentState.sessionToken) {
+      if (cachedPreview?.status === 'ready' || cachedPreview?.status === 'processing') {
         return
       }
 
-      const cachedPreview = currentState.dotPreviews[size.id]
-      if (cachedPreview?.status === 'ready' || cachedPreview?.status === 'processing') {
+      if (!currentState.selectedFile || !currentState.sessionToken) {
+        if (!activePreview?.sourceImageUrl) return
+
+        const hydrated = await fetchSourceImageFile(activePreview.sourceImageUrl, activePreview.previewId)
+        if (!hydrated) return
+
+        dispatch({ type: "HYDRATE_SOURCE_IMAGE", file: hydrated.file, sessionToken: hydrated.sessionToken })
+        captureEvent('preview_source_image_hydrated', {
+          preview_id: activePreview.previewId ?? undefined,
+          selected_size: size.id,
+          hydration_reason: 'size_switch',
+        })
+        processDotPreviewForSize(hydrated.file, hydrated.sessionToken, size.id, {
+          orientation: activePreview.orientation ?? null,
+        })
         return
       }
 
       processDotPreviewForSize(currentState.selectedFile, currentState.sessionToken, size.id)
     },
-    [processDotPreviewForSize],
+    [fetchSourceImageFile, processDotPreviewForSize],
   )
 
   const handleSetPreviewOption = useCallback((sizeId: string, optionId: string) => {
@@ -354,38 +442,76 @@ export function usePreviewFlow() {
     })
   }, [])
 
+  const handleRestorePreviewResult = useCallback((result: RestorablePreviewResult, selectedSize: FrameSizeOption, orientationHint: FrameOrientation | null = null) => {
+    const restored = buildRestoredPreviewState(result, selectedSize, orientationHint)
+    if (!restored) return false
+
+    dispatch({ type: "UPSERT_RESTORED_PREVIEW", state: restored })
+    captureEvent('checkout_preview_restored', {
+      selected_size: restored.selectedSize?.id,
+      preview_id: result.previewId ?? undefined,
+      restore_source: 'identity_project_variant',
+      preview_status: result.status,
+      preview_option_count: result.options.length,
+    })
+    return true
+  }, [])
+
+  const handleMarkSizeProcessing = useCallback((
+    size: FrameSizeOption,
+    source?: {
+      sourceImageUrl?: string | null
+      sourceGroupId?: string | null
+      orientation?: FrameOrientation | null
+      crop?: CropDetails | null
+    },
+  ) => {
+    dispatch({
+      type: "MARK_SIZE_PROCESSING",
+      size,
+      sourceImageUrl: source?.sourceImageUrl ?? null,
+      sourceGroupId: source?.sourceGroupId ?? null,
+      orientation: source?.orientation ?? null,
+      crop: source?.crop ?? null,
+    })
+  }, [])
+
+  const handleApplyCrop = useCallback((sizeId: string, orientation: FrameOrientation, crop: CropDetails) => {
+    const currentState = stateRef.current
+    if (!currentState.selectedFile || !currentState.sessionToken) {
+      dispatch({ type: "SET_PREVIEW_CROP", sizeId, orientation, crop })
+      return
+    }
+
+    captureEvent('preview_crop_metadata_updated', {
+      selected_size: sizeId,
+      orientation,
+      crop_source: crop.source,
+    })
+    processDotPreviewForSize(currentState.selectedFile, currentState.sessionToken, sizeId, { orientation, crop })
+  }, [processDotPreviewForSize])
+
   const hydrateSourceImage = useCallback(async (sourceImageUrl: string, previewId?: string | null): Promise<boolean> => {
     if (!sourceImageUrl) return false
     const currentState = stateRef.current
     if (currentState.selectedFile && currentState.sessionToken) return true
 
-    try {
-      const response = await fetch(sourceImageUrl, { credentials: 'omit' })
-      if (!response.ok) throw new Error(`Source image fetch failed: ${response.status}`)
-      const blob = await response.blob()
-      const contentType = blob.type || response.headers.get('Content-Type') || 'image/jpeg'
-      const extension = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
-      const file = new File([blob], `restored-preview-${previewId ?? 'source'}.${extension}`, { type: contentType })
-      const sessionToken = crypto.randomUUID()
-      dispatch({ type: "HYDRATE_SOURCE_IMAGE", file, sessionToken })
-      captureEvent('preview_source_image_hydrated', {
-        preview_id: previewId ?? undefined,
-        selected_size: currentState.selectedSize?.id,
-      })
-      return true
-    } catch (error) {
-      captureEvent('preview_source_image_hydration_failed', {
-        preview_id: previewId ?? undefined,
-        selected_size: currentState.selectedSize?.id,
-        error_message: error instanceof Error ? error.message : 'Source image hydration failed',
-      })
-      return false
-    }
-  }, [])
+    const hydrated = await fetchSourceImageFile(sourceImageUrl, previewId)
+    if (!hydrated) return false
+
+    dispatch({ type: "HYDRATE_SOURCE_IMAGE", file: hydrated.file, sessionToken: hydrated.sessionToken })
+    captureEvent('preview_source_image_hydrated', {
+      preview_id: previewId ?? undefined,
+      selected_size: currentState.selectedSize?.id,
+      hydration_reason: 'account_restore',
+    })
+    return true
+  }, [fetchSourceImageFile])
 
   useEffect(() => {
     const previewId = readPreviewIdFromUrl()
     const normalizedUrlSizeId = normalizePreviewSizeIdFromUrl()
+    const urlOrientation = readPreviewOrientationFromUrl()
     const restored = restoreStoredPreviewState()
     const restoredPreviewId = restored?.selectedSize
       ? restored.dotPreviews[restored.selectedSize.id]?.previewId
@@ -420,7 +546,7 @@ export function usePreviewFlow() {
       )
       .then((preview) => {
         if (cancelled) return
-        const restoredFromUrl = buildRestoredPreviewState(preview, selectedSize)
+        const restoredFromUrl = buildRestoredPreviewState(preview, selectedSize, urlOrientation)
         if (!restoredFromUrl) {
           captureEvent('checkout_preview_restore_failed', {
             preview_id: previewId,
@@ -474,6 +600,9 @@ export function usePreviewFlow() {
       reset: handleReset,
       setSize: handleSetSize,
       setPreviewOption: handleSetPreviewOption,
+      restorePreviewResult: handleRestorePreviewResult,
+      markSizeProcessing: handleMarkSizeProcessing,
+      applyCrop: handleApplyCrop,
       hydrateSourceImage,
     },
   }

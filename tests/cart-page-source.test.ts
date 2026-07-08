@@ -31,7 +31,10 @@ test('cart page fetches orderable purchase options per ready preview', () => {
   assert.equal(cartSource.includes('client.pollPurchaseOptions(preview.previewId)'), true)
   assert.equal(cartSource.includes('result.purchaseOptions.filter(isOrderablePurchaseOption)'), true)
   assert.equal(cartSource.includes('function isOrderablePurchaseOption'), true)
+  assert.equal(cartSource.includes('function isAllowedFramePurchaseOption'), true)
+  assert.equal(cartSource.includes('DOT_FRAME_OPTIONS_ENABLED.includes'), true)
   assert.equal(cartSource.includes('!isExpressPurchaseOption(option)'), true)
+  assert.equal(cartSource.includes('DOT_EXPRESS_OPTIONS_ENABLED || !isExpressPurchaseOption(option)'), true)
   assert.equal(cartSource.includes('function isExpressPurchaseOption'), true)
   assert.match(cartSource, /express\|rush\|fast/)
 })
@@ -48,12 +51,19 @@ test('cart page supports explicit selection, purchase option choice, and quantit
   assert.equal(cartSource.includes('max={99}'), true)
 })
 
-test('cart page labels framed purchase options without exposing raw order lines in the UI', () => {
+test('cart page labels framed purchase options from MGE frame metadata first', () => {
   assert.equal(cartSource.includes('function purchaseOptionLabel'), true)
+  assert.equal(cartSource.includes('option.frameLabel'), true)
+  assert.equal(cartSource.includes('option.productionSpeedLabel'), true)
+  assert.equal(cartSource.includes('function frameLabelFromSkuParts'), true)
+  assert.equal(cartSource.includes('function frameLabelFromText'), true)
+  assert.equal(cartSource.includes('DOT_EXPRESS_OPTIONS_ENABLED ? speedLabel : ""'), true)
   assert.match(cartSource, /Without frame/)
   assert.match(cartSource, /With frame/)
-  assert.equal(cartSource.includes('skuParts.includes("FRAME")'), true)
+  assert.equal(cartSource.includes('skuParts.some'), true)
   assert.match(cartSource, /NOFRAME|NO-FRAME|UNFRAMED|WO/)
+  assert.match(cartSource, /WPM/)
+  assert.match(cartSource, /WDIYF/)
 })
 
 test('cart page syncs selected lines to one MGE draft before Stripe handoff', () => {
@@ -110,9 +120,11 @@ test('cart renders designs as single-line rows with preview in col4 and details 
   assert.equal(cartSource.includes('text-right text-sm font-black'), true)
 })
 
-test('cart hides the option selector when only one purchase option is available', () => {
+test('cart uses styled option pills and hides them when only one purchase option is available', () => {
   assert.equal(cartSource.includes('const hasMultipleOptions = optionState.options.length > 1'), true)
-  assert.match(cartSource, /hasMultipleOptions \? \([\s\S]*<select/)
+  assert.match(cartSource, /hasMultipleOptions \? \([\s\S]*role="radiogroup"/)
+  assert.equal(cartSource.includes('aria-pressed={isSelected}'), true)
+  assert.equal(cartSource.includes('<select'), false)
   assert.match(cartSource, /purchaseOptionLabel\(selectedOption\)/)
 })
 

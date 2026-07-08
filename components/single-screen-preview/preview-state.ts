@@ -11,9 +11,11 @@ export type PreviewStatus =
 import {
   DEFAULT_FRAME_SIZE_ID,
   getFrameSizeOption,
+  type CropDetails,
+  type FrameOrientation,
   type FrameSizeOption,
 } from '@/lib/image-processing'
-export type { FrameSizeOption }
+export type { CropDetails, FrameOrientation, FrameSizeOption }
 
 export type DotPreviewStatus = "idle" | "processing" | "ready" | "error"
 
@@ -44,6 +46,10 @@ export interface DotPreviewResult {
   sourceImageUrl?: string | null
   /** Stable source/project grouping id, separate from the source image URL. */
   sourceGroupId?: string | null
+  /** Crop orientation used to generate this size variant. */
+  orientation?: FrameOrientation | null
+  /** Source crop used to generate this size variant. */
+  crop?: CropDetails | null
 }
 
 export interface PreviewState {
@@ -60,14 +66,17 @@ export interface PreviewState {
 export type PreviewEvent =
   | { type: "SELECT_IMAGE"; file: File; sessionToken: string }
   | { type: "RESTORE_PREVIEW"; state: Pick<PreviewState, "selectedSize" | "dotPreviews" | "finalUrl"> }
+  | { type: "UPSERT_RESTORED_PREVIEW"; state: Pick<PreviewState, "selectedSize" | "dotPreviews" | "finalUrl"> }
   | { type: "HYDRATE_SOURCE_IMAGE"; file: File; sessionToken: string }
   | { type: "TEMP_PREVIEW_READY"; url: string; sessionToken: string }
-  | { type: "START_PROCESSING"; sessionToken: string; sizeId?: string }
-  | { type: "PROCESSING_SUCCESS"; url: string; sessionToken: string; sizeId?: string; previewId?: string | null; status?: string; orderable?: boolean | null; options?: PreviewOptionChoice[]; sourceImageUrl?: string | null; sourceGroupId?: string | null }
+  | { type: "START_PROCESSING"; sessionToken: string; sizeId?: string; orientation?: FrameOrientation | null; crop?: CropDetails | null }
+  | { type: "PROCESSING_SUCCESS"; url: string; sessionToken: string; sizeId?: string; previewId?: string | null; status?: string; orderable?: boolean | null; options?: PreviewOptionChoice[]; sourceImageUrl?: string | null; sourceGroupId?: string | null; orientation?: FrameOrientation | null; crop?: CropDetails | null }
   | { type: "PROCESSING_FAILURE"; error: string; sessionToken: string; sizeId?: string }
   | { type: "RETRY" }
   | { type: "RESET" }
   | { type: "SET_SIZE"; size: FrameSizeOption }
+  | { type: "MARK_SIZE_PROCESSING"; size: FrameSizeOption; sourceImageUrl?: string | null; sourceGroupId?: string | null; orientation?: FrameOrientation | null; crop?: CropDetails | null }
+  | { type: "SET_PREVIEW_CROP"; sizeId: string; orientation: FrameOrientation; crop: CropDetails }
   | { type: "SET_PREVIEW_OPTION"; sizeId: string; optionId: string }
 
 export const initialPreviewState: PreviewState = {
@@ -81,7 +90,7 @@ export const initialPreviewState: PreviewState = {
   error: null,
 }
 
-function createProcessingDotPreview(sizeId: string, previous?: Pick<DotPreviewResult, "sourceImageUrl" | "sourceGroupId"> | null): DotPreviewResult {
+function createProcessingDotPreview(sizeId: string, previous?: Pick<DotPreviewResult, "sourceImageUrl" | "sourceGroupId" | "orientation" | "crop"> | null): DotPreviewResult {
   return {
     sizeId,
     status: "processing",
@@ -94,6 +103,8 @@ function createProcessingDotPreview(sizeId: string, previous?: Pick<DotPreviewRe
     selectedOptionId: null,
     sourceImageUrl: previous?.sourceImageUrl ?? null,
     sourceGroupId: previous?.sourceGroupId ?? null,
+    orientation: previous?.orientation ?? null,
+    crop: previous?.crop ?? null,
   }
 }
 
@@ -194,13 +205,19 @@ export function previewReducer(
     case "START_PROCESSING": {
       if (state.sessionToken !== event.sessionToken) return state
       const sizeId = event.sizeId ?? state.selectedSize?.id
+      const previousPreview = sizeId ? state.dotPreviews[sizeId] ?? getSelectedDotPreview(state) : getSelectedDotPreview(state)
       return {
         ...state,
         status: "processing",
         dotPreviews: sizeId
           ? {
               ...state.dotPreviews,
-              [sizeId]: createProcessingDotPreview(sizeId, state.dotPreviews[sizeId] ?? getSelectedDotPreview(state)),
+              [sizeId]: createProcessingDotPreview(sizeId, {
+                sourceImageUrl: previousPreview?.sourceImageUrl ?? null,
+                sourceGroupId: previousPreview?.sourceGroupId ?? null,
+                orientation: event.orientation ?? previousPreview?.orientation ?? null,
+                crop: event.crop ?? previousPreview?.crop ?? null,
+              }),
             }
           : state.dotPreviews,
         error: null,
@@ -238,6 +255,8 @@ export function previewReducer(
                 selectedOptionId,
                 sourceImageUrl: event.sourceImageUrl ?? previousPreview?.sourceImageUrl ?? null,
                 sourceGroupId: event.sourceGroupId ?? previousPreview?.sourceGroupId ?? null,
+                orientation: event.orientation ?? previousPreview?.orientation ?? null,
+                crop: event.crop ?? previousPreview?.crop ?? null,
               },
             }
           : state.dotPreviews,
@@ -269,6 +288,8 @@ export function previewReducer(
                 selectedOptionId: null,
                 sourceImageUrl: state.dotPreviews[sizeId]?.sourceImageUrl ?? getSelectedDotPreview(state)?.sourceImageUrl ?? null,
                 sourceGroupId: state.dotPreviews[sizeId]?.sourceGroupId ?? getSelectedDotPreview(state)?.sourceGroupId ?? null,
+                orientation: state.dotPreviews[sizeId]?.orientation ?? getSelectedDotPreview(state)?.orientation ?? null,
+                crop: state.dotPreviews[sizeId]?.crop ?? getSelectedDotPreview(state)?.crop ?? null,
               },
             }
           : state.dotPreviews,
@@ -306,9 +327,11 @@ export function previewReducer(
     case "SET_SIZE": {
       const dp = state.dotPreviews[event.size.id]
       const hasSourceContext = Boolean(state.selectedFile && state.sessionToken)
+      const selectedPreview = getSelectedDotPreview(state)
+      const hasRestoredSourceImage = Boolean(selectedPreview?.sourceImageUrl)
       const hasRestoredPreview = Object.values(state.dotPreviews).some((preview) => preview.status === "ready")
-      const shouldCreateProcessingPreview = Boolean(hasSourceContext && !dp)
-      const shouldCreateUnavailablePreview = Boolean(!hasSourceContext && hasRestoredPreview && !dp)
+      const shouldCreateProcessingPreview = Boolean((hasSourceContext || hasRestoredSourceImage) && !dp)
+      const shouldCreateUnavailablePreview = Boolean(!hasSourceContext && !hasRestoredSourceImage && hasRestoredPreview && !dp)
       const resolvedUrl = dp?.status === 'ready' ? resolveActiveUrl(dp) ?? dp.imageUrl ?? null : null
       const nextState = {
         ...state,
@@ -317,7 +340,7 @@ export function previewReducer(
         dotPreviews: shouldCreateProcessingPreview
           ? {
               ...state.dotPreviews,
-              [event.size.id]: createProcessingDotPreview(event.size.id, getSelectedDotPreview(state)),
+              [event.size.id]: createProcessingDotPreview(event.size.id, selectedPreview),
             }
           : shouldCreateUnavailablePreview
             ? {
@@ -332,8 +355,10 @@ export function previewReducer(
                   error: "Upload again to generate this size.",
                   options: [],
                   selectedOptionId: null,
-                  sourceImageUrl: getSelectedDotPreview(state)?.sourceImageUrl ?? null,
-                  sourceGroupId: getSelectedDotPreview(state)?.sourceGroupId ?? null,
+                  sourceImageUrl: selectedPreview?.sourceImageUrl ?? null,
+                  sourceGroupId: selectedPreview?.sourceGroupId ?? null,
+                  orientation: selectedPreview?.orientation ?? null,
+                  crop: selectedPreview?.crop ?? null,
                 },
               }
             : state.dotPreviews,
@@ -341,6 +366,62 @@ export function previewReducer(
       return {
         ...nextState,
         status: deriveStatusForSelectedSize(nextState),
+      }
+    }
+
+    case "UPSERT_RESTORED_PREVIEW": {
+      const nextState: PreviewState = {
+        ...state,
+        selectedSize: event.state.selectedSize,
+        finalUrl: event.state.finalUrl,
+        dotPreviews: {
+          ...state.dotPreviews,
+          ...event.state.dotPreviews,
+        },
+        error: null,
+      }
+      return {
+        ...nextState,
+        status: deriveStatusForSelectedSize(nextState),
+      }
+    }
+
+    case "MARK_SIZE_PROCESSING": {
+      const selectedPreview = getSelectedDotPreview(state)
+      const nextState: PreviewState = {
+        ...state,
+        selectedSize: event.size,
+        finalUrl: null,
+        dotPreviews: {
+          ...state.dotPreviews,
+          [event.size.id]: createProcessingDotPreview(event.size.id, {
+            sourceImageUrl: event.sourceImageUrl ?? selectedPreview?.sourceImageUrl ?? null,
+            sourceGroupId: event.sourceGroupId ?? selectedPreview?.sourceGroupId ?? null,
+            orientation: event.orientation ?? selectedPreview?.orientation ?? null,
+            crop: event.crop ?? selectedPreview?.crop ?? null,
+          }),
+        },
+        error: null,
+      }
+      return {
+        ...nextState,
+        status: deriveStatusForSelectedSize(nextState),
+      }
+    }
+
+    case "SET_PREVIEW_CROP": {
+      const dp = state.dotPreviews[event.sizeId]
+      if (!dp) return state
+      return {
+        ...state,
+        dotPreviews: {
+          ...state.dotPreviews,
+          [event.sizeId]: {
+            ...dp,
+            orientation: event.orientation,
+            crop: event.crop,
+          },
+        },
       }
     }
 
@@ -377,6 +458,7 @@ export interface SceneDisplayModel {
   imageSrc: string | null
   previewKind: "none" | "temporary" | "final"
   selectedSize: FrameSizeOption | null
+  orientation: FrameOrientation | null
   isProcessing: boolean
   productCode: "DOT" | null
 }
@@ -385,17 +467,19 @@ export function deriveSceneModel(state: PreviewState): SceneDisplayModel {
   const selectedPreview = getSelectedDotPreview(state)
   const activeUrl = selectedPreview?.status === "ready" ? resolveActiveUrl(selectedPreview) : null
   const fallbackUrl = activeUrl ?? (selectedPreview?.status === "ready" ? selectedPreview.imageUrl : null)
-  const imageSrc = fallbackUrl ?? state.temporaryUrl ?? state.finalUrl
+  const processingSourceUrl = selectedPreview?.status === "processing" ? selectedPreview.sourceImageUrl ?? null : null
+  const imageSrc = fallbackUrl ?? processingSourceUrl ?? state.temporaryUrl ?? state.finalUrl
 
   return {
     imageSrc,
     previewKind:
       activeUrl !== null || (selectedPreview?.status === "ready" && selectedPreview.imageUrl !== null)
         ? "final"
-        : state.temporaryUrl !== null
+        : processingSourceUrl !== null || state.temporaryUrl !== null
           ? "temporary"
           : "none",
     selectedSize: state.selectedSize,
+    orientation: selectedPreview?.orientation ?? null,
     isProcessing: selectedPreview?.status === "processing" || state.status === "processing",
     productCode: selectedPreview?.status === "ready" || selectedPreview?.status === "processing" ? "DOT" : null,
   }

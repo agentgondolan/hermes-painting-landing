@@ -4,6 +4,23 @@ import canvasSpecData from './canvas-spec.json'
 
 export type FrameSizeId = string
 export type FrameOrientation = 'vertical' | 'horizontal'
+export type CropSource = 'centered' | 'manual'
+
+export type CropBox = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export type ManualCropInput = CropBox
+
+export type VariantCropIntent = {
+  sizeId: FrameSizeId
+  orientation: FrameOrientation
+  crop: ManualCropInput
+  zoom?: number | null
+}
 
 export type CanvasSpecFrameSize = {
   id: string
@@ -33,6 +50,7 @@ const CANVAS_SPEC = canvasSpecData as CanvasSpec
 
 export type CropDetails = {
   applied: boolean
+  source: CropSource
   sourceWidth: number
   sourceHeight: number
   cropWidth: number
@@ -40,6 +58,8 @@ export type CropDetails = {
   offsetX: number
   offsetY: number
   targetRatio: number
+  zoom: number | null
+  normalized: CropBox
 }
 
 export type ProcessedArtwork = {
@@ -60,6 +80,9 @@ export type PreparedArtworkForFrame = ProcessedArtwork & {
 
 export type ProcessArtworkOptions = {
   preferredSizeId?: FrameSizeId
+  orientation?: FrameOrientation | null
+  crop?: ManualCropInput | null
+  zoom?: number | null
 }
 
 export type ImageProcessor = (file: File, options?: ProcessArtworkOptions) => Promise<ProcessedArtwork>
@@ -129,51 +152,102 @@ export function getClosestFrameSizeId(sourceRatio: number, orientation: FrameOri
   }, DEFAULT_FRAME_SIZE_ID)
 }
 
+function clampNumber(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min
+  return Math.min(max, Math.max(min, value))
+}
+
+function buildCropDetails(
+  source: CropSource,
+  sourceWidth: number,
+  sourceHeight: number,
+  cropWidth: number,
+  cropHeight: number,
+  offsetX: number,
+  offsetY: number,
+  targetRatio: number,
+  zoom: number | null,
+): CropDetails {
+  const safeSourceWidth = Math.max(1, Math.round(sourceWidth))
+  const safeSourceHeight = Math.max(1, Math.round(sourceHeight))
+  const safeCropWidth = Math.max(1, Math.min(safeSourceWidth, Math.round(cropWidth)))
+  const safeCropHeight = Math.max(1, Math.min(safeSourceHeight, Math.round(cropHeight)))
+  const safeOffsetX = Math.round(clampNumber(offsetX, 0, safeSourceWidth - safeCropWidth))
+  const safeOffsetY = Math.round(clampNumber(offsetY, 0, safeSourceHeight - safeCropHeight))
+
+  return {
+    applied: source === 'manual' || safeCropWidth !== safeSourceWidth || safeCropHeight !== safeSourceHeight || safeOffsetX !== 0 || safeOffsetY !== 0,
+    source,
+    sourceWidth: safeSourceWidth,
+    sourceHeight: safeSourceHeight,
+    cropWidth: safeCropWidth,
+    cropHeight: safeCropHeight,
+    offsetX: safeOffsetX,
+    offsetY: safeOffsetY,
+    targetRatio,
+    zoom,
+    normalized: {
+      x: safeOffsetX / safeSourceWidth,
+      y: safeOffsetY / safeSourceHeight,
+      width: safeCropWidth / safeSourceWidth,
+      height: safeCropHeight / safeSourceHeight,
+    },
+  }
+}
+
 export function getCenteredCrop(sourceWidth: number, sourceHeight: number, targetRatio: number): CropDetails {
   const sourceRatio = sourceWidth / sourceHeight
 
   if (Math.abs(sourceRatio - targetRatio) <= EPSILON) {
-    return {
-      applied: false,
-      sourceWidth,
-      sourceHeight,
-      cropWidth: sourceWidth,
-      cropHeight: sourceHeight,
-      offsetX: 0,
-      offsetY: 0,
-      targetRatio,
-    }
+    return buildCropDetails('centered', sourceWidth, sourceHeight, sourceWidth, sourceHeight, 0, 0, targetRatio, null)
   }
 
   if (sourceRatio > targetRatio) {
     const cropWidth = Math.round(sourceHeight * targetRatio)
     const offsetX = Math.max(0, Math.round((sourceWidth - cropWidth) / 2))
 
-    return {
-      applied: true,
-      sourceWidth,
-      sourceHeight,
-      cropWidth,
-      cropHeight: sourceHeight,
-      offsetX,
-      offsetY: 0,
-      targetRatio,
-    }
+    return buildCropDetails('centered', sourceWidth, sourceHeight, cropWidth, sourceHeight, offsetX, 0, targetRatio, null)
   }
 
   const cropHeight = Math.round(sourceWidth / targetRatio)
   const offsetY = Math.max(0, Math.round((sourceHeight - cropHeight) / 2))
 
-  return {
-    applied: true,
-    sourceWidth,
-    sourceHeight,
-    cropWidth: sourceWidth,
-    cropHeight,
-    offsetX: 0,
-    offsetY,
-    targetRatio,
+  return buildCropDetails('centered', sourceWidth, sourceHeight, sourceWidth, cropHeight, 0, offsetY, targetRatio, null)
+}
+
+export function getManualCrop(
+  sourceWidth: number,
+  sourceHeight: number,
+  targetRatio: number,
+  crop: ManualCropInput,
+  zoom: number | null = null,
+): CropDetails {
+  const boundedWidth = clampNumber(crop.width, 1, sourceWidth)
+  const boundedHeight = clampNumber(crop.height, 1, sourceHeight)
+  const centerX = clampNumber(crop.x, 0, sourceWidth) + boundedWidth / 2
+  const centerY = clampNumber(crop.y, 0, sourceHeight) + boundedHeight / 2
+  let cropWidth = boundedWidth
+  let cropHeight = Math.round(cropWidth / targetRatio)
+
+  if (cropHeight > boundedHeight) {
+    cropHeight = boundedHeight
+    cropWidth = Math.round(cropHeight * targetRatio)
   }
+
+  if (cropWidth > sourceWidth) {
+    cropWidth = sourceWidth
+    cropHeight = Math.round(cropWidth / targetRatio)
+  }
+
+  if (cropHeight > sourceHeight) {
+    cropHeight = sourceHeight
+    cropWidth = Math.round(cropHeight * targetRatio)
+  }
+
+  const offsetX = clampNumber(centerX - cropWidth / 2, 0, sourceWidth - cropWidth)
+  const offsetY = clampNumber(centerY - cropHeight / 2, 0, sourceHeight - cropHeight)
+
+  return buildCropDetails('manual', sourceWidth, sourceHeight, cropWidth, cropHeight, offsetX, offsetY, targetRatio, zoom)
 }
 
 function formatCropStatus(sizeId: FrameSizeId, orientation: FrameOrientation, crop: CropDetails) {
@@ -341,16 +415,18 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string) {
 
 function getPreparedArtworkMeta(image: HTMLImageElement, options?: ProcessArtworkOptions) {
   const preferredSize = options?.preferredSizeId ? getFrameSizeOption(options.preferredSizeId) : null
-  const orientation = preferredSize
+  const orientation = options?.orientation ?? (preferredSize
     ? preferredSize.widthCm >= preferredSize.heightCm
       ? 'horizontal'
       : 'vertical'
-    : getOrientationFromDimensions(image.naturalWidth, image.naturalHeight)
+    : getOrientationFromDimensions(image.naturalWidth, image.naturalHeight))
   const sourceRatio = image.naturalWidth / image.naturalHeight
   const sizeId = options?.preferredSizeId ?? getClosestFrameSizeId(sourceRatio, orientation)
   const sizeLabel = getFrameSizeOption(sizeId).label
   const targetRatio = getFrameRatio(sizeId, orientation)
-  const crop = getCenteredCrop(image.naturalWidth, image.naturalHeight, targetRatio)
+  const crop = options?.crop
+    ? getManualCrop(image.naturalWidth, image.naturalHeight, targetRatio, options.crop, options.zoom ?? null)
+    : getCenteredCrop(image.naturalWidth, image.naturalHeight, targetRatio)
 
   return { orientation, sizeId, sizeLabel, crop }
 }
