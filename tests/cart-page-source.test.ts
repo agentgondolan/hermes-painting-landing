@@ -21,8 +21,10 @@ test('cart page loads verified identity projects and not local flat fallback onl
 test('cart page renders source images with ready 2D designs and no 3D scene', () => {
   assert.equal(cartSource.includes('project.sourceImageUrl'), true)
   assert.equal(cartSource.includes('alt="Source image"'), true)
+  assert.match(cartSource, /alt="Source image"[\s\S]*loading="lazy"[\s\S]*decoding="async"/)
   assert.equal(cartSource.includes('designImageUrl(preview)'), true)
   assert.equal(cartSource.includes('alt="Ready DOT design"'), true)
+  assert.match(cartSource, /alt="Ready DOT design"[\s\S]*loading="lazy"[\s\S]*decoding="async"/)
   assert.equal(cartSource.includes('ProductSceneCanvas'), false)
   assert.equal(cartSource.includes('SingleScreenPreviewShell'), false)
 })

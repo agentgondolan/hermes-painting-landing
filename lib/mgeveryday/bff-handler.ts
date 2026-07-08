@@ -377,7 +377,8 @@ async function proxyPreviewImage(request: Request): Promise<Response> {
     status: 200,
     headers: {
       'Content-Type': contentType,
-      'Cache-Control': 'public, max-age=3600',
+      'Cache-Control': 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=604800',
+      'Vary': 'Accept',
     },
   })
 }
@@ -716,7 +717,11 @@ function withCors(response: Response, request: Request, env: Env): Response {
   if (!origin) return response
   const next = new Response(response.body, response)
   for (const [key, value] of Object.entries(corsHeaders(origin))) {
-    next.headers.set(key, value)
+    if (key.toLowerCase() === 'vary') {
+      next.headers.set(key, mergeVaryHeader(next.headers.get(key), value))
+    } else {
+      next.headers.set(key, value)
+    }
   }
   return next
 }
@@ -737,6 +742,15 @@ function corsHeaders(origin: string): Record<string, string> {
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   }
+}
+
+function mergeVaryHeader(current: string | null, next: string): string {
+  const values = new Set(
+    [current, next]
+      .filter((value): value is string => Boolean(value))
+      .flatMap((value) => value.split(',').map((item) => item.trim()).filter(Boolean)),
+  )
+  return Array.from(values).join(', ')
 }
 
 function isPublicHttpImageUrl(url: URL): boolean {

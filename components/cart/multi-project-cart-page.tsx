@@ -400,7 +400,13 @@ function ProjectDesigns({
     <section className="rounded-[1.25rem] border border-[#9432c1]/12 bg-[#fbf8ff] p-3">
       <div className="grid gap-3 sm:grid-cols-[7rem_minmax(0,1fr)]">
         {project.sourceImageUrl ? (
-          <img src={project.sourceImageUrl} alt="Source image" className="aspect-square w-full rounded-[1rem] object-cover" />
+          <img
+            src={project.sourceImageUrl}
+            alt="Source image"
+            loading="lazy"
+            decoding="async"
+            className="aspect-square w-full rounded-[1rem] object-cover"
+          />
         ) : (
           <div className="flex aspect-square w-full items-center justify-center rounded-[1rem] bg-[#2e2d2c]/6 text-xs font-black uppercase text-[#2e2d2c]/35">Image</div>
         )}
@@ -425,7 +431,13 @@ function ProjectDesigns({
                         onClick={() => onPreviewOpen({ url: thumbnailUrl, label: `${sizeLabel(preview)} DOT design` })}
                         className="flex h-36 w-full items-center justify-center rounded-[0.8rem] transition hover:bg-[#9432c1]/6"
                       >
-                        <img src={thumbnailUrl} alt="Ready DOT design" className="h-36 w-auto max-w-full rounded-[0.45rem] object-contain" />
+                        <img
+                          src={thumbnailUrl}
+                          alt="Ready DOT design"
+                          loading="lazy"
+                          decoding="async"
+                          className="h-36 w-auto max-w-full rounded-[0.45rem] object-contain"
+                        />
                       </button>
                     ) : (
                       <div className="flex h-36 w-full items-center justify-center text-[10px] font-black uppercase text-[#2e2d2c]/35">Design</div>

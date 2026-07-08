@@ -203,6 +203,34 @@ test('preview BFF preserves orientation metadata when MGE returns it', async () 
   }
 })
 
+test('image proxy caches account source and preview images for repeat checkout views', async () => {
+  const originalFetch = globalThis.fetch
+  const calls: string[] = []
+
+  globalThis.fetch = (async (url) => {
+    calls.push(String(url))
+    return new Response('fake-image', {
+      status: 200,
+      headers: { 'Content-Type': 'image/jpeg' },
+    })
+  }) as typeof fetch
+
+  try {
+    const response = await handleMgeBffRequest(
+      new Request('https://makeyourcraft.com/api/mge/image?url=https%3A%2F%2Fcdn.example.test%2Fsource.jpg%3Fsig%3Dabc'),
+      env,
+    )
+
+    assert.equal(response.status, 200)
+    assert.equal(calls[0], 'https://cdn.example.test/source.jpg?sig=abc')
+    assert.equal(response.headers.get('Content-Type'), 'image/jpeg')
+    assert.equal(response.headers.get('Cache-Control'), 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=604800')
+    assert.equal(response.headers.get('Vary'), 'Accept, Origin')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('purchase-options BFF rejects invalid preview IDs before calling MGE', async () => {
   const originalFetch = globalThis.fetch
   let called = false
