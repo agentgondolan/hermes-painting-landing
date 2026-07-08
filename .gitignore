@@ -7,6 +7,8 @@ node_modules
 .dev.vars
 .next.bak-*
 tsconfig.tsbuildinfo
+artifacts/
+reference/dottingo-drive/
 
 # Local Wrangler state
 .wrangler/
