@@ -60,6 +60,20 @@ test('account panel exposes a temporary Matej magic-link shortcut without bypass
   assert.equal(accountSource.includes('developmentLoginVerifiedIdentity(TEMP_MAGIC_LINK_EMAIL'), false)
 })
 
+test('development identity login supports a tokenized production smoke URL instead of a public backdoor', () => {
+  const identityBrowserSource = readFileSync(new URL('../lib/identity/browser.ts', import.meta.url), 'utf8')
+  const identityEdgeSource = readFileSync(new URL('../lib/identity/edge.ts', import.meta.url), 'utf8')
+  const devLoginPageSource = readFileSync(new URL('../app/auth/dev-login/page.tsx', import.meta.url), 'utf8')
+
+  assert.equal(identityBrowserSource.includes('readDevelopmentIdentityLoginToken'), true)
+  assert.equal(identityBrowserSource.includes('X-Dottingo-Dev-Login-Token'), true)
+  assert.equal(identityEdgeSource.includes('DOT_DEV_IDENTITY_LOGIN_TOKEN'), true)
+  assert.equal(identityEdgeSource.includes('isAuthorizedDevelopmentIdentityBypass'), true)
+  assert.equal(devLoginPageSource.includes('/auth/dev-login'), false)
+  assert.equal(devLoginPageSource.includes('developmentLoginVerifiedIdentity(DEV_IDENTITY_EMAIL, null, token)'), true)
+  assert.equal(devLoginPageSource.includes('nextPath === "/checkout" ? "/checkout" : verifiedPath'), true)
+})
+
 test('account panel marks the opened saved project instead of offering to open it again', () => {
   assert.equal(accountSource.includes('isCurrentPreviewGroup'), true)
   assert.equal(accountSource.includes('Opened'), true)

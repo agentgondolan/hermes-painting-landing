@@ -136,17 +136,20 @@ export function saveVerifiedIdentity(identity: StoredIdentity) {
 
 export function isDevelopmentIdentityLoginAvailable(): boolean {
   if (typeof window === 'undefined') return false
-  return ['localhost', '127.0.0.1', '[::1]', '::1'].includes(window.location.hostname.toLowerCase())
+  return isLocalDevelopmentHost() || Boolean(readDevelopmentIdentityLoginToken())
 }
 
-export async function developmentLoginVerifiedIdentity(email = DEV_IDENTITY_EMAIL, previewId: string | null = null): Promise<StoredIdentity> {
-  if (!isDevelopmentIdentityLoginAvailable()) {
-    throw new Error('Development login is only available on localhost')
+export async function developmentLoginVerifiedIdentity(email = DEV_IDENTITY_EMAIL, previewId: string | null = null, token = readDevelopmentIdentityLoginToken()): Promise<StoredIdentity> {
+  if (!isLocalDevelopmentHost() && !token) {
+    throw new Error('Development login requires the configured test token outside localhost')
   }
 
   const response = await fetch('/api/identity/dev-login', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'X-Dottingo-Dev-Login-Token': token } : {}),
+    },
     body: JSON.stringify({
       email,
       ...(previewId ? { preview_id: previewId } : {}),
@@ -167,6 +170,18 @@ export async function developmentLoginVerifiedIdentity(email = DEV_IDENTITY_EMAI
   }
   saveVerifiedIdentity(identity)
   return identity
+}
+
+export function readDevelopmentIdentityLoginToken(): string {
+  if (typeof window === 'undefined') return ''
+  const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash
+  const hashParams = new URLSearchParams(hash)
+  return hashParams.get('dot_dev_login_token') || hashParams.get('token') || ''
+}
+
+function isLocalDevelopmentHost(): boolean {
+  if (typeof window === 'undefined') return false
+  return ['localhost', '127.0.0.1', '[::1]', '::1'].includes(window.location.hostname.toLowerCase())
 }
 
 export function buildVerifiedDesignReturnPath(identity: Pick<StoredIdentity, 'previewId'>): string {

@@ -382,6 +382,64 @@ test('falls back to the synced draft payload when MGE draft read is unavailable'
   assert.equal(body.get('metadata[retail_total_amount_sgd]'), '3499')
 })
 
+test('prices a single-line synced draft from draft-level unitPrice when line item price is absent', async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = []
+  const fetcher: typeof fetch = async (url, init) => {
+    calls.push({ url: String(url), init: init ?? {} })
+    if (String(url).includes('/api/v1/order-drafts/draft_live_shape/')) {
+      return new Response('<!doctype html><title>Not Found</title>', {
+        status: 404,
+        headers: { 'Content-Type': 'text/html' },
+      })
+    }
+
+    return new Response(
+      JSON.stringify({
+        id: 'cs_test_live_shape',
+        url: 'https://checkout.stripe.com/c/pay/cs_test_live_shape',
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    )
+  }
+
+  const response = await createStripeCheckoutSession(
+    new Request('https://makeyourcraft.com/api/stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_draft_id: 'draft_live_shape',
+        identity_token: await identityToken('preview_ignored', 'multi@example.com'),
+        order_draft: {
+          orderDraftId: 'draft_live_shape',
+          product: 'DOT',
+          selectedSize: '60x80',
+          unitPrice: '9.81',
+          currency: 'EUR',
+          lineItems: [
+            {
+              preview_option_id: 'option_live',
+              sku: 'DOT/VF/60X80/WO/BLACK/STD',
+              quantity: 1,
+            },
+          ],
+          itemCount: 1,
+        },
+      }),
+    }),
+    env,
+    fetcher,
+  )
+
+  assert.equal(response.status, 200)
+  const body = calls[1].init.body as URLSearchParams
+  assert.equal(body.get('line_items[0][price_data][unit_amount]'), '3199')
+  assert.equal(body.get('line_items[0][price_data][product_data][name]'), 'Custom Dottingo Design 1')
+  assert.equal(body.get('line_items[0][price_data][product_data][description]'), '60x80 · DOT/VF/60X80/WO/BLACK/STD')
+  assert.equal(body.get('metadata[sku]'), 'DOT/VF/60X80/WO/BLACK/STD')
+  assert.equal(body.get('metadata[preview_option_id]'), 'option_live')
+  assert.equal(body.get('metadata[retail_total_amount_sgd]'), '3199')
+})
+
 test('rejects tampered order drafts before creating Stripe sessions', async () => {
   const calls: Array<{ url: string; init: RequestInit }> = []
   const fetcher: typeof fetch = async (url, init) => {

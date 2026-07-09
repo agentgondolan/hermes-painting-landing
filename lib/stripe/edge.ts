@@ -506,13 +506,22 @@ function draftToCheckoutContext(
   }
 
   const exchangeRate = parseOptionalPositiveNumber(env.EUR_TO_SGD_RATE, DEFAULT_EUR_TO_SGD_RATE)
+  const draftRecord = asRecord(draft) ?? {}
   const lineItems = draftLineItems.map((line, index) => {
-    const unitPrice = stringValue(line.unit_price) || stringValue(line.unitPrice) || stringValue(line.price)
-    const currency = stringValue(line.currency) || 'EUR'
+    const unitPrice = stringValue(line.unit_price)
+      || stringValue(line.unitPrice)
+      || stringValue(line.price)
+      || (draftLineItems.length === 1 ? stringValue(draftRecord.unitPrice) || stringValue(draftRecord.unit_price) : '')
+    const currency = stringValue(line.currency)
+      || (draftLineItems.length === 1 ? stringValue(draftRecord.currency) : '')
+      || 'EUR'
     const quantity = normalizePositiveInteger(line.quantity, 1)
     const quote = calculateRetailPriceQuote(unitPrice, currency, exchangeRate)
     const sku = stringValue(line.sku)
-    const selectedSize = stringValue(line.selected_size) || stringValue(line.selectedSize) || sizeFromSku(sku)
+    const selectedSize = stringValue(line.selected_size)
+      || stringValue(line.selectedSize)
+      || (draftLineItems.length === 1 ? stringValue(draftRecord.selectedSize) || stringValue(draftRecord.selected_size) : '')
+      || sizeFromSku(sku)
     const label = stringValue(line.label) || stringValue(line.name)
     return {
       productName: label || `Custom Dottingo Design ${index + 1}`,
@@ -525,7 +534,6 @@ function draftToCheckoutContext(
   const totalAmount = lineItems.reduce((sum, item) => sum + item.quote.unitAmount * item.quantity, 0)
   const skus = draftLineItems.map((line) => stringValue(line.sku)).filter(Boolean)
   const previewOptionIds = draftLineItems.map((line) => stringValue(line.preview_option_id) || stringValue(line.previewOptionId)).filter(Boolean)
-  const draftRecord = asRecord(draft) ?? {}
 
   return {
     dynamicPrice: true,

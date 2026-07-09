@@ -61,7 +61,46 @@ Live payment/MGE submit:
 
 Current checkpoint:
 
-- Waiting for Matej to click the production magic link so `https://dottingo.sg/checkout` is verified again. After that, continue the Stripe test payment smoke from `https://dottingo.sg/checkout`.
+- Production no longer needs Matej to click an email for smoke testing; use the token-gated `/auth/dev-login` route for `matejgondolan@gmail.com`.
+- Customer-side Stripe test payment reaches the Dottingo success page.
+- Remaining validation is server-side webhook-to-MGE-submit observability.
+
+## 2026-07-09 Production Test-Login And Payment Smoke
+
+- Added a guarded production smoke-login route for development only:
+  - URL shape: `https://dottingo.sg/auth/dev-login#token=<DOT_DEV_IDENTITY_LOGIN_TOKEN>&next=/checkout`.
+  - Server endpoint: `POST /api/identity/dev-login`.
+  - Production requires the Cloudflare Pages secret `DOT_DEV_IDENTITY_LOGIN_TOKEN`.
+  - Login remains limited to allowed dev identity emails; default is `matejgondolan@gmail.com`.
+  - The browser receives normal Dottingo identity storage plus the MGE identity token returned by MGE `/api/internal/v1/identity/testing/session/`.
+- Set `DOT_DEV_IDENTITY_LOGIN_TOKEN` in Cloudflare Pages production.
+- Confirmed production test-login endpoint returned a verified Matej identity with app and MGE identity tokens, without sending email.
+- Confirmed `https://dottingo.sg/checkout` loaded as `Verified matejgondolan@gmail.com`.
+- Created a real production MGE draft through Dottingo BFF from saved account history:
+  - Preview: `181fd0fa-1aee-4137-8508-ce30e512a499`.
+  - Size: `60x80`.
+  - SKU: `DOT/VF/60X80/WO/BLACK/STD`.
+  - Draft status: `DRAFT`.
+  - Draft item count: `1`.
+- Found and fixed a live MGE draft shape mismatch:
+  - MGE/BFF draft line item had SKU, quantity, and preview option id, while `unitPrice` and `currency` were on the top-level draft payload.
+  - Stripe handoff now prices a single-line synced draft from top-level `unitPrice`/`currency` when the line item does not carry price fields.
+- Deployed updated bundle:
+  - Preview URL: `https://81a2c08f.hermes-painting-landing.pages.dev`.
+  - Production URL: `https://dottingo.sg/`.
+- Production Stripe checkout session creation passed:
+  - Session id started with `cs_test_`.
+  - Stripe URL host: `checkout.stripe.com`.
+  - Amount shown by Stripe: `SGD 31.99`.
+  - Line shown by Stripe: `Custom Dottingo Design 1`, `60x80 · DOT/VF/60X80/WO/BLACK/STD`.
+- Completed Stripe test payment in the browser and reached:
+  - `https://dottingo.sg/checkout/success?session_id=<cs_test...>`.
+
+Remaining server-side smoke gap:
+
+- Customer-side payment success is confirmed.
+- Stripe API session lookup could not be performed locally because the local machine does not have the Stripe secret key used by production.
+- MGE order-draft read remains unavailable for this flow (`GET /api/v1/order-drafts/{id}/` has returned HTML 404), so webhook-to-MGE-submit confirmation still needs Cloudflare/Stripe log visibility or an MGE order-status/read endpoint.
 
 ## Validation
 

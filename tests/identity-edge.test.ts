@@ -277,7 +277,7 @@ test('createDevelopmentIdentitySession uses MGE testing session only on localhos
   assert.equal(session.previewId, null)
 })
 
-test('createDevelopmentIdentitySession rejects production hosts', async () => {
+test('createDevelopmentIdentitySession rejects production hosts without the configured bypass token', async () => {
   const response = await createDevelopmentIdentitySession(
     new Request('https://dottingo.sg/api/identity/dev-login', {
       method: 'POST',
@@ -287,6 +287,62 @@ test('createDevelopmentIdentitySession rejects production hosts', async () => {
     env,
     async () => {
       throw new Error('should not call MGE from production host')
+    },
+  )
+
+  assert.equal(response.status, 403)
+})
+
+test('createDevelopmentIdentitySession allows production smoke login with the configured bypass token', async () => {
+  let upstreamUrl = ''
+  let upstreamBody: Record<string, unknown> | null = null
+  const response = await createDevelopmentIdentitySession(
+    new Request('https://dottingo.sg/api/identity/dev-login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Dottingo-Dev-Login-Token': 'test_dev_identity_token_123456',
+      },
+      body: JSON.stringify({ email: 'matejgondolan@gmail.com' }),
+    }),
+    { ...env, DOT_DEV_IDENTITY_LOGIN_TOKEN: 'test_dev_identity_token_123456' },
+    async (request, init) => {
+      const upstreamRequest = request instanceof Request ? request : new Request(request, init)
+      upstreamUrl = upstreamRequest.url
+      upstreamBody = await upstreamRequest.json() as Record<string, unknown>
+      return new Response(JSON.stringify({
+        ok: true,
+        email: 'matejgondolan@gmail.com',
+        preview_id: null,
+        identity_token: 'opaque-production-smoke-identity-token',
+      }), { status: 200 })
+    },
+  )
+
+  assert.equal(response.status, 200)
+  assert.equal(upstreamUrl, 'https://mge.test/api/internal/v1/identity/testing/session/')
+  assert.deepEqual(upstreamBody, {
+    brand_id: 64,
+    email: 'matejgondolan@gmail.com',
+  })
+  const payload = await response.json() as { email: string; mgeIdentityToken: string }
+  assert.equal(payload.email, 'matejgondolan@gmail.com')
+  assert.equal(payload.mgeIdentityToken, 'opaque-production-smoke-identity-token')
+})
+
+test('createDevelopmentIdentitySession keeps the production bypass limited to allowed test emails', async () => {
+  const response = await createDevelopmentIdentitySession(
+    new Request('https://dottingo.sg/api/identity/dev-login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Dottingo-Dev-Login-Token': 'test_dev_identity_token_123456',
+      },
+      body: JSON.stringify({ email: 'other@example.com' }),
+    }),
+    { ...env, DOT_DEV_IDENTITY_LOGIN_TOKEN: 'test_dev_identity_token_123456' },
+    async () => {
+      throw new Error('should not call MGE for disallowed email')
     },
   )
 

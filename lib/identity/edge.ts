@@ -8,6 +8,7 @@ export interface IdentityEnv {
   MGEVERYDAY_BASE_URL?: string
   MGEVERYDAY_BRAND_ID?: string
   DOT_DEV_IDENTITY_LOGIN_EMAILS?: string
+  DOT_DEV_IDENTITY_LOGIN_TOKEN?: string
 }
 
 export type VerifiedIdentity = {
@@ -187,8 +188,8 @@ export async function createDevelopmentIdentitySession(
 ): Promise<Response> {
   if (request.method === 'OPTIONS') return corsResponse(request, env)
   if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405), request, env)
-  if (!isLocalDevelopmentRequest(request)) {
-    return withCors(json({ error: 'Development identity login is only available on localhost' }, 403), request, env)
+  if (!isLocalDevelopmentRequest(request) && !isAuthorizedDevelopmentIdentityBypass(request, env)) {
+    return withCors(json({ error: 'Development identity login is only available on localhost or with the configured test token' }, 403), request, env)
   }
 
   try {
@@ -944,6 +945,13 @@ function isLocalDevelopmentRequest(request: Request): boolean {
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1'
 }
 
+function isAuthorizedDevelopmentIdentityBypass(request: Request, env: IdentityEnv): boolean {
+  const configuredToken = stringValue(env.DOT_DEV_IDENTITY_LOGIN_TOKEN)
+  if (!configuredToken || configuredToken.length < 24) return false
+  const suppliedToken = stringValue(request.headers.get('X-Dottingo-Dev-Login-Token'))
+  return suppliedToken.length === configuredToken.length && timingSafeEqual(suppliedToken, configuredToken)
+}
+
 function isAllowedDevelopmentIdentityEmail(email: string, env: IdentityEnv): boolean {
   const allowed = (env.DOT_DEV_IDENTITY_LOGIN_EMAILS || DEFAULT_DEV_IDENTITY_LOGIN_EMAIL)
     .split(',')
@@ -1053,7 +1061,7 @@ function withCors(response: Response, request: Request, env: IdentityEnv): Respo
     headers.set('Access-Control-Allow-Origin', allowedOrigin === '*' ? '*' : (origin || allowedOrigin))
   }
   headers.set('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS')
-  headers.set('Access-Control-Allow-Headers', 'Content-Type,X-MGE-Identity-Token')
+  headers.set('Access-Control-Allow-Headers', 'Content-Type,X-MGE-Identity-Token,X-Dottingo-Dev-Login-Token')
   headers.set('Cache-Control', 'no-store')
   headers.set('Vary', 'Origin')
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })

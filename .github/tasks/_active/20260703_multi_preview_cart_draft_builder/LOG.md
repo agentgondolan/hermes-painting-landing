@@ -269,3 +269,44 @@ Validation:
 
 Current checkpoint:
 - Continue at `https://dottingo.sg/checkout` after Matej clicks the magic link and the browser shows the verified account again.
+
+## 2026-07-09 - Codex - Production Test Login And Stripe Payment Smoke
+
+Summary:
+- Added a token-gated production test login for `matejgondolan@gmail.com` so smoke tests no longer require clicking an email magic link.
+- The route is `https://dottingo.sg/auth/dev-login#token=<DOT_DEV_IDENTITY_LOGIN_TOKEN>&next=/checkout`; the token is server-validated by `POST /api/identity/dev-login` through the Cloudflare Pages secret `DOT_DEV_IDENTITY_LOGIN_TOKEN`.
+- Kept the bypass limited to configured dev identity emails and reused MGE `/api/internal/v1/identity/testing/session/` so the browser receives normal Dottingo and MGE identity tokens.
+- Found a live checkout pricing mismatch: the synced BFF draft had top-level `unitPrice`/`currency`, while its line item did not. Stripe fallback now prices single-line synced drafts from those top-level fields.
+- Deployed to Cloudflare Pages and completed a production Stripe test checkout from a saved Matej account design.
+
+Files changed:
+- `app/auth/dev-login/page.tsx`
+- `lib/identity/browser.ts`
+- `lib/identity/edge.ts`
+- `lib/stripe/edge.ts`
+- `tests/account-panel-source.test.ts`
+- `tests/identity-edge.test.ts`
+- `tests/stripe-edge.test.ts`
+- `.github/tasks/_active/20260703_multi_preview_cart_draft_builder/05_PHASE5_VALIDATION_DEPLOY_AND_SMOKE.md`
+- `.github/tasks/_active/20260703_multi_preview_cart_draft_builder/LOG.md`
+
+Validation:
+- `node --test tests/identity-edge.test.ts tests/account-panel-source.test.ts` passed, 32 tests.
+- `node --test tests/stripe-edge.test.ts` passed, 14 tests.
+- `npm run worker:typecheck` passed.
+- `npm run build` passed.
+- `npx wrangler pages deploy .next/prod --project-name hermes-painting-landing --branch main` passed.
+- Cloudflare preview URL: `https://81a2c08f.hermes-painting-landing.pages.dev`.
+- Production URL: `https://dottingo.sg/`.
+
+Production smoke evidence:
+- Protected production test login returned verified Matej identity tokens.
+- `https://dottingo.sg/checkout` loaded as `Verified matejgondolan@gmail.com`.
+- Saved account project produced an MGE draft from preview `181fd0fa-1aee-4137-8508-ce30e512a499`, size `60x80`, SKU `DOT/VF/60X80/WO/BLACK/STD`, status `DRAFT`, item count `1`.
+- Dottingo production created a Stripe test Checkout Session for `SGD 31.99`.
+- Stripe Checkout displayed `Custom Dottingo Design 1` with `60x80 · DOT/VF/60X80/WO/BLACK/STD`.
+- Stripe test payment completed and returned to `https://dottingo.sg/checkout/success?session_id=<cs_test...>`.
+
+Remaining gap:
+- Customer-side Stripe success is confirmed.
+- Webhook-to-MGE-submit confirmation is not yet directly observable from this machine because production Stripe secret is not local and MGE order-draft read still returns unavailable/404 for this draft-read path. Next step is to add or use log/status visibility for webhook submission.
