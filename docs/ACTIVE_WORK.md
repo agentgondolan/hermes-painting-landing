@@ -12,7 +12,7 @@ Finish the paid MGE checkout bridge.
 
 ## Immediate next step
 
-1. Stop paid checkout from carrying a synthetic draft id into Stripe metadata; only a real MGE integer draft id can be submitted.
+1. Add MGE draft validation before Stripe payment: `POST /api/v1/order-drafts/{id}/validate/` must make the draft submit-ready.
 2. Add durable observability/outbox for Stripe webhook -> MGE draft submit.
 3. Confirm the Stripe webhook reaches Cloudflare and posts to MGE draft submit.
 4. Confirm MGE duplicate-submit behavior with the Stripe idempotency key.
@@ -47,6 +47,8 @@ Use the fastest command that proves the requested work, then climb if the change
 2026-07-09: `node --test tests/identity-edge.test.ts tests/account-panel-source.test.ts`, `node --test tests/stripe-edge.test.ts`, `npm run worker:typecheck`, and `npm run build` passed. Production deploy `https://81a2c08f.hermes-painting-landing.pages.dev` reached `https://dottingo.sg/`. Token-gated Matej test login works on production, production MGE draft creation works, Stripe test Checkout Session creation works, and browser test payment returned to `/checkout/success`. Remaining gap is direct webhook-to-MGE-submit observability.
 
 2026-07-09 follow-up: Live MGE schema confirms `POST /api/v1/order-drafts/{id}/submit/` returns final `OrderDetail.id`, while draft detail/list expose `submitted_order_id`. Post-submit status should therefore anchor on the MGE order id. Read-only probes showed the current fallback `previewOptionId:SKU` draft id returns 404 from MGE draft endpoints, so paid checkout must use a real MGE integer draft id before live submit can be reliable. See `docs/payment-webhook-mge-order-status.md`.
+
+2026-07-09 MGE confirmation: successful `POST /api/v1/order-drafts/` must return a real numeric draft `id`; `201 Created` without `id` is an API/integration error. Dottingo now rejects missing, synthetic, or non-numeric draft ids before Stripe payment/webhook submit. Next gap is validation before payment, then durable webhook submit tracking.
 
 ## Open product decision
 

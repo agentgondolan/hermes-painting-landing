@@ -478,7 +478,19 @@ async function normalizeMgeOrderDraftResponse(
     )
   }
 
-  return json(normalizeOrderDraft(raw, canonical), response.status === 201 ? 201 : 200)
+  const normalized = normalizeOrderDraft(raw, canonical)
+  if (!isSubmitReadyMgeDraftId(normalized.orderDraftId)) {
+    return json(
+      {
+        error: 'MGEeveryday order draft response is missing a submit-ready draft id',
+        status: response.status,
+        detail: 'POST /api/v1/order-drafts/ must return a real numeric id before Dottingo can continue to payment.',
+      },
+      502,
+    )
+  }
+
+  return json(normalized, response.status === 201 ? 201 : 200)
 }
 
 export function normalizeOrderDraft(raw: unknown, canonical: NormalizedPurchaseOption): NormalizedOrderDraft {
@@ -487,7 +499,7 @@ export function normalizeOrderDraft(raw: unknown, canonical: NormalizedPurchaseO
   const orderLine = asNullableRecord(obj.order_line) ?? lineItems.at(-1) ?? canonical.orderLine
   const previewOptionId = pickFirstString([obj.preview_option_id, canonical.previewOptionId]) ?? canonical.previewOptionId
   return {
-    orderDraftId: pickFirstString([obj.order_draft_id, obj.draft_id, obj.id]) ?? `${canonical.previewOptionId}:${canonical.purchaseOptionId}`,
+    orderDraftId: pickFirstString([obj.order_draft_id, obj.draft_id, obj.id]) ?? '',
     previewId: pickFirstString([obj.preview_id]) ?? '',
     previewOptionId,
     purchaseOptionId: pickFirstString([obj.purchase_option_id, canonical.purchaseOptionId]) ?? canonical.purchaseOptionId,
@@ -503,6 +515,10 @@ export function normalizeOrderDraft(raw: unknown, canonical: NormalizedPurchaseO
     unitPrice: pickFirstString([obj.unit_price, obj.price, canonical.unitPrice]),
     currency: pickFirstString([obj.currency, canonical.currency]),
   }
+}
+
+function isSubmitReadyMgeDraftId(value: string): boolean {
+  return /^\d+$/.test(value.trim())
 }
 
 function normalizePurchaseOption(raw: unknown): NormalizedPurchaseOption {

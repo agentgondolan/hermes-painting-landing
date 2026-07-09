@@ -267,7 +267,11 @@ async function submitMgeOrderFromPaidSession(
   fetcher: Fetcher,
 ): Promise<MgeOrderSubmissionResult> {
   const metadata = session.metadata ?? {}
-  const orderDraftId = normalizeMgeId(stringValue(metadata.order_draft_id))
+  const rawOrderDraftId = stringValue(metadata.order_draft_id)
+  const orderDraftId = normalizeMgeId(rawOrderDraftId)
+  if (rawOrderDraftId && !orderDraftId) {
+    throw new Error('MGE order draft id must be a real numeric id before submit')
+  }
   if (!orderDraftId) return { status: 'not_applicable' }
 
   const paymentStatus = stringValue(session.payment_status).toLowerCase()
@@ -370,6 +374,9 @@ async function readCheckoutContext(
   const draft = source.order_draft
   const orderDraftId = stringValue(source.order_draft_id)
   const draftRecord = draft && typeof draft === 'object' ? draft : null
+  if (orderDraftId && !isSubmitReadyMgeDraftId(orderDraftId)) {
+    throw new Error('MGE order draft id must be a real numeric id before payment')
+  }
 
   const draftOrderDraftId = draftRecord ? stringValue(draftRecord.orderDraftId) : ''
   if (draftRecord && draftOrderDraftId && draftOrderDraftId !== orderDraftId) {
@@ -380,14 +387,7 @@ async function readCheckoutContext(
   const token = requireValue(env.MGEVERYDAY_API_TOKEN, 'MGEVERYDAY_API_TOKEN')
 
   if (orderDraftId && !source.preview_id && !source.preview_option_id && !source.sku) {
-    try {
-      return await readMgeDraftCheckoutContext(orderDraftId, identity.email, env, token, fetcher)
-    } catch (error) {
-      if (!draftRecord || !isMgeOrderDraftNotFoundError(error)) {
-        throw error
-      }
-      return draftToCheckoutContext(orderDraftId, identity.email, draftRecord, env)
-    }
+    return await readMgeDraftCheckoutContext(orderDraftId, identity.email, env, token, fetcher)
   }
 
   const previewId = stringValue(source.preview_id) || stringValue(draftRecord?.previewId)
@@ -552,10 +552,6 @@ function draftToCheckoutContext(
   }
 }
 
-function isMgeOrderDraftNotFoundError(error: unknown): boolean {
-  return error instanceof Error && /^MGE order draft fetch failed \(404\):/.test(error.message)
-}
-
 async function loadMgeOrderDraftForCheckout(
   orderDraftId: string,
   env: StripeEnv,
@@ -685,7 +681,11 @@ function stringValue(value: unknown): string {
 }
 
 function normalizeMgeId(value: string): string {
-  return /^[a-zA-Z0-9_:-]+$/.test(value) ? value : ''
+  return isSubmitReadyMgeDraftId(value) ? value : ''
+}
+
+function isSubmitReadyMgeDraftId(value: string): boolean {
+  return /^\d+$/.test(value.trim())
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

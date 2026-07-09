@@ -323,7 +323,7 @@ test('order-draft BFF posts to documented plural MGE order-drafts endpoint', asy
 
     return new Response(
       JSON.stringify({
-        id: 'draft-123',
+        id: '123',
         preview_id: 'preview-123',
         status: 'DRAFT',
       }),
@@ -389,6 +389,42 @@ test('order-draft BFF posts to documented plural MGE order-drafts endpoint', asy
   }
 })
 
+test('order-draft BFF rejects successful MGE draft responses without a numeric id', async () => {
+  const originalFetch = globalThis.fetch
+  const fixture = JSON.parse(await readFile(fixturePath, 'utf8'))
+
+  globalThis.fetch = (async (url) => {
+    if (String(url).includes('/api/v1/preview/preview-123/purchase-options/')) {
+      return new Response(JSON.stringify(fixture), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+
+    return new Response(JSON.stringify({
+      status: 'DRAFT',
+      line_items: [{ preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', sku: 'DOT/VF/40X50/W/BLACK/STD', quantity: 1 }],
+    }), { status: 201, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const response = await handleMgeBffRequest(
+      new Request('https://makeyourcraft.com/api/mge/order-draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          preview_id: 'preview-123',
+          preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+          sku: 'DOT/VF/40X50/W/BLACK/STD',
+        }),
+      }),
+      env,
+    )
+
+    assert.equal(response.status, 502)
+    assert.match(await response.text(), /submit-ready draft id/i)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('order-draft BFF creates draft without local delivery fields because MGE draft is canonical', async () => {
   const calls: Array<{ url: string; init: RequestInit }> = []
   const originalFetch = globalThis.fetch
@@ -402,7 +438,7 @@ test('order-draft BFF creates draft without local delivery fields because MGE dr
 
     return new Response(
       JSON.stringify({
-        id: 'draft-123',
+        id: '123',
         preview_id: 'preview-123',
         status: 'DRAFT',
         item_count: 1,
@@ -459,14 +495,14 @@ test('order-draft BFF edits existing MGE draft by PATCHing merged line_items', a
     if (target.includes('/api/v1/preview/preview-123/purchase-options/')) {
       return new Response(JSON.stringify(fixture), { status: 200, headers: { 'Content-Type': 'application/json' } })
     }
-    if (target === 'https://mge.example.test/api/v1/order-drafts/draft-123/' && (!init?.method || init.method === 'GET')) {
-      return new Response(JSON.stringify({ id: 'draft-123', line_items: [existingLine], item_count: 1 }), {
+    if (target === 'https://mge.example.test/api/v1/order-drafts/123/' && (!init?.method || init.method === 'GET')) {
+      return new Response(JSON.stringify({ id: '123', line_items: [existingLine], item_count: 1 }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })
     }
     return new Response(JSON.stringify({
-      id: 'draft-123',
+      id: '123',
       preview_id: 'preview-123',
       status: 'DRAFT',
       item_count: 2,
@@ -480,7 +516,7 @@ test('order-draft BFF edits existing MGE draft by PATCHing merged line_items', a
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          order_draft_id: 'draft-123',
+          order_draft_id: '123',
           preview_id: 'preview-123',
           preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
           sku: 'DOT/VF/40X50/W/BLACK/STD',
@@ -492,8 +528,8 @@ test('order-draft BFF edits existing MGE draft by PATCHing merged line_items', a
 
     assert.equal(response.status, 200)
     assert.equal(calls.length, 3)
-    assert.equal(calls[1].url, 'https://mge.example.test/api/v1/order-drafts/draft-123/')
-    assert.equal(calls[2].url, 'https://mge.example.test/api/v1/order-drafts/draft-123/')
+    assert.equal(calls[1].url, 'https://mge.example.test/api/v1/order-drafts/123/')
+    assert.equal(calls[2].url, 'https://mge.example.test/api/v1/order-drafts/123/')
     assert.equal(calls[2].init.method, 'PATCH')
     const upstreamBody = JSON.parse(String(calls[2].init.body))
     assert.deepEqual(upstreamBody.line_items, [existingLine, { preview_option_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', sku: 'DOT/VF/40X50/W/BLACK/STD', quantity: 1 }])
@@ -538,7 +574,7 @@ test('order-draft BFF syncs multi-preview cart lines by replacing draft line_ite
     }
 
     return new Response(JSON.stringify({
-      id: 'draft-123',
+      id: '123',
       status: 'DRAFT',
       item_count: 2,
       line_items: [
@@ -554,7 +590,7 @@ test('order-draft BFF syncs multi-preview cart lines by replacing draft line_ite
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          order_draft_id: 'draft-123',
+          order_draft_id: '123',
           cart_lines: [
             {
               preview_id: 'preview-123',
@@ -582,7 +618,7 @@ test('order-draft BFF syncs multi-preview cart lines by replacing draft line_ite
     assert.equal(calls.length, 3)
     assert.equal(calls[0].url, 'https://mge.example.test/api/v1/preview/preview-123/purchase-options/')
     assert.equal(calls[1].url, 'https://mge.example.test/api/v1/preview/preview-456/purchase-options/')
-    assert.equal(calls[2].url, 'https://mge.example.test/api/v1/order-drafts/draft-123/')
+    assert.equal(calls[2].url, 'https://mge.example.test/api/v1/order-drafts/123/')
     assert.equal(calls[2].init.method, 'PATCH')
 
     const upstreamBody = JSON.parse(String(calls[2].init.body))
@@ -619,7 +655,7 @@ test('order-draft BFF rejects tampered cart lines before mutating an MGE draft',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          order_draft_id: 'draft-123',
+          order_draft_id: '123',
           cart_lines: [
             {
               preview_id: 'preview-123',
@@ -651,7 +687,7 @@ test('order-draft BFF can clear an existing cart draft by syncing empty cart_lin
   globalThis.fetch = (async (url, init) => {
     calls.push({ url: String(url), init: init ?? {} })
     return new Response(JSON.stringify({
-      id: 'draft-123',
+      id: '123',
       status: 'DRAFT',
       item_count: 0,
       line_items: [],
@@ -664,7 +700,7 @@ test('order-draft BFF can clear an existing cart draft by syncing empty cart_lin
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          order_draft_id: 'draft-123',
+          order_draft_id: '123',
           cart_lines: [],
         }),
       }),
@@ -673,7 +709,7 @@ test('order-draft BFF can clear an existing cart draft by syncing empty cart_lin
 
     assert.equal(response.status, 200)
     assert.equal(calls.length, 1)
-    assert.equal(calls[0].url, 'https://mge.example.test/api/v1/order-drafts/draft-123/')
+    assert.equal(calls[0].url, 'https://mge.example.test/api/v1/order-drafts/123/')
     const upstreamBody = JSON.parse(String(calls[0].init.body))
     assert.deepEqual(upstreamBody.line_items, [])
   } finally {

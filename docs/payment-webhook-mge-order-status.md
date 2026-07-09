@@ -20,17 +20,20 @@ The post-payment flow is:
 The live schema at `GET /api/v1/schema/` documents:
 
 - `GET /api/v1/order-drafts/` lists server-side smart-cart drafts.
-- `POST /api/v1/order-drafts/` creates a draft and returns a real integer `id`.
+- `POST /api/v1/order-drafts/` creates a persistent draft and returns a real numeric `id`.
 - `GET /api/v1/order-drafts/{id}/` retrieves one draft.
+- `POST /api/v1/order-drafts/{id}/validate/` validates the draft. Valid drafts become `READY`.
 - Draft detail and list responses include `submitted_order_id`.
 - `POST /api/v1/order-drafts/{id}/submit/` converts the stored draft into a real order and links the submitted draft to that order.
 - The submit endpoint returns `OrderDetail` with final order `id`, for example `MGE2404230001`.
 
 So yes: after successful submit, Dottingo should check/order-display against the MGE order id. Draft status is useful before submit and as a bridge because it exposes `submitted_order_id`.
 
+MGE confirmed on 2026-07-09 that a successful `POST /api/v1/order-drafts/` response should always include this numeric draft `id`; Dottingo should treat `201 Created` without `id` as an integration/API error.
+
 ## Current implementation gap
 
-Dottingo currently normalizes an MGE draft response with:
+Dottingo previously normalized an MGE draft response with:
 
 ```ts
 orderDraftId: obj.order_draft_id ?? obj.draft_id ?? obj.id ?? `${previewOptionId}:${purchaseOptionId}`
@@ -43,7 +46,7 @@ Read-only live probes on 2026-07-09 returned HTML 404 for both:
 - `GET /api/v1/order-drafts/{previewOptionId}/`
 - `GET /api/v1/order-drafts/{previewOptionId}:{sku}/`
 
-The payment bridge must therefore refuse or repair checkout contexts where the order draft id is synthetic. A paid Stripe session must never depend on a synthetic draft id for final MGE submission.
+This has been changed so the payment bridge refuses checkout contexts where the order draft id is missing, synthetic, or non-numeric. A paid Stripe session must never depend on a synthetic draft id for final MGE submission.
 
 ## Required Dottingo persistence
 

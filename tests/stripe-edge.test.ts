@@ -48,7 +48,7 @@ async function identityToken(previewId = 'preview_123', email = 'buyer@example.c
 
 function orderDraft(overrides: Record<string, unknown> = {}) {
   return {
-    orderDraftId: 'draft_123',
+    orderDraftId: '123',
     previewId: 'preview_123',
     previewOptionId: 'option_123',
     purchaseOptionId: 'DOT/VF/40X50/W/BLACK/STD',
@@ -199,7 +199,7 @@ test('creates a dynamic SGD Checkout Session from the canonical MGE purchase opt
         sku: 'DOT/VF/40X50/W/BLACK/STD',
         selected_size: '40x50',
         identity_token: await identityToken(),
-        order_draft_id: 'draft_123',
+        order_draft_id: '123',
         order_draft: orderDraft({
           // Tamper with a non-authoritative display-only field to prove Stripe uses canonical server data.
           selectedSize: 'fake browser size',
@@ -220,7 +220,7 @@ test('creates a dynamic SGD Checkout Session from the canonical MGE purchase opt
   assert.equal(body.get('line_items[0][price_data][currency]'), 'sgd')
   assert.equal(body.get('line_items[0][price_data][unit_amount]'), '3499')
   assert.equal(body.get('line_items[0][price_data][product_data][name]'), 'Custom Paint-by-Number Kit')
-  assert.equal(body.get('metadata[order_draft_id]'), 'draft_123')
+  assert.equal(body.get('metadata[order_draft_id]'), '123')
   assert.equal(body.get('metadata[preview_id]'), 'preview_123')
   assert.equal(body.get('metadata[preview_option_id]'), 'option_123')
   assert.equal(body.get('metadata[purchase_option_id]'), 'DOT/VF/40X50/W/BLACK/STD')
@@ -234,9 +234,9 @@ test('creates a multi-line Stripe Checkout Session from the canonical MGE order 
   const calls: Array<{ url: string; init: RequestInit }> = []
   const fetcher: typeof fetch = async (url, init) => {
     calls.push({ url: String(url), init: init ?? {} })
-    if (String(url).includes('/api/v1/order-drafts/draft_multi/')) {
+    if (String(url).includes('/api/v1/order-drafts/234/')) {
       return new Response(JSON.stringify({
-        id: 'draft_multi',
+        id: '234',
         product: 'DOT',
         status: 'DRAFT',
         line_items: [
@@ -279,7 +279,7 @@ test('creates a multi-line Stripe Checkout Session from the canonical MGE order 
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        order_draft_id: 'draft_multi',
+        order_draft_id: '234',
         identity_token: await identityToken('preview_ignored', 'multi@example.com'),
         cart_lines: [
           {
@@ -298,7 +298,7 @@ test('creates a multi-line Stripe Checkout Session from the canonical MGE order 
 
   assert.equal(response.status, 200)
   assert.equal(calls.length, 2)
-  assert.equal(calls[0].url, 'https://mge.test/api/v1/order-drafts/draft_multi/')
+  assert.equal(calls[0].url, 'https://mge.test/api/v1/order-drafts/234/')
   assert.equal(new Headers(calls[0].init.headers).get('Authorization'), 'Bearer mge_test_token')
   assert.equal(calls[1].url, 'https://api.stripe.com/v1/checkout/sessions')
   const body = calls[1].init.body as URLSearchParams
@@ -309,7 +309,7 @@ test('creates a multi-line Stripe Checkout Session from the canonical MGE order 
   assert.equal(body.get('line_items[1][quantity]'), '1')
   assert.equal(body.get('line_items[1][price_data][unit_amount]'), '5899')
   assert.equal(body.get('line_items[1][price_data][product_data][name]'), '60x80 with frame')
-  assert.equal(body.get('metadata[order_draft_id]'), 'draft_multi')
+  assert.equal(body.get('metadata[order_draft_id]'), '234')
   assert.equal(body.get('metadata[item_count]'), '2')
   assert.equal(body.get('metadata[sku]'), 'DOT/VF/40X50/W/BLACK/STD,DOT/VF/60X80/W/BLACK/FRAME/STD')
   assert.equal(body.get('metadata[preview_option_id]'), 'option_a,option_b')
@@ -318,11 +318,11 @@ test('creates a multi-line Stripe Checkout Session from the canonical MGE order 
   assert.equal(body.get('customer_email'), 'multi@example.com')
 })
 
-test('falls back to the synced draft payload when MGE draft read is unavailable', async () => {
+test('rejects checkout when the MGE draft cannot be read before payment', async () => {
   const calls: Array<{ url: string; init: RequestInit }> = []
   const fetcher: typeof fetch = async (url, init) => {
     calls.push({ url: String(url), init: init ?? {} })
-    if (String(url).includes('/api/v1/order-drafts/draft_synced/')) {
+    if (String(url).includes('/api/v1/order-drafts/345/')) {
       return new Response('<!doctype html><title>Not Found</title>', {
         status: 404,
         headers: { 'Content-Type': 'text/html' },
@@ -343,10 +343,10 @@ test('falls back to the synced draft payload when MGE draft read is unavailable'
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        order_draft_id: 'draft_synced',
+        order_draft_id: '345',
         identity_token: await identityToken('preview_ignored', 'multi@example.com'),
         order_draft: {
-          orderDraftId: 'draft_synced',
+          orderDraftId: '345',
           product: 'DOT',
           lineItems: [
             {
@@ -367,26 +367,37 @@ test('falls back to the synced draft payload when MGE draft read is unavailable'
     fetcher,
   )
 
-  assert.equal(response.status, 200)
-  assert.equal(calls.length, 2)
-  assert.equal(calls[0].url, 'https://mge.test/api/v1/order-drafts/draft_synced/')
-  assert.equal(calls[1].url, 'https://api.stripe.com/v1/checkout/sessions')
-  const body = calls[1].init.body as URLSearchParams
-  assert.equal(body.get('line_items[0][price_data][unit_amount]'), '3499')
-  assert.equal(body.get('line_items[0][price_data][product_data][name]'), '60x80 without frame')
-  assert.equal(body.get('metadata[order_draft_id]'), 'draft_synced')
-  assert.equal(body.get('metadata[item_count]'), '1')
-  assert.equal(body.get('metadata[sku]'), 'DOT/VF/60X80/WO/BLACK/STD')
-  assert.equal(body.get('metadata[preview_option_id]'), 'option_a')
-  assert.equal(body.get('metadata[verified_email]'), 'multi@example.com')
-  assert.equal(body.get('metadata[retail_total_amount_sgd]'), '3499')
+  assert.equal(response.status, 500)
+  assert.match(await response.text(), /MGE order draft fetch failed \(404\)/)
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].url, 'https://mge.test/api/v1/order-drafts/345/')
 })
 
-test('prices a single-line synced draft from draft-level unitPrice when line item price is absent', async () => {
+test('rejects synthetic order draft ids before creating Stripe sessions', async () => {
+  const response = await createStripeCheckoutSession(
+    new Request('https://makeyourcraft.com/api/stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_draft_id: 'preview-option:DOT/VF/60X80/WO/BLACK/STD',
+        identity_token: await identityToken('preview_ignored', 'multi@example.com'),
+      }),
+    }),
+    env,
+    async () => {
+      throw new Error('Stripe and MGE should not be called for synthetic draft ids')
+    },
+  )
+
+  assert.equal(response.status, 500)
+  assert.match(await response.text(), /real numeric id before payment/i)
+})
+
+test('rejects single-line draft payload fallback when MGE draft read is unavailable', async () => {
   const calls: Array<{ url: string; init: RequestInit }> = []
   const fetcher: typeof fetch = async (url, init) => {
     calls.push({ url: String(url), init: init ?? {} })
-    if (String(url).includes('/api/v1/order-drafts/draft_live_shape/')) {
+    if (String(url).includes('/api/v1/order-drafts/456/')) {
       return new Response('<!doctype html><title>Not Found</title>', {
         status: 404,
         headers: { 'Content-Type': 'text/html' },
@@ -407,10 +418,10 @@ test('prices a single-line synced draft from draft-level unitPrice when line ite
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        order_draft_id: 'draft_live_shape',
+        order_draft_id: '456',
         identity_token: await identityToken('preview_ignored', 'multi@example.com'),
         order_draft: {
-          orderDraftId: 'draft_live_shape',
+          orderDraftId: '456',
           product: 'DOT',
           selectedSize: '60x80',
           unitPrice: '9.81',
@@ -430,14 +441,10 @@ test('prices a single-line synced draft from draft-level unitPrice when line ite
     fetcher,
   )
 
-  assert.equal(response.status, 200)
-  const body = calls[1].init.body as URLSearchParams
-  assert.equal(body.get('line_items[0][price_data][unit_amount]'), '3199')
-  assert.equal(body.get('line_items[0][price_data][product_data][name]'), 'Custom Dottingo Design 1')
-  assert.equal(body.get('line_items[0][price_data][product_data][description]'), '60x80 · DOT/VF/60X80/WO/BLACK/STD')
-  assert.equal(body.get('metadata[sku]'), 'DOT/VF/60X80/WO/BLACK/STD')
-  assert.equal(body.get('metadata[preview_option_id]'), 'option_live')
-  assert.equal(body.get('metadata[retail_total_amount_sgd]'), '3199')
+  assert.equal(response.status, 500)
+  assert.match(await response.text(), /MGE order draft fetch failed \(404\)/)
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].url, 'https://mge.test/api/v1/order-drafts/456/')
 })
 
 test('rejects tampered order drafts before creating Stripe sessions', async () => {
@@ -459,7 +466,7 @@ test('rejects tampered order drafts before creating Stripe sessions', async () =
         preview_option_id: 'option_123',
         sku: 'DOT/VF/40X50/W/BLACK/STD',
         identity_token: await identityToken(),
-        order_draft_id: 'draft_123',
+        order_draft_id: '123',
         order_draft: orderDraft({ unitPrice: '1.00' }),
       }),
     }),
@@ -522,7 +529,7 @@ test('Stripe webhook submits the paid MGE order draft with a Stripe idempotency 
         id: 'cs_test_paid_123',
         payment_status: 'paid',
         metadata: {
-          order_draft_id: 'draft_123',
+          order_draft_id: '123',
           preview_id: 'preview_123',
         },
       },
@@ -546,13 +553,13 @@ test('Stripe webhook submits the paid MGE order draft with a Stripe idempotency 
     received: true,
     event: 'checkout.session.completed',
     magicLinkDelivery: 'not_applicable',
-    mgeOrderSubmission: { status: 'submitted', orderDraftId: 'draft_123', orderId: 'order_456' },
+    mgeOrderSubmission: { status: 'submitted', orderDraftId: '123', orderId: 'order_456' },
   })
   assert.equal(calls.length, 1)
-  assert.equal(calls[0].url, 'https://mge.test/api/v1/order-drafts/draft_123/submit/')
+  assert.equal(calls[0].url, 'https://mge.test/api/v1/order-drafts/123/submit/')
   const headers = new Headers(calls[0].init.headers)
   assert.equal(headers.get('Authorization'), 'Bearer mge_test_token')
-  assert.equal(headers.get('Idempotency-Key'), 'stripe-checkout:cs_test_paid_123:draft_123')
+  assert.equal(headers.get('Idempotency-Key'), 'stripe-checkout:cs_test_paid_123:123')
 })
 
 test('Stripe webhook skips MGE submit when Checkout Session is not paid yet', async () => {
@@ -563,7 +570,7 @@ test('Stripe webhook skips MGE submit when Checkout Session is not paid yet', as
       object: {
         id: 'cs_test_unpaid',
         payment_status: 'unpaid',
-        metadata: { order_draft_id: 'draft_123' },
+        metadata: { order_draft_id: '123' },
       },
     },
   })
@@ -587,7 +594,7 @@ test('Stripe webhook skips MGE submit when Checkout Session is not paid yet', as
     received: true,
     event: 'checkout.session.completed',
     magicLinkDelivery: 'not_applicable',
-    mgeOrderSubmission: { status: 'not_paid', orderDraftId: 'draft_123' },
+    mgeOrderSubmission: { status: 'not_paid', orderDraftId: '123' },
   })
 })
 
@@ -606,7 +613,7 @@ test('Stripe webhook treats already-submitted MGE drafts as idempotent success',
       object: {
         id: 'cs_test_duplicate',
         payment_status: 'paid',
-        metadata: { order_draft_id: 'draft_123' },
+        metadata: { order_draft_id: '123' },
       },
     },
   })
@@ -628,8 +635,39 @@ test('Stripe webhook treats already-submitted MGE drafts as idempotent success',
     received: true,
     event: 'checkout.session.completed',
     magicLinkDelivery: 'not_applicable',
-    mgeOrderSubmission: { status: 'already_submitted', orderDraftId: 'draft_123', orderId: 'order_789' },
+    mgeOrderSubmission: { status: 'already_submitted', orderDraftId: '123', orderId: 'order_789' },
   })
+})
+
+test('Stripe webhook rejects synthetic MGE draft ids instead of submitting them', async () => {
+  const payload = JSON.stringify({
+    id: 'evt_test_synthetic',
+    type: 'checkout.session.completed',
+    data: {
+      object: {
+        id: 'cs_test_synthetic',
+        payment_status: 'paid',
+        metadata: { order_draft_id: 'preview-option:DOT/VF/60X80/WO/BLACK/STD' },
+      },
+    },
+  })
+  const timestamp = Math.floor(Date.now() / 1000)
+  const signature = await signStripeWebhookPayloadForTest(payload, env.STRIPE_WEBHOOK_SECRET!, timestamp)
+
+  const response = await handleStripeWebhookWithFetcher(
+    new Request('https://makeyourcraft.com/api/stripe/webhook', {
+      method: 'POST',
+      body: payload,
+      headers: { 'Stripe-Signature': `t=${timestamp},v1=${signature}` },
+    }),
+    env,
+    async () => {
+      throw new Error('MGE should not be called for synthetic draft ids')
+    },
+  )
+
+  assert.equal(response.status, 400)
+  assert.match(await response.text(), /real numeric id before submit/i)
 })
 
 test('rejects Stripe webhooks with invalid signatures', async () => {
