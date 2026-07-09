@@ -47,10 +47,21 @@ test('main preview shell learns verified identity changes from magic-link return
   assert.equal(identitySource.includes('VERIFIED_IDENTITY_CHANGED_EVENT'), true)
   assert.equal(identitySource.includes('saveVerifiedIdentity(identity)'), true)
   assert.equal(identitySource.includes('window.dispatchEvent(new CustomEvent(VERIFIED_IDENTITY_CHANGED_EVENT))'), true)
+  assert.equal(identitySource.includes('clearVerifiedIdentity()'), true)
   assert.equal(shellSource.includes('VERIFIED_IDENTITY_CHANGED_EVENT'), true)
   assert.equal(shellSource.includes('window.addEventListener("storage", syncVerifiedIdentity)'), true)
   assert.equal(shellSource.includes('window.addEventListener("focus", syncVerifiedIdentity)'), true)
   assert.equal(shellSource.includes('document.addEventListener("visibilitychange", syncVerifiedIdentity)'), true)
+})
+
+test('main preview shell can log out of the verified browser identity', () => {
+  assert.equal(shellSource.includes('clearVerifiedIdentity'), true)
+  assert.equal(shellSource.includes('const handleLogout = useCallback'), true)
+  assert.equal(shellSource.includes('setMagicLinkIdentity(null)'), true)
+  assert.equal(shellSource.includes('setIdentityPreviewLibrary(EMPTY_IDENTITY_LIBRARY)'), true)
+  assert.equal(shellSource.includes('setCurrentPreviewSaved(false)'), true)
+  assert.equal(shellSource.includes('onClick={handleLogout}'), true)
+  assert.equal(shellSource.includes('Logout'), true)
 })
 
 test('direct preview_id URLs restore the server preview onto the canvas', () => {

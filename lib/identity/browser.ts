@@ -214,6 +214,7 @@ export function readVerifiedIdentity(previewId?: string | null): StoredIdentity 
 export function clearVerifiedIdentity() {
   if (typeof window === 'undefined') return
   window.localStorage.removeItem(IDENTITY_STORAGE_KEY)
+  window.dispatchEvent(new CustomEvent(VERIFIED_IDENTITY_CHANGED_EVENT))
 }
 
 export async function requestDesignMagicLink(email: string, previewId: string | null, sizeId?: string | null): Promise<MagicLinkResponse> {

@@ -16,6 +16,7 @@ import {
   consumeMagicTokenFromUrl,
   consumeVerifiedIdentityNoticeFromUrl,
   createVerifiedIdentityProjectPreview,
+  clearVerifiedIdentity,
   deleteVerifiedIdentityPreview,
   fetchVerifiedIdentityPreviews,
   readVerifiedIdentity,
@@ -357,6 +358,16 @@ export function SingleScreenPreviewShell() {
   const syncVerifiedIdentity = useCallback(() => {
     const storedIdentity = readVerifiedIdentity()
     setMagicLinkIdentity(storedIdentity)
+    if (!storedIdentity) setIdentityPreviewLibrary(EMPTY_IDENTITY_LIBRARY)
+  }, [])
+
+  const handleLogout = useCallback(() => {
+    clearVerifiedIdentity()
+    setMagicLinkIdentity(null)
+    setIdentityPreviewLibrary(EMPTY_IDENTITY_LIBRARY)
+    setCurrentPreviewSaved(false)
+    setAccountPanelOpen(false)
+    setMagicLinkNotice(null)
   }, [])
 
   const handleSaveCurrentPreview = async () => {
@@ -701,24 +712,35 @@ export function SingleScreenPreviewShell() {
   return (
     <LayoutFrame
       headerAction={
-        <button
-          type="button"
-          onClick={() => setAccountPanelOpen((open) => !open)}
-          className="inline-flex max-w-[min(72vw,20rem)] items-center gap-2 rounded-[1.25rem] border border-[#9432c1]/15 bg-white/88 px-3.5 py-2 text-left text-[#9432c1] shadow-[0_14px_34px_rgba(148,50,193,0.16)] backdrop-blur-xl transition hover:bg-white"
-          aria-label={magicLinkIdentity ? `Verified account ${magicLinkIdentity.email}` : "Account"}
-          aria-expanded={accountPanelOpen}
-        >
-          {magicLinkIdentity ? (
-            <span className="flex min-w-0 flex-col leading-none">
-              <span className="font-black">Verified</span>
-              <span className="mt-1 max-w-[12rem] truncate text-[10px] font-bold text-[#9432c1]/58 sm:max-w-[14rem]">
-                {magicLinkIdentity.email}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setAccountPanelOpen((open) => !open)}
+            className="inline-flex max-w-[min(64vw,20rem)] items-center gap-2 rounded-[1.25rem] border border-[#9432c1]/15 bg-white/88 px-3.5 py-2 text-left text-[#9432c1] shadow-[0_14px_34px_rgba(148,50,193,0.16)] backdrop-blur-xl transition hover:bg-white"
+            aria-label={magicLinkIdentity ? `Verified account ${magicLinkIdentity.email}` : "Account"}
+            aria-expanded={accountPanelOpen}
+          >
+            {magicLinkIdentity ? (
+              <span className="flex min-w-0 flex-col leading-none">
+                <span className="font-black">Verified</span>
+                <span className="mt-1 max-w-[9rem] truncate text-[10px] font-bold text-[#9432c1]/58 sm:max-w-[14rem]">
+                  {magicLinkIdentity.email}
+                </span>
               </span>
-            </span>
-          ) : (
-            <span className="text-xs font-black">Account</span>
-          )}
-        </button>
+            ) : (
+              <span className="text-xs font-black">Account</span>
+            )}
+          </button>
+          {magicLinkIdentity ? (
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="rounded-full border border-[#9432c1]/12 bg-white/80 px-3 py-2 text-xs font-black text-[#2e2d2c]/55 shadow-[0_12px_30px_rgba(46,45,44,0.10)] backdrop-blur-xl transition hover:bg-white hover:text-[#9432c1]"
+            >
+              Logout
+            </button>
+          ) : null}
+        </div>
       }
     >
       <Suspense fallback={null}>
