@@ -487,6 +487,7 @@ async function readMgeDraftCheckoutContext(
   metadata: Record<string, string>
 }> {
   const draft = await loadMgeOrderDraftForCheckout(orderDraftId, env, token, fetcher)
+  await validateMgeOrderDraftForCheckout(orderDraftId, env, token, fetcher)
   return draftToCheckoutContext(orderDraftId, verifiedEmail, draft, env)
 }
 
@@ -567,6 +568,48 @@ async function loadMgeOrderDraftForCheckout(
     throw new Error(`MGE order draft fetch failed (${upstream.status}): ${summarizeMgeSubmitError(raw, text, token)}`)
   }
   return raw
+}
+
+async function validateMgeOrderDraftForCheckout(
+  orderDraftId: string,
+  env: StripeEnv,
+  token: string,
+  fetcher: Fetcher,
+): Promise<unknown> {
+  const upstream = await fetcher(`${mgeBaseUrl(env)}/api/v1/order-drafts/${encodeURIComponent(orderDraftId)}/validate/`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const text = await upstream.text()
+  const raw = parseJson(text)
+  if (!upstream.ok) {
+    throw new Error(`MGE order draft validation failed (${upstream.status}): ${summarizeMgeSubmitError(raw, text, token)}`)
+  }
+  if (!looksMgeDraftValidationReady(raw)) {
+    throw new Error(`MGE order draft validation failed: ${summarizeMgeValidationResult(raw, text, token)}`)
+  }
+  return raw
+}
+
+function looksMgeDraftValidationReady(raw: unknown): boolean {
+  const obj = asRecord(raw) ?? {}
+  if (obj.valid === true || obj.is_valid === true || obj.ok === true) return true
+  const status = stringValue(obj.status).toUpperCase()
+  if (['READY', 'VALID', 'VALIDATED'].includes(status)) return true
+  const draft = asRecord(obj.draft)
+  const draftStatus = stringValue(draft?.status).toUpperCase()
+  if (['READY', 'VALID', 'VALIDATED'].includes(draftStatus)) return true
+  return false
+}
+
+function summarizeMgeValidationResult(raw: unknown, text: string, token: string): string {
+  const obj = asRecord(raw) ?? {}
+  const detail = stringValue(obj.detail)
+    || stringValue(obj.error)
+    || stringValue(obj.message)
+    || stringValue(obj.status)
+    || text
+  return detail.split(token).join('[REDACTED]').slice(0, 500) || 'Draft was not marked READY'
 }
 
 function extractDraftLineItems(raw: unknown): Record<string, unknown>[] {

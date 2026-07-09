@@ -235,6 +235,12 @@ test('creates a multi-line Stripe Checkout Session from the canonical MGE order 
   const fetcher: typeof fetch = async (url, init) => {
     calls.push({ url: String(url), init: init ?? {} })
     if (String(url).includes('/api/v1/order-drafts/234/')) {
+      if (String(url).endsWith('/validate/')) {
+        return new Response(JSON.stringify({ status: 'READY', valid: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
       return new Response(JSON.stringify({
         id: '234',
         product: 'DOT',
@@ -297,11 +303,14 @@ test('creates a multi-line Stripe Checkout Session from the canonical MGE order 
   )
 
   assert.equal(response.status, 200)
-  assert.equal(calls.length, 2)
+  assert.equal(calls.length, 3)
   assert.equal(calls[0].url, 'https://mge.test/api/v1/order-drafts/234/')
   assert.equal(new Headers(calls[0].init.headers).get('Authorization'), 'Bearer mge_test_token')
-  assert.equal(calls[1].url, 'https://api.stripe.com/v1/checkout/sessions')
-  const body = calls[1].init.body as URLSearchParams
+  assert.equal(calls[1].url, 'https://mge.test/api/v1/order-drafts/234/validate/')
+  assert.equal(calls[1].init.method, 'POST')
+  assert.equal(new Headers(calls[1].init.headers).get('Authorization'), 'Bearer mge_test_token')
+  assert.equal(calls[2].url, 'https://api.stripe.com/v1/checkout/sessions')
+  const body = calls[2].init.body as URLSearchParams
   assert.equal(body.get('line_items[0][price]'), null)
   assert.equal(body.get('line_items[0][quantity]'), '2')
   assert.equal(body.get('line_items[0][price_data][unit_amount]'), '3499')
@@ -316,6 +325,158 @@ test('creates a multi-line Stripe Checkout Session from the canonical MGE order 
   assert.equal(body.get('metadata[verified_email]'), 'multi@example.com')
   assert.equal(body.get('metadata[retail_total_amount_sgd]'), '12897')
   assert.equal(body.get('customer_email'), 'multi@example.com')
+})
+
+test('rejects checkout when MGE draft validation returns invalid response', async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = []
+  const fetcher: typeof fetch = async (url, init) => {
+    calls.push({ url: String(url), init: init ?? {} })
+    if (String(url).endsWith('/api/v1/order-drafts/234/validate/')) {
+      return new Response(JSON.stringify({ status: 'DRAFT', detail: 'Missing shipping address' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    if (String(url).includes('/api/v1/order-drafts/234/')) {
+      return new Response(JSON.stringify({
+        id: 234,
+        product: 'DOT',
+        status: 'DRAFT',
+        line_items: [{
+          preview_option_id: 'option_a',
+          sku: 'DOT/VF/40X50/W/BLACK/STD',
+          quantity: 1,
+          unit_price: '10.72',
+          currency: 'EUR',
+        }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    throw new Error('Stripe should not be called when MGE validation is invalid')
+  }
+
+  const response = await createStripeCheckoutSession(
+    new Request('https://makeyourcraft.com/api/stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_draft_id: '234',
+        identity_token: await identityToken('preview_ignored', 'multi@example.com'),
+      }),
+    }),
+    env,
+    fetcher,
+  )
+
+  assert.equal(response.status, 500)
+  assert.match(await response.text(), /MGE order draft validation failed/)
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].url, 'https://mge.test/api/v1/order-drafts/234/')
+  assert.equal(calls[1].url, 'https://mge.test/api/v1/order-drafts/234/validate/')
+})
+
+test('rejects checkout when MGE draft validation returns 4xx without leaking token', async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = []
+  const fetcher: typeof fetch = async (url, init) => {
+    calls.push({ url: String(url), init: init ?? {} })
+    if (String(url).endsWith('/api/v1/order-drafts/234/validate/')) {
+      return new Response(JSON.stringify({ detail: 'Token mge_test_token cannot validate this draft' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    if (String(url).includes('/api/v1/order-drafts/234/')) {
+      return new Response(JSON.stringify({
+        id: 234,
+        product: 'DOT',
+        status: 'DRAFT',
+        line_items: [{
+          preview_option_id: 'option_a',
+          sku: 'DOT/VF/40X50/W/BLACK/STD',
+          quantity: 1,
+          unit_price: '10.72',
+          currency: 'EUR',
+        }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    throw new Error('Stripe should not be called when MGE validation fails')
+  }
+
+  const response = await createStripeCheckoutSession(
+    new Request('https://makeyourcraft.com/api/stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_draft_id: '234',
+        identity_token: await identityToken('preview_ignored', 'multi@example.com'),
+      }),
+    }),
+    env,
+    fetcher,
+  )
+
+  assert.equal(response.status, 500)
+  const text = await response.text()
+  assert.match(text, /MGE order draft validation failed \(400\)/)
+  assert.doesNotMatch(text, /mge_test_token/)
+  assert.match(text, /\[REDACTED\]/)
+  assert.equal(calls.length, 2)
+})
+
+test('rejects checkout when MGE draft validation returns 5xx before Stripe is called', async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = []
+  const fetcher: typeof fetch = async (url, init) => {
+    calls.push({ url: String(url), init: init ?? {} })
+    if (String(url).endsWith('/api/v1/order-drafts/234/validate/')) {
+      return new Response(JSON.stringify({ detail: 'Validation service unavailable' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    if (String(url).includes('/api/v1/order-drafts/234/')) {
+      return new Response(JSON.stringify({
+        id: 234,
+        product: 'DOT',
+        status: 'DRAFT',
+        line_items: [{
+          preview_option_id: 'option_a',
+          sku: 'DOT/VF/40X50/W/BLACK/STD',
+          quantity: 1,
+          unit_price: '10.72',
+          currency: 'EUR',
+        }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    throw new Error('Stripe should not be called when MGE validation is unavailable')
+  }
+
+  const response = await createStripeCheckoutSession(
+    new Request('https://makeyourcraft.com/api/stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_draft_id: '234',
+        identity_token: await identityToken('preview_ignored', 'multi@example.com'),
+      }),
+    }),
+    env,
+    fetcher,
+  )
+
+  assert.equal(response.status, 500)
+  assert.match(await response.text(), /MGE order draft validation failed \(503\)/)
+  assert.equal(calls.length, 2)
 })
 
 test('rejects checkout when the MGE draft cannot be read before payment', async () => {

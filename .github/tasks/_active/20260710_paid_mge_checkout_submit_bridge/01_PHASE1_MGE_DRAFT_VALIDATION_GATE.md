@@ -1,4 +1,4 @@
-Status: NOT STARTED
+Status: DONE
 Required: yes
 Created: 2026-07-10
 Updated: 2026-07-10
@@ -41,7 +41,16 @@ Only drafts MGE marks valid/ready may continue to Stripe.
 - Stripe session metadata contains only a real numeric `order_draft_id`.
 - Tests cover valid draft, invalid draft, MGE validation 4xx, MGE validation 5xx, and sanitized error behavior.
 
-## Validation Commands
+## Implementation Summary
+
+- `lib/stripe/edge.ts` now reads the numeric MGE draft, then calls `POST /api/v1/order-drafts/{id}/validate/` before creating Stripe Checkout.
+- Validation accepts explicit valid markers (`valid`, `is_valid`, `ok`) or ready/validated status values on the response/draft.
+- Validation failures stop Stripe session creation and sanitize MGE token values from returned details.
+- `tests/stripe-edge.test.ts` covers valid validation, invalid ready state, validation 4xx, validation 5xx, synthetic ids, unreadable drafts, and webhook guards.
+
+## Validation Result
+
+Passed:
 
 ```powershell
 node --test tests/stripe-edge.test.ts tests/mge-purchase-options.test.ts
@@ -49,3 +58,12 @@ npm run worker:typecheck
 npm run build
 ```
 
+Note: the first `npm run build` attempt timed out at the command wrapper without a reported build error. Reran with a longer timeout and it completed successfully.
+
+## Validation Commands
+
+```powershell
+node --test tests/stripe-edge.test.ts tests/mge-purchase-options.test.ts
+npm run worker:typecheck
+npm run build
+```

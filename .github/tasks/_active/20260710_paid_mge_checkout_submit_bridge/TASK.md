@@ -1,4 +1,4 @@
-Status: NOT STARTED
+Status: IN PROGRESS
 Created: 2026-07-10
 Updated: 2026-07-10
 Owner: Codex
@@ -57,7 +57,7 @@ MGE confirmed on 2026-07-09:
 
 ## Phase Index
 
-1. [NOT STARTED - Phase 1 - MGE Draft Validation Gate](01_PHASE1_MGE_DRAFT_VALIDATION_GATE.md)
+1. [DONE - Phase 1 - MGE Draft Validation Gate](01_PHASE1_MGE_DRAFT_VALIDATION_GATE.md)
 2. [NOT STARTED - Phase 2 - Durable Payment Submit Outbox](02_PHASE2_DURABLE_PAYMENT_SUBMIT_OUTBOX.md)
 3. [NOT STARTED - Phase 3 - Exactly Once Webhook Submit](03_PHASE3_EXACTLY_ONCE_WEBHOOK_SUBMIT.md)
 4. [NOT STARTED - Phase 4 - Customer Confirmation And Status Polling](04_PHASE4_CUSTOMER_CONFIRMATION_AND_STATUS_POLLING.md)
@@ -110,4 +110,4 @@ npx wrangler pages deployment list --project-name hermes-painting-landing
 
 ## Next Action
 
-Implement Phase 1: validate the numeric MGE draft before Stripe creates a Checkout Session. Payment must be blocked when MGE validation fails or when the draft cannot be read/validated.
+Implement Phase 2: add durable payment/submission state so paid Stripe sessions can survive webhook retries, worker restarts, and temporary MGE submit failures.

@@ -16,8 +16,7 @@ Current phase ledger:
 
 ## Immediate next step
 
-1. Implement Phase 1 in `.github/tasks/_active/20260710_paid_mge_checkout_submit_bridge/01_PHASE1_MGE_DRAFT_VALIDATION_GATE.md`: add MGE draft validation before Stripe payment.
-2. Add durable observability/outbox for Stripe webhook -> MGE draft submit.
+1. Implement Phase 2 in `.github/tasks/_active/20260710_paid_mge_checkout_submit_bridge/02_PHASE2_DURABLE_PAYMENT_SUBMIT_OUTBOX.md`: add durable observability/outbox for Stripe webhook -> MGE draft submit.
 3. Confirm the Stripe webhook reaches Cloudflare and posts to MGE draft submit.
 4. Confirm MGE duplicate-submit behavior with the Stripe idempotency key.
 5. Improve checkout success/cancel pages to show the submitted MGE order status once the live response shape is confirmed.
@@ -55,6 +54,8 @@ Use the fastest command that proves the requested work, then climb if the change
 2026-07-09 MGE confirmation: successful `POST /api/v1/order-drafts/` must return a real numeric draft `id`; `201 Created` without `id` is an API/integration error. Dottingo now rejects missing, synthetic, or non-numeric draft ids before Stripe payment/webhook submit. Next gap is validation before payment, then durable webhook submit tracking.
 
 2026-07-10 planning: Created `.github/tasks/_active/20260710_paid_mge_checkout_submit_bridge/` to finish the full draft/payment/order-submit flow in five phases: validation gate, durable submit outbox, exactly-once webhook submit, customer status page, and production smoke.
+
+2026-07-10 Phase 1: MGE draft validation gate implemented. Stripe checkout now validates the numeric MGE draft with `POST /api/v1/order-drafts/{id}/validate/` before creating a Checkout Session and blocks payment on unreadable/invalid/unavailable validation responses.
 
 ## Open product decision
 
