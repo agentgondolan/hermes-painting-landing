@@ -206,9 +206,11 @@ test('preview BFF preserves orientation metadata when MGE returns it', async () 
 test('image proxy caches account source and preview images for repeat checkout views', async () => {
   const originalFetch = globalThis.fetch
   const calls: string[] = []
+  const inits: Array<RequestInit & { cf?: { image?: Record<string, unknown> } }> = []
 
-  globalThis.fetch = (async (url) => {
+  globalThis.fetch = (async (url, init) => {
     calls.push(String(url))
+    inits.push(init ?? {})
     return new Response('fake-image', {
       status: 200,
       headers: { 'Content-Type': 'image/jpeg' },
@@ -226,6 +228,38 @@ test('image proxy caches account source and preview images for repeat checkout v
     assert.equal(response.headers.get('Content-Type'), 'image/jpeg')
     assert.equal(response.headers.get('Cache-Control'), 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=604800')
     assert.equal(response.headers.get('Vary'), 'Accept, Origin')
+    assert.equal(inits[0].cf, undefined)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('image proxy forwards bounded resize options for account thumbnails', async () => {
+  const originalFetch = globalThis.fetch
+  let upstreamInit: (RequestInit & { cf?: { image?: Record<string, unknown> } }) | null = null
+
+  globalThis.fetch = (async (_url, init) => {
+    upstreamInit = init ?? {}
+    return new Response('fake-image', {
+      status: 200,
+      headers: { 'Content-Type': 'image/webp' },
+    })
+  }) as typeof fetch
+
+  try {
+    const response = await handleMgeBffRequest(
+      new Request('https://makeyourcraft.com/api/mge/image?url=https%3A%2F%2Fcdn.example.test%2Fsource.jpg&width=160&height=160&fit=cover'),
+      env,
+    )
+
+    assert.equal(response.status, 200)
+    assert.deepEqual(upstreamInit?.cf?.image, {
+      width: 160,
+      height: 160,
+      fit: 'cover',
+      quality: 78,
+      format: 'auto',
+    })
   } finally {
     globalThis.fetch = originalFetch
   }

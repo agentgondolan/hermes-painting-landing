@@ -55,6 +55,7 @@ export type IdentityPreviewRow = {
   supersededByPreviewId?: string | null
   imageUrl?: string | null
   sourceImageUrl?: string | null
+  sourceThumbnailUrl?: string | null
   sourceGroupId?: string | null
   orientation?: 'horizontal' | 'vertical' | null
   fixedSize?: boolean
@@ -72,6 +73,7 @@ export type IdentityPreviewProject = {
   projectId: string | null
   sourceGroupId?: string | null
   sourceImageUrl?: string | null
+  sourceThumbnailUrl?: string | null
   sourceAvailable?: boolean
   previews: IdentityPreviewRow[]
   [key: string]: unknown

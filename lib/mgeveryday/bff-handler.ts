@@ -342,7 +342,8 @@ function extractLineItems(raw: unknown): JsonRecord[] {
 }
 
 async function proxyPreviewImage(request: Request): Promise<Response> {
-  const source = new URL(request.url).searchParams.get('url')
+  const requestUrl = new URL(request.url)
+  const source = requestUrl.searchParams.get('url')
   if (!source) {
     return json({ error: 'Missing image url' }, 400)
   }
@@ -358,11 +359,15 @@ async function proxyPreviewImage(request: Request): Promise<Response> {
     return json({ error: 'Preview image url is not allowed' }, 400)
   }
 
-  const upstream = await fetch(imageUrl.toString(), {
+  const imageResize = imageResizeOptions(requestUrl.searchParams)
+  const upstreamInit: RequestInit & { cf?: { image?: Record<string, string | number> } } = {
     headers: {
       Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
     },
-  })
+  }
+  if (imageResize) upstreamInit.cf = { image: imageResize }
+
+  const upstream = await fetch(imageUrl.toString(), upstreamInit)
 
   if (!upstream.ok) {
     return json({ error: 'Preview image fetch failed', status: upstream.status }, upstream.status >= 500 ? 502 : upstream.status)
@@ -381,6 +386,27 @@ async function proxyPreviewImage(request: Request): Promise<Response> {
       'Vary': 'Accept',
     },
   })
+}
+
+function imageResizeOptions(params: URLSearchParams): Record<string, string | number> | null {
+  const width = boundedImageDimension(params.get('width'))
+  const height = boundedImageDimension(params.get('height'))
+  if (!width && !height) return null
+  const fit = params.get('fit') === 'contain' ? 'contain' : 'cover'
+  return {
+    ...(width ? { width } : {}),
+    ...(height ? { height } : {}),
+    fit,
+    quality: 78,
+    format: 'auto',
+  }
+}
+
+function boundedImageDimension(value: string | null): number | null {
+  if (!value) return null
+  const number = Number.parseInt(value, 10)
+  if (!Number.isFinite(number)) return null
+  return Math.min(Math.max(number, 40), 1200)
 }
 
 async function normalizeMgeResponse(response: Response, successStatus = 200, secretToRedact?: string): Promise<Response> {

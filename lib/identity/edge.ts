@@ -802,15 +802,16 @@ function normalizeIdentityProject(value: unknown, fallbackPreviews: Array<Record
   const previews = rawPreviews.map(normalizeIdentityPreviewRow).filter((row): row is Record<string, unknown> => Boolean(row))
   const projectId = normalizeId(record.project_id ?? record.projectId ?? record.id) || null
   const sourceImageRecord = asRecord(record.source_image ?? record.sourceImage)
-  const sourceImageUrl = proxiedImageUrl(
-    stringValue(sourceImageRecord?.url) || stringValue(record.source_image_url) || stringValue(record.sourceImageUrl),
-  )
+  const rawSourceImageUrl = stringValue(sourceImageRecord?.url) || stringValue(record.source_image_url) || stringValue(record.sourceImageUrl)
+  const sourceImageUrl = proxiedImageUrl(rawSourceImageUrl)
+  const sourceThumbnailUrl = proxiedImageUrl(rawSourceImageUrl, { width: 160, height: 160, fit: 'cover' })
   const sourceGroupId = stringValue(record.source_group_id) || stringValue(record.sourceGroupId) || projectId
   return {
     ...record,
     projectId,
     sourceGroupId: sourceGroupId || null,
     sourceImageUrl,
+    sourceThumbnailUrl,
     sourceAvailable: booleanValue(record.source_available ?? record.sourceAvailable ?? Boolean(sourceImageUrl)),
     previews: previews.length ? previews : fallbackPreviews.filter((preview) => {
       const previewSourceGroupId = stringValue(preview.sourceGroupId) || stringValue(preview.projectId)
@@ -840,9 +841,9 @@ function normalizeIdentityPreviewRow(value: unknown): Record<string, unknown> | 
   const previewId = normalizeId(record.preview_id ?? record.previewId ?? record.id)
   if (!previewId) return null
   const sourceImageRecord = asRecord(record.source_image ?? record.sourceImage)
-  const sourceImageUrl = proxiedImageUrl(
-    stringValue(sourceImageRecord?.url) || stringValue(record.source_image_url) || stringValue(record.sourceImageUrl),
-  )
+  const rawSourceImageUrl = stringValue(sourceImageRecord?.url) || stringValue(record.source_image_url) || stringValue(record.sourceImageUrl)
+  const sourceImageUrl = proxiedImageUrl(rawSourceImageUrl)
+  const sourceThumbnailUrl = proxiedImageUrl(rawSourceImageUrl, { width: 160, height: 160, fit: 'cover' })
   const optionsValue = extractIdentityPreviewOptions(record)
 
   return {
@@ -858,6 +859,7 @@ function normalizeIdentityPreviewRow(value: unknown): Record<string, unknown> | 
     isCurrent: booleanValue(record.is_current_variant ?? record.isCurrentVariant ?? record.is_current ?? record.isCurrent),
     imageUrl: proxiedImageUrl(stringValue(record.image_url) || stringValue(record.imageUrl) || stringValue(record.preview_url) || stringValue(record.previewUrl)),
     sourceImageUrl,
+    sourceThumbnailUrl,
     sourceGroupId: stringValue(record.source_group_id) || stringValue(record.sourceGroupId) || stringValue(record.project_id) || stringValue(record.projectId) || null,
     orientation: normalizeOrientation(stringValue(record.orientation) || stringValue(record.frame_orientation) || stringValue(record.frameOrientation) || stringValue(record.product_orientation) || stringValue(record.productOrientation)),
     fixedSize: booleanValue(record.fixed_size ?? record.fixedSize),
@@ -901,12 +903,19 @@ function normalizeIdentityPreviewOption(value: unknown): Record<string, unknown>
   }
 }
 
-function proxiedImageUrl(imageUrl: string): string | null {
+function proxiedImageUrl(imageUrl: string, resize?: { width: number; height: number; fit: 'cover' | 'contain' }): string | null {
   if (!imageUrl) return null
   try {
     const parsed = new URL(imageUrl)
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return imageUrl
-    return `/api/mge/image?url=${encodeURIComponent(parsed.toString())}`
+    const proxy = new URL('/api/mge/image', 'https://dottingo.local')
+    proxy.searchParams.set('url', parsed.toString())
+    if (resize) {
+      proxy.searchParams.set('width', String(resize.width))
+      proxy.searchParams.set('height', String(resize.height))
+      proxy.searchParams.set('fit', resize.fit)
+    }
+    return `${proxy.pathname}${proxy.search}`
   } catch {
     return imageUrl
   }

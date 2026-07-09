@@ -48,6 +48,7 @@ type SavedPreviewCard = AccountPreviewRecord & {
   projectId?: string | null
   sourceGroupId?: string | null
   sourceImageUrl?: string | null
+  sourceThumbnailUrl?: string | null
   sourceAvailable?: boolean
   isCurrent?: boolean
   fromIdentityProject?: boolean
@@ -64,6 +65,7 @@ type SavedPreviewGroup = {
   projectId?: string | null
   sourceGroupId?: string | null
   sourceImageUrl: string | null
+  sourceThumbnailUrl: string | null
   sourceAvailable: boolean
   previews: SavedPreviewCard[]
 }
@@ -105,6 +107,7 @@ function buildProjectPreviewCard(row: IdentityPreviewRow, project?: IdentityPrev
     projectId: (project?.projectId ?? (asString(row.projectId) || null)),
     sourceGroupId: project?.sourceGroupId ?? row.sourceGroupId ?? null,
     sourceImageUrl: project?.sourceImageUrl ?? row.sourceImageUrl ?? null,
+    sourceThumbnailUrl: project?.sourceThumbnailUrl ?? row.sourceThumbnailUrl ?? project?.sourceImageUrl ?? row.sourceImageUrl ?? null,
     sourceAvailable: row.sourceAvailable ?? project?.sourceAvailable ?? Boolean(project?.sourceImageUrl ?? row.sourceImageUrl),
     isCurrent: Boolean(row.isCurrent),
     fromIdentityProject: Boolean(project),
@@ -131,12 +134,14 @@ function identityProjectPreviewGroups(library: IdentityPreviewLibrary): SavedPre
     const projectId = asString(project.projectId)
     const sourceGroupId = asString(project.sourceGroupId)
     const sourceImageUrl = project.sourceImageUrl ?? previews.find((preview) => preview.sourceImageUrl)?.sourceImageUrl ?? null
+    const sourceThumbnailUrl = project.sourceThumbnailUrl ?? previews.find((preview) => preview.sourceThumbnailUrl)?.sourceThumbnailUrl ?? sourceImageUrl
 
     groups.push({
       key: projectId ? `project:${projectId}` : sourceGroupId ? `source:${sourceGroupId}` : `preview:${previews[0].previewId}`,
       projectId: projectId || null,
       sourceGroupId: sourceGroupId || null,
       sourceImageUrl,
+      sourceThumbnailUrl,
       sourceAvailable: Boolean(project.sourceAvailable ?? sourceImageUrl ?? previews.some((preview) => preview.sourceAvailable || preview.sourceImageUrl)),
       previews,
     })
@@ -173,12 +178,14 @@ function groupSavedPreviews(records: SavedPreviewCard[]): SavedPreviewGroup[] {
       projectId: asString(record.projectId) || null,
       sourceGroupId: asString(record.sourceGroupId) || null,
       sourceImageUrl: record.sourceImageUrl || null,
+      sourceThumbnailUrl: record.sourceThumbnailUrl || record.sourceImageUrl || null,
       sourceAvailable: Boolean(record.sourceAvailable || record.sourceImageUrl),
       previews: [],
     }
     if (!group.projectId && record.projectId) group.projectId = record.projectId
     if (!group.sourceGroupId && record.sourceGroupId) group.sourceGroupId = record.sourceGroupId
     if (!group.sourceImageUrl && record.sourceImageUrl) group.sourceImageUrl = record.sourceImageUrl
+    if (!group.sourceThumbnailUrl && (record.sourceThumbnailUrl || record.sourceImageUrl)) group.sourceThumbnailUrl = record.sourceThumbnailUrl || record.sourceImageUrl || null
     group.sourceAvailable = group.sourceAvailable || Boolean(record.sourceAvailable || record.sourceImageUrl)
     group.previews.push(record)
     group.previews.sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent) || b.updatedAt - a.updatedAt)
@@ -673,10 +680,14 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
                     }`}
                   >
                     <div className="flex min-h-20 gap-3">
-                      {group.sourceImageUrl ? (
+                      {group.sourceThumbnailUrl ? (
                         <img
-                          src={group.sourceImageUrl}
+                          src={group.sourceThumbnailUrl}
                           alt="Saved design image"
+                          width={80}
+                          height={80}
+                          loading="lazy"
+                          decoding="async"
                           className="h-20 w-20 shrink-0 rounded-[1.25rem] object-cover"
                         />
                       ) : (

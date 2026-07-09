@@ -58,3 +58,12 @@ test('account panel marks the opened saved project instead of offering to open i
   assert.equal(accountSource.includes('aria-current="true"'), true)
   assert.equal(accountSource.includes('shadow-[0_0_0_2px_rgba(148,50,193,0.12)]'), true)
 })
+
+test('account panel uses source thumbnails for saved project images', () => {
+  assert.equal(accountSource.includes('sourceThumbnailUrl'), true)
+  assert.equal(accountSource.includes('src={group.sourceThumbnailUrl}'), true)
+  assert.equal(accountSource.includes('width={80}'), true)
+  assert.equal(accountSource.includes('height={80}'), true)
+  assert.equal(accountSource.includes('loading="lazy"'), true)
+  assert.equal(accountSource.includes('decoding="async"'), true)
+})

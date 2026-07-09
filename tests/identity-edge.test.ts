@@ -473,10 +473,12 @@ test('getIdentityPreviews proxies the real MGE preview library and normalizes so
   assert.equal(upstreamUrl, 'https://mge.test/api/internal/v1/identity/previews/?brand_id=64')
   assert.equal(upstreamApiKey, 'test_mge_token')
   assert.equal(upstreamIdentityToken, 'identity-token-123')
-  const payload = await response.json() as { previews: Array<{ selectedSize: string; imageUrl: string; sourceImageUrl: string }> }
+  const payload = await response.json() as { previews: Array<{ selectedSize: string; imageUrl: string; sourceImageUrl: string; sourceThumbnailUrl: string }> }
   assert.equal(payload.previews[0].selectedSize, '40x60')
   assert.equal(payload.previews[0].imageUrl.startsWith('/api/mge/image?url='), true)
   assert.equal(payload.previews[0].sourceImageUrl.startsWith('/api/mge/image?url='), true)
+  assert.equal(payload.previews[0].sourceThumbnailUrl.includes('width=160'), true)
+  assert.equal(payload.previews[0].sourceThumbnailUrl.includes('height=160'), true)
 })
 
 test('identity previews normalize nested product option images for restored account variants', async () => {
