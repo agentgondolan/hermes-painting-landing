@@ -46,3 +46,30 @@ Validation:
 
 Next action:
 - Implement Phase 2: durable payment submit outbox.
+
+## 2026-07-10 - Phase 2 implemented
+
+Author: Codex
+
+Summary:
+- Added a durable payment submit outbox boundary to the Stripe edge flow.
+- Checkout creation now records `checkout_created` after Stripe returns a session id when `PAYMENT_SUBMIT_OUTBOX` is configured.
+- Paid Stripe webhooks record `paid` before MGE submit, then record `mge_submitting`, `mge_submitted`, or `mge_retrying`.
+- If a paid webhook cannot be durably recorded, Dottingo returns non-2xx and skips MGE submit so Stripe retries.
+- Added a D1-compatible schema in `docs/payment-submit-outbox-d1.sql`.
+
+Files changed:
+- `lib/stripe/edge.ts`
+- `tests/stripe-edge.test.ts`
+- `docs/payment-submit-outbox-d1.sql`
+- `docs/payment-webhook-mge-order-status.md`
+- `docs/ACTIVE_WORK.md`
+- `.github/tasks/_active/20260710_paid_mge_checkout_submit_bridge/02_PHASE2_DURABLE_PAYMENT_SUBMIT_OUTBOX.md`
+- `.github/tasks/_active/20260710_paid_mge_checkout_submit_bridge/TASK.md`
+- `.github/tasks/_active/20260710_paid_mge_checkout_submit_bridge/LOG.md`
+
+Validation:
+- `node --test tests/stripe-edge.test.ts` passed.
+
+Next action:
+- Implement Phase 3: exactly-once webhook submit through the durable outbox.

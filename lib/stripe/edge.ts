@@ -25,9 +25,42 @@ export interface StripeEnv {
   MAGIC_LINK_FROM?: string
   RESEND_API_KEY?: string
   APP_BASE_URL?: string
+  PAYMENT_SUBMIT_OUTBOX?: PaymentSubmitOutbox | D1PaymentSubmitOutboxDatabase
 }
 
 type Fetcher = typeof fetch
+
+export type PaymentSubmitState =
+  | 'checkout_created'
+  | 'paid'
+  | 'mge_submit_queued'
+  | 'mge_submitting'
+  | 'mge_submitted'
+  | 'mge_retrying'
+  | 'mge_failed_manual_review'
+
+export type PaymentSubmitOutboxRecord = {
+  stripeSessionId: string
+  stripeEventId?: string | null
+  verifiedEmail?: string | null
+  mgeOrderDraftId?: string | null
+  mgeOrderId?: string | null
+  state: PaymentSubmitState
+  attemptCount?: number
+  lastError?: string | null
+}
+
+export type PaymentSubmitOutbox = {
+  upsert(record: PaymentSubmitOutboxRecord): Promise<void>
+}
+
+type D1PaymentSubmitOutboxDatabase = {
+  prepare(sql: string): {
+    bind(...values: unknown[]): {
+      run(): Promise<unknown>
+    }
+  }
+}
 
 type StripeCheckoutSession = {
   id?: string
@@ -189,6 +222,8 @@ export async function createStripeCheckoutSession(
       )
     }
 
+    await recordCheckoutCreated(payload, checkoutContext.metadata, env)
+
     return withCors(
       json({
         id: payload?.id,
@@ -244,7 +279,16 @@ export async function handleStripeWebhookWithFetcher(
       if (email && previewId) {
         magicLinkDelivery = await sendContinuationMagicLink(request, env, { email, previewId })
       }
-      mgeOrderSubmission = await submitMgeOrderFromPaidSession(session ?? {}, event.id, env, fetcher)
+      const outbox = paymentSubmitOutbox(env)
+      await recordWebhookPaymentReceived(session ?? {}, event.id, outbox)
+      try {
+        await recordMgeSubmitAttempt(session ?? {}, event.id, outbox)
+        mgeOrderSubmission = await submitMgeOrderFromPaidSession(session ?? {}, event.id, env, fetcher)
+        await recordMgeSubmitResult(session ?? {}, event.id, mgeOrderSubmission, outbox)
+      } catch (error) {
+        await recordMgeSubmitFailure(session ?? {}, event.id, error, outbox)
+        throw error
+      }
     }
 
     return json({ received: true, event: event.type, magicLinkDelivery, mgeOrderSubmission })
@@ -258,6 +302,183 @@ type MgeOrderSubmissionResult = {
   status: 'not_applicable' | 'not_paid' | 'submitted' | 'already_submitted'
   orderDraftId?: string
   orderId?: string
+}
+
+class D1PaymentSubmitOutbox implements PaymentSubmitOutbox {
+  private readonly db: D1PaymentSubmitOutboxDatabase
+
+  constructor(db: D1PaymentSubmitOutboxDatabase) {
+    this.db = db
+  }
+
+  async upsert(record: PaymentSubmitOutboxRecord): Promise<void> {
+    const now = new Date().toISOString()
+    await this.db.prepare(`
+      INSERT INTO payment_submit_outbox (
+        stripe_session_id,
+        stripe_event_id,
+        verified_email,
+        mge_order_draft_id,
+        mge_order_id,
+        state,
+        attempt_count,
+        last_error,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(stripe_session_id) DO UPDATE SET
+        stripe_event_id = COALESCE(excluded.stripe_event_id, payment_submit_outbox.stripe_event_id),
+        verified_email = COALESCE(excluded.verified_email, payment_submit_outbox.verified_email),
+        mge_order_draft_id = COALESCE(excluded.mge_order_draft_id, payment_submit_outbox.mge_order_draft_id),
+        mge_order_id = COALESCE(excluded.mge_order_id, payment_submit_outbox.mge_order_id),
+        state = excluded.state,
+        attempt_count = MAX(payment_submit_outbox.attempt_count, excluded.attempt_count),
+        last_error = excluded.last_error,
+        updated_at = excluded.updated_at
+    `).bind(
+      record.stripeSessionId,
+      record.stripeEventId ?? null,
+      record.verifiedEmail ?? null,
+      record.mgeOrderDraftId ?? null,
+      record.mgeOrderId ?? null,
+      record.state,
+      record.attemptCount ?? 0,
+      record.lastError ?? null,
+      now,
+      now,
+    ).run()
+  }
+}
+
+function paymentSubmitOutbox(env: StripeEnv): PaymentSubmitOutbox | null {
+  const binding = env.PAYMENT_SUBMIT_OUTBOX
+  if (!binding) return null
+  if (isPaymentSubmitOutbox(binding)) return binding
+  if (isD1PaymentSubmitOutboxDatabase(binding)) return new D1PaymentSubmitOutbox(binding)
+  return null
+}
+
+function isPaymentSubmitOutbox(value: unknown): value is PaymentSubmitOutbox {
+  return Boolean(value && typeof value === 'object' && 'upsert' in value && typeof (value as { upsert?: unknown }).upsert === 'function')
+}
+
+function isD1PaymentSubmitOutboxDatabase(value: unknown): value is D1PaymentSubmitOutboxDatabase {
+  return Boolean(value && typeof value === 'object' && 'prepare' in value && typeof (value as { prepare?: unknown }).prepare === 'function')
+}
+
+async function recordCheckoutCreated(
+  session: StripeCheckoutSession | null,
+  metadata: Record<string, string>,
+  env: StripeEnv,
+): Promise<void> {
+  const outbox = paymentSubmitOutbox(env)
+  const stripeSessionId = stringValue(session?.id)
+  const orderDraftId = normalizeMgeId(stringValue(metadata.order_draft_id))
+  if (!outbox || !stripeSessionId || !orderDraftId) return
+
+  await outbox.upsert({
+    stripeSessionId,
+    verifiedEmail: stringValue(metadata.verified_email) || null,
+    mgeOrderDraftId: orderDraftId,
+    state: 'checkout_created',
+    attemptCount: 0,
+    lastError: null,
+  })
+}
+
+async function recordWebhookPaymentReceived(
+  session: StripeWebhookSession,
+  eventId: string | undefined,
+  outbox: PaymentSubmitOutbox | null,
+): Promise<void> {
+  if (!isPaidCheckoutSession(session)) return
+  const record = paymentSubmitRecordFromSession(session, eventId, 'paid')
+  if (!outbox || !record) return
+  await outbox.upsert(record)
+}
+
+async function recordMgeSubmitAttempt(
+  session: StripeWebhookSession,
+  eventId: string | undefined,
+  outbox: PaymentSubmitOutbox | null,
+): Promise<void> {
+  if (!isPaidCheckoutSession(session)) return
+  const record = paymentSubmitRecordFromSession(session, eventId, 'mge_submitting', { attemptCount: 1 })
+  if (!outbox || !record) return
+  await outbox.upsert(record)
+}
+
+async function recordMgeSubmitResult(
+  session: StripeWebhookSession,
+  eventId: string | undefined,
+  result: MgeOrderSubmissionResult,
+  outbox: PaymentSubmitOutbox | null,
+): Promise<void> {
+  if (!outbox || result.status !== 'submitted' && result.status !== 'already_submitted') return
+  const record = paymentSubmitRecordFromSession(session, eventId, 'mge_submitted', {
+    mgeOrderId: result.orderId ?? null,
+    attemptCount: 1,
+    lastError: null,
+  })
+  if (!record) return
+  await outbox.upsert(record)
+}
+
+async function recordMgeSubmitFailure(
+  session: StripeWebhookSession,
+  eventId: string | undefined,
+  error: unknown,
+  outbox: PaymentSubmitOutbox | null,
+): Promise<void> {
+  if (!isPaidCheckoutSession(session)) return
+  if (!outbox) return
+  const record = paymentSubmitRecordFromSession(session, eventId, 'mge_retrying', {
+    attemptCount: 1,
+    lastError: sanitizeOutboxError(error),
+  })
+  if (!record) return
+  await outbox.upsert(record)
+}
+
+function paymentSubmitRecordFromSession(
+  session: StripeWebhookSession,
+  eventId: string | undefined,
+  state: PaymentSubmitState,
+  overrides: Partial<PaymentSubmitOutboxRecord> = {},
+): PaymentSubmitOutboxRecord | null {
+  const metadata = session.metadata ?? {}
+  const stripeSessionId = stringValue(session.id)
+  const rawOrderDraftId = stringValue(metadata.order_draft_id)
+  const orderDraftId = normalizeMgeId(rawOrderDraftId)
+  if (!stripeSessionId || !orderDraftId) return null
+
+  return {
+    stripeSessionId,
+    stripeEventId: eventId || null,
+    verifiedEmail: stringValue(metadata.verified_email)
+      || stringValue(session.customer_details?.email)
+      || stringValue(session.customer_email)
+      || null,
+    mgeOrderDraftId: orderDraftId,
+    state,
+    attemptCount: 0,
+    lastError: null,
+    ...overrides,
+  }
+}
+
+function sanitizeOutboxError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error || 'MGE submit failed')
+  return message.split(requireSafeTokenPattern()).join('[REDACTED]').slice(0, 500)
+}
+
+function requireSafeTokenPattern(): RegExp {
+  return /mge_[A-Za-z0-9_-]+|sk_(?:test|live)_[A-Za-z0-9_-]+|whsec_[A-Za-z0-9_-]+/g
+}
+
+function isPaidCheckoutSession(session: StripeWebhookSession): boolean {
+  const paymentStatus = stringValue(session.payment_status).toLowerCase()
+  return paymentStatus === 'paid' || paymentStatus === 'no_payment_required'
 }
 
 async function submitMgeOrderFromPaidSession(

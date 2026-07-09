@@ -6,6 +6,7 @@ import {
   createStripeCheckoutSession,
   handleStripeWebhook,
   handleStripeWebhookWithFetcher,
+  type PaymentSubmitOutboxRecord,
   signStripeWebhookPayloadForTest,
   type StripeEnv,
 } from '../lib/stripe/edge.ts'
@@ -66,6 +67,30 @@ function orderDraft(overrides: Record<string, unknown> = {}) {
     unitPrice: '10.72',
     currency: 'EUR',
     ...overrides,
+  }
+}
+
+function memoryPaymentSubmitOutbox(options: { failOnState?: string } = {}) {
+  const rows = new Map<string, PaymentSubmitOutboxRecord>()
+  const writes: PaymentSubmitOutboxRecord[] = []
+  return {
+    rows,
+    writes,
+    binding: {
+      async upsert(record: PaymentSubmitOutboxRecord) {
+        if (options.failOnState === record.state) {
+          throw new Error(`outbox rejected ${record.state}`)
+        }
+        const previous = rows.get(record.stripeSessionId)
+        const next = {
+          ...previous,
+          ...record,
+          attemptCount: Math.max(previous?.attemptCount ?? 0, record.attemptCount ?? 0),
+        }
+        rows.set(record.stripeSessionId, next)
+        writes.push(record)
+      },
+    },
   }
 }
 
@@ -325,6 +350,68 @@ test('creates a multi-line Stripe Checkout Session from the canonical MGE order 
   assert.equal(body.get('metadata[verified_email]'), 'multi@example.com')
   assert.equal(body.get('metadata[retail_total_amount_sgd]'), '12897')
   assert.equal(body.get('customer_email'), 'multi@example.com')
+})
+
+test('records checkout_created in the payment submit outbox after Stripe creates a session', async () => {
+  const outbox = memoryPaymentSubmitOutbox()
+  const fetcher: typeof fetch = async (url) => {
+    if (String(url).includes('/api/v1/order-drafts/234/')) {
+      if (String(url).endsWith('/validate/')) {
+        return new Response(JSON.stringify({ status: 'READY', valid: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify({
+        id: '234',
+        product: 'DOT',
+        status: 'READY',
+        line_items: [{
+          preview_option_id: 'option_a',
+          sku: 'DOT/VF/40X50/W/BLACK/STD',
+          quantity: 1,
+          unit_price: '10.72',
+          currency: 'EUR',
+          selected_size: '40x50',
+        }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    return new Response(JSON.stringify({
+      id: 'cs_test_outbox_created',
+      url: 'https://checkout.stripe.com/c/pay/cs_test_outbox_created',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
+  const response = await createStripeCheckoutSession(
+    new Request('https://makeyourcraft.com/api/stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_draft_id: '234',
+        identity_token: await identityToken('preview_ignored', 'multi@example.com'),
+      }),
+    }),
+    { ...env, PAYMENT_SUBMIT_OUTBOX: outbox.binding },
+    fetcher,
+  )
+
+  assert.equal(response.status, 200)
+  assert.equal(outbox.rows.size, 1)
+  assert.deepEqual(outbox.rows.get('cs_test_outbox_created'), {
+    stripeSessionId: 'cs_test_outbox_created',
+    verifiedEmail: 'multi@example.com',
+    mgeOrderDraftId: '234',
+    state: 'checkout_created',
+    attemptCount: 0,
+    lastError: null,
+  })
 })
 
 test('rejects checkout when MGE draft validation returns invalid response', async () => {
@@ -721,6 +808,123 @@ test('Stripe webhook submits the paid MGE order draft with a Stripe idempotency 
   const headers = new Headers(calls[0].init.headers)
   assert.equal(headers.get('Authorization'), 'Bearer mge_test_token')
   assert.equal(headers.get('Idempotency-Key'), 'stripe-checkout:cs_test_paid_123:123')
+})
+
+test('Stripe webhook records paid and submitted states in the payment submit outbox', async () => {
+  const outbox = memoryPaymentSubmitOutbox()
+  const fetcher: typeof fetch = async () => new Response(JSON.stringify({ submitted_order_id: 'order_456', status: 'submitted' }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
+  const payload = JSON.stringify({
+    id: 'evt_test_outbox_paid',
+    type: 'checkout.session.completed',
+    data: {
+      object: {
+        id: 'cs_test_outbox_paid',
+        payment_status: 'paid',
+        metadata: {
+          order_draft_id: '123',
+          verified_email: 'paid@example.com',
+        },
+      },
+    },
+  })
+  const timestamp = Math.floor(Date.now() / 1000)
+  const signature = await signStripeWebhookPayloadForTest(payload, env.STRIPE_WEBHOOK_SECRET!, timestamp)
+
+  const response = await handleStripeWebhookWithFetcher(
+    new Request('https://makeyourcraft.com/api/stripe/webhook', {
+      method: 'POST',
+      body: payload,
+      headers: { 'Stripe-Signature': `t=${timestamp},v1=${signature}` },
+    }),
+    { ...env, PAYMENT_SUBMIT_OUTBOX: outbox.binding },
+    fetcher,
+  )
+
+  assert.equal(response.status, 200)
+  assert.deepEqual(outbox.writes.map((write) => write.state), ['paid', 'mge_submitting', 'mge_submitted'])
+  assert.deepEqual(outbox.rows.get('cs_test_outbox_paid'), {
+    stripeSessionId: 'cs_test_outbox_paid',
+    stripeEventId: 'evt_test_outbox_paid',
+    verifiedEmail: 'paid@example.com',
+    mgeOrderDraftId: '123',
+    state: 'mge_submitted',
+    attemptCount: 1,
+    lastError: null,
+    mgeOrderId: 'order_456',
+  })
+})
+
+test('Stripe webhook returns non-2xx and skips MGE submit when paid event cannot be durably recorded', async () => {
+  const outbox = memoryPaymentSubmitOutbox({ failOnState: 'paid' })
+  const payload = JSON.stringify({
+    id: 'evt_test_outbox_failure',
+    type: 'checkout.session.completed',
+    data: {
+      object: {
+        id: 'cs_test_outbox_failure',
+        payment_status: 'paid',
+        metadata: { order_draft_id: '123' },
+      },
+    },
+  })
+  const timestamp = Math.floor(Date.now() / 1000)
+  const signature = await signStripeWebhookPayloadForTest(payload, env.STRIPE_WEBHOOK_SECRET!, timestamp)
+
+  const response = await handleStripeWebhookWithFetcher(
+    new Request('https://makeyourcraft.com/api/stripe/webhook', {
+      method: 'POST',
+      body: payload,
+      headers: { 'Stripe-Signature': `t=${timestamp},v1=${signature}` },
+    }),
+    { ...env, PAYMENT_SUBMIT_OUTBOX: outbox.binding },
+    async () => {
+      throw new Error('MGE should not be called when outbox persistence fails')
+    },
+  )
+
+  assert.equal(response.status, 400)
+  assert.match(await response.text(), /outbox rejected paid/)
+})
+
+test('duplicate Stripe webhook events upsert one payment submit outbox row', async () => {
+  const outbox = memoryPaymentSubmitOutbox()
+  const fetcher: typeof fetch = async () => new Response(JSON.stringify({ submitted_order_id: 'order_456', status: 'submitted' }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
+  const payload = JSON.stringify({
+    id: 'evt_test_duplicate_outbox',
+    type: 'checkout.session.completed',
+    data: {
+      object: {
+        id: 'cs_test_duplicate_outbox',
+        payment_status: 'paid',
+        metadata: { order_draft_id: '123' },
+      },
+    },
+  })
+  const timestamp = Math.floor(Date.now() / 1000)
+  const signature = await signStripeWebhookPayloadForTest(payload, env.STRIPE_WEBHOOK_SECRET!, timestamp)
+
+  for (let index = 0; index < 2; index += 1) {
+    const response = await handleStripeWebhookWithFetcher(
+      new Request('https://makeyourcraft.com/api/stripe/webhook', {
+        method: 'POST',
+        body: payload,
+        headers: { 'Stripe-Signature': `t=${timestamp},v1=${signature}` },
+      }),
+      { ...env, PAYMENT_SUBMIT_OUTBOX: outbox.binding },
+      fetcher,
+    )
+    assert.equal(response.status, 200)
+  }
+
+  assert.equal(outbox.rows.size, 1)
+  assert.equal(outbox.rows.get('cs_test_duplicate_outbox')?.state, 'mge_submitted')
+  assert.equal(outbox.rows.get('cs_test_duplicate_outbox')?.mgeOrderId, 'order_456')
 })
 
 test('Stripe webhook skips MGE submit when Checkout Session is not paid yet', async () => {

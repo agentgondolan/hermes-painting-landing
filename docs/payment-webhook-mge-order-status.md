@@ -1,6 +1,6 @@
 # Payment webhook to MGE order status
 
-Last updated: 2026-07-09
+Last updated: 2026-07-10
 
 ## Decision
 
@@ -63,6 +63,8 @@ Add a durable payment/submission store, preferably Cloudflare D1 plus a retry qu
 - `created_at`
 - `updated_at`
 
+The current D1 schema is in `docs/payment-submit-outbox-d1.sql`. The Cloudflare binding expected by the Stripe edge code is `PAYMENT_SUBMIT_OUTBOX`.
+
 Suggested states:
 
 - `checkout_created`
@@ -93,6 +95,23 @@ stripe-checkout:{checkout_session_id}:{mge_order_draft_id}
 ```
 
 If MGE returns a duplicate/already-submitted response with a final order id or `submitted_order_id`, treat it as success and store that order id.
+
+## Current implementation status
+
+Implemented on 2026-07-10:
+
+- Checkout creation records `checkout_created` after Stripe returns a session id.
+- Paid `checkout.session.completed` webhooks record `paid` before MGE submit.
+- MGE submit attempts record `mge_submitting`.
+- Submit success records `mge_submitted` with the final MGE order id when returned.
+- Submit failure records `mge_retrying` with sanitized error text.
+- If a paid webhook cannot be durably recorded, Dottingo returns non-2xx and skips MGE submit so Stripe can retry.
+
+Still pending:
+
+- Exactly-once locking around MGE submit attempts.
+- Retry worker/polling behavior for `mge_retrying`.
+- Customer-facing status endpoint and success-page polling.
 
 ## Customer status endpoint
 

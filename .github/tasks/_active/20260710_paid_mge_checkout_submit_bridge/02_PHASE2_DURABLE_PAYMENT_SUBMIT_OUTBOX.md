@@ -1,4 +1,4 @@
-Status: NOT STARTED
+Status: DONE
 Required: yes
 Created: 2026-07-10
 Updated: 2026-07-10
@@ -46,6 +46,17 @@ Suggested states:
 - Never store secret values.
 - Make writes idempotent by `stripe_session_id` and/or `stripe_event_id`.
 
+## Implemented
+
+- `lib/stripe/edge.ts` accepts a server-side `PAYMENT_SUBMIT_OUTBOX` binding.
+- The binding can be a D1 database or a test outbox implementing `upsert(record)`.
+- Checkout creation records `checkout_created` after Stripe returns a session id.
+- Paid `checkout.session.completed` webhooks record `paid` before MGE submit.
+- MGE submit transitions record `mge_submitting`, then `mge_submitted` with the final MGE order id when available.
+- MGE submit failures record `mge_retrying` with a sanitized `last_error`.
+- If the paid webhook event cannot be recorded, the webhook returns non-2xx and skips MGE submit so Stripe can retry.
+- D1 schema is documented in `docs/payment-submit-outbox-d1.sql`.
+
 ## Acceptance Criteria
 
 - A paid webhook can be retried without losing submit state.
@@ -61,3 +72,10 @@ npm run worker:typecheck
 npm run build
 ```
 
+## Validation Results
+
+```powershell
+node --test tests/stripe-edge.test.ts
+```
+
+Passed on 2026-07-10.

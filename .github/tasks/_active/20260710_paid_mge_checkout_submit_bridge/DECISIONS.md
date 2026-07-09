@@ -16,3 +16,6 @@ Stripe payment should only start after MGE validates the draft and marks it subm
 
 Dottingo owns Stripe webhook receipt, durable submit state, retry state, and customer-facing status. MGE owns validation, order creation, and final order status.
 
+## 2026-07-10 - Use a D1-compatible payment submit outbox
+
+Dottingo Stripe code records payment/MGE submit state through a server-side `PAYMENT_SUBMIT_OUTBOX` binding. Production should bind this to Cloudflare D1 using the schema in `docs/payment-submit-outbox-d1.sql`; tests can use an in-memory outbox with the same `upsert(record)` contract.

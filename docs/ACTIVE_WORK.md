@@ -16,10 +16,10 @@ Current phase ledger:
 
 ## Immediate next step
 
-1. Implement Phase 2 in `.github/tasks/_active/20260710_paid_mge_checkout_submit_bridge/02_PHASE2_DURABLE_PAYMENT_SUBMIT_OUTBOX.md`: add durable observability/outbox for Stripe webhook -> MGE draft submit.
-3. Confirm the Stripe webhook reaches Cloudflare and posts to MGE draft submit.
-4. Confirm MGE duplicate-submit behavior with the Stripe idempotency key.
-5. Improve checkout success/cancel pages to show the submitted MGE order status once the live response shape is confirmed.
+1. Implement Phase 3 in `.github/tasks/_active/20260710_paid_mge_checkout_submit_bridge/03_PHASE3_EXACTLY_ONCE_WEBHOOK_SUBMIT.md`: gate MGE submit through the durable outbox so duplicate/retried Stripe events do not run parallel or repeated submits.
+2. Confirm the Stripe webhook reaches Cloudflare and posts to MGE draft submit through the durable path.
+3. Confirm MGE duplicate-submit behavior with the Stripe idempotency key.
+4. Improve checkout success/cancel pages to show the submitted MGE order status once the live response shape is confirmed.
 
 ## Current known repo state
 
@@ -56,6 +56,8 @@ Use the fastest command that proves the requested work, then climb if the change
 2026-07-10 planning: Created `.github/tasks/_active/20260710_paid_mge_checkout_submit_bridge/` to finish the full draft/payment/order-submit flow in five phases: validation gate, durable submit outbox, exactly-once webhook submit, customer status page, and production smoke.
 
 2026-07-10 Phase 1: MGE draft validation gate implemented. Stripe checkout now validates the numeric MGE draft with `POST /api/v1/order-drafts/{id}/validate/` before creating a Checkout Session and blocks payment on unreadable/invalid/unavailable validation responses.
+
+2026-07-10 Phase 2: Durable payment submit outbox implemented in `lib/stripe/edge.ts`. Checkout creation records `checkout_created`, paid Stripe webhooks record `paid` before MGE submit, submit success records `mge_submitted` with the MGE order id, and submit failure records `mge_retrying` with sanitized error text. D1 schema is documented in `docs/payment-submit-outbox-d1.sql`. Next gap is Phase 3 exactly-once submit/retry behavior.
 
 ## Open product decision
 

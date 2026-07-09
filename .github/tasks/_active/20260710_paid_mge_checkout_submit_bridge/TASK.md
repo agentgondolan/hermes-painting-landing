@@ -51,14 +51,16 @@ MGE confirmed on 2026-07-09:
 
 - `lib/mgeveryday/bff-handler.ts` creates/syncs MGE order drafts and now rejects successful draft responses without a numeric id.
 - `lib/stripe/edge.ts` rejects synthetic/non-numeric `order_draft_id` before Stripe payment and before webhook submit.
-- `lib/stripe/edge.ts` can submit a paid draft to MGE with a Stripe-derived idempotency key, but the result is not durably persisted yet.
+- `lib/stripe/edge.ts` can submit a paid draft to MGE with a Stripe-derived idempotency key.
+- `lib/stripe/edge.ts` now records checkout/payment/MGE submit state through a server-side `PAYMENT_SUBMIT_OUTBOX` binding when configured.
+- `docs/payment-submit-outbox-d1.sql` defines the D1 table expected for durable production storage.
 - `docs/payment-webhook-mge-order-status.md` documents the webhook/order status architecture.
 - `docs/ACTIVE_WORK.md` names draft validation and durable webhook submit tracking as the immediate next gaps.
 
 ## Phase Index
 
 1. [DONE - Phase 1 - MGE Draft Validation Gate](01_PHASE1_MGE_DRAFT_VALIDATION_GATE.md)
-2. [NOT STARTED - Phase 2 - Durable Payment Submit Outbox](02_PHASE2_DURABLE_PAYMENT_SUBMIT_OUTBOX.md)
+2. [DONE - Phase 2 - Durable Payment Submit Outbox](02_PHASE2_DURABLE_PAYMENT_SUBMIT_OUTBOX.md)
 3. [NOT STARTED - Phase 3 - Exactly Once Webhook Submit](03_PHASE3_EXACTLY_ONCE_WEBHOOK_SUBMIT.md)
 4. [NOT STARTED - Phase 4 - Customer Confirmation And Status Polling](04_PHASE4_CUSTOMER_CONFIRMATION_AND_STATUS_POLLING.md)
 5. [NOT STARTED - Phase 5 - Production Payment Order Submit Smoke](05_PHASE5_PRODUCTION_PAYMENT_ORDER_SUBMIT_SMOKE.md)
@@ -110,4 +112,4 @@ npx wrangler pages deployment list --project-name hermes-painting-landing
 
 ## Next Action
 
-Implement Phase 2: add durable payment/submission state so paid Stripe sessions can survive webhook retries, worker restarts, and temporary MGE submit failures.
+Implement Phase 3: wire webhook submit through the durable outbox path so one paid Stripe session creates exactly one active MGE submit attempt and retry/manual-review states are respected.
