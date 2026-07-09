@@ -52,12 +52,14 @@ test('account panel exposes a returning-user login entrypoint without a current 
   assert.equal(accountSource.includes('Create a design first, then save it to your email.'), false)
 })
 
-test('account panel exposes a temporary Matej magic-link shortcut without bypassing email verification', () => {
-  assert.equal(accountSource.includes('const TEMP_MAGIC_LINK_EMAIL = "matejgondolan@gmail.com"'), true)
-  assert.equal(accountSource.includes('Send Matej test link'), true)
-  assert.equal(accountSource.includes('handleTemporaryMagicLink'), true)
+test('account panel does not expose Matej test shortcuts in the customer UI', () => {
+  assert.equal(accountSource.includes('const TEMP_MAGIC_LINK_EMAIL = "matejgondolan@gmail.com"'), false)
+  assert.equal(accountSource.includes('Send Matej test link'), false)
+  assert.equal(accountSource.includes('handleTemporaryMagicLink'), false)
+  assert.equal(accountSource.includes('Dev login as Matej'), false)
+  assert.equal(accountSource.includes('handleDevelopmentLogin'), false)
   assert.equal(accountSource.includes('requestDesignMagicLink(targetEmail, previewId, selectedSize?.id ?? null)'), true)
-  assert.equal(accountSource.includes('developmentLoginVerifiedIdentity(TEMP_MAGIC_LINK_EMAIL'), false)
+  assert.equal(accountSource.includes('developmentLoginVerifiedIdentity'), false)
 })
 
 test('development identity login supports a tokenized production smoke URL instead of a public backdoor', () => {

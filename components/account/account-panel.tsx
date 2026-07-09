@@ -4,12 +4,9 @@ import { useEffect, useMemo, useState } from "react"
 import { captureEvent } from "@/lib/analytics/posthog"
 import {
   attachVerifiedIdentityPreview,
-  buildVerifiedDesignReturnPath,
   deleteVerifiedIdentityPreview,
   deleteVerifiedIdentityProject,
-  developmentLoginVerifiedIdentity,
   fetchVerifiedIdentityPreviews,
-  isDevelopmentIdentityLoginAvailable,
   pollMagicLinkRequestStatus,
   readVerifiedIdentity,
   requestDesignMagicLink,
@@ -71,9 +68,6 @@ type SavedPreviewGroup = {
 }
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
-const DEV_IDENTITY_EMAIL = "matejgondolan@gmail.com"
-const TEMP_MAGIC_LINK_EMAIL = "matejgondolan@gmail.com"
-
 function asString(value: unknown): string {
   return typeof value === "string" || typeof value === "number" ? String(value).trim() : ""
 }
@@ -327,7 +321,6 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
         isAccountPreviewSaved(identity.email, previewId, selectedSize?.id)),
   )
   const hasCurrentDesign = Boolean(previewId && selectedPreview?.status === "ready")
-  const canUseDevelopmentLogin = !isVerifiedGlobally && isDevelopmentIdentityLoginAvailable()
   const emailFormTitle = emailFlowIntent === "login" ? "Log in to your saved designs." : "Save your design and continue later."
   const showEmailForm = Boolean((!isVerifiedGlobally || isChangingEmail) && emailFlowIntent)
   const previewGroupsPerPage = Math.max(1, Math.min(6, Math.floor((viewportHeight - 360) / 96)))
@@ -463,40 +456,6 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
     await sendMagicLinkForEmail(email)
   }
 
-  const handleTemporaryMagicLink = async () => {
-    setEmailFlowIntent("login")
-    setIsChangingEmail(true)
-    await sendMagicLinkForEmail(TEMP_MAGIC_LINK_EMAIL)
-  }
-
-  const handleDevelopmentLogin = async () => {
-    setLoading(true)
-    setStatus(`Logging in as ${DEV_IDENTITY_EMAIL}…`)
-
-    try {
-      const verified = await developmentLoginVerifiedIdentity(DEV_IDENTITY_EMAIL, previewId)
-      setIdentity(verified)
-      setEmail(verified.email)
-      setIsChangingEmail(false)
-      setEmailFlowIntent(null)
-      setMagicLinkSent(false)
-      setStatus("Development login verified.")
-      captureEvent("account_dev_identity_login_completed", {
-        preview_id: previewId,
-      })
-      window.location.replace(buildVerifiedDesignReturnPath(verified))
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Development login failed"
-      setStatus(message)
-      captureEvent("account_dev_identity_login_failed", {
-        preview_id: previewId,
-        error_message: message,
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const removeGroupFromPanel = (group: SavedPreviewGroup) => {
     const deletedPreviewIds = new Set(group.previews.map((record) => record.previewId))
     setHiddenPreviewIds((current) => new Set([...current, ...deletedPreviewIds]))
@@ -587,17 +546,6 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
         </button>
       ) : null}
 
-      {!isVerifiedGlobally ? (
-        <button
-          type="button"
-          onClick={handleTemporaryMagicLink}
-          disabled={loading}
-          className="mt-2 w-full rounded-full border border-[#9432c1]/18 bg-white px-4 py-2 text-xs font-extrabold text-[#9432c1] transition hover:bg-[#9432c1]/6 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Send Matej test link
-        </button>
-      ) : null}
-
       {isVerifiedGlobally && identity && hasCurrentDesign && !isSavedCurrentPreview ? (
         <button
           type="button"
@@ -664,17 +612,6 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
             </>
           )}
         </div>
-      ) : null}
-
-      {canUseDevelopmentLogin ? (
-        <button
-          type="button"
-          onClick={handleDevelopmentLogin}
-          disabled={loading}
-          className="mt-2 w-full rounded-full border border-[#9432c1]/18 bg-[#9432c1]/8 px-4 py-2 text-xs font-extrabold text-[#9432c1] transition hover:bg-[#9432c1]/14 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Dev login as Matej
-        </button>
       ) : null}
 
       {!showEmailForm && status ? <p className="mt-3 text-xs font-bold text-[#2e2d2c]/58">{status}</p> : null}
