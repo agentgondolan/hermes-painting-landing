@@ -12,10 +12,11 @@ Finish the paid MGE checkout bridge.
 
 ## Immediate next step
 
-1. Add or use observability for Stripe webhook -> MGE draft submit.
-2. Confirm the Stripe webhook reaches Cloudflare and posts to MGE draft submit.
-3. Confirm MGE duplicate-submit behavior with the Stripe idempotency key.
-4. Improve checkout success/cancel pages to show the submitted MGE order status once the live response shape is confirmed.
+1. Stop paid checkout from carrying a synthetic draft id into Stripe metadata; only a real MGE integer draft id can be submitted.
+2. Add durable observability/outbox for Stripe webhook -> MGE draft submit.
+3. Confirm the Stripe webhook reaches Cloudflare and posts to MGE draft submit.
+4. Confirm MGE duplicate-submit behavior with the Stripe idempotency key.
+5. Improve checkout success/cancel pages to show the submitted MGE order status once the live response shape is confirmed.
 
 ## Current known repo state
 
@@ -44,6 +45,8 @@ Use the fastest command that proves the requested work, then climb if the change
 ## Latest verification
 
 2026-07-09: `node --test tests/identity-edge.test.ts tests/account-panel-source.test.ts`, `node --test tests/stripe-edge.test.ts`, `npm run worker:typecheck`, and `npm run build` passed. Production deploy `https://81a2c08f.hermes-painting-landing.pages.dev` reached `https://dottingo.sg/`. Token-gated Matej test login works on production, production MGE draft creation works, Stripe test Checkout Session creation works, and browser test payment returned to `/checkout/success`. Remaining gap is direct webhook-to-MGE-submit observability.
+
+2026-07-09 follow-up: Live MGE schema confirms `POST /api/v1/order-drafts/{id}/submit/` returns final `OrderDetail.id`, while draft detail/list expose `submitted_order_id`. Post-submit status should therefore anchor on the MGE order id. Read-only probes showed the current fallback `previewOptionId:SKU` draft id returns 404 from MGE draft endpoints, so paid checkout must use a real MGE integer draft id before live submit can be reliable. See `docs/payment-webhook-mge-order-status.md`.
 
 ## Open product decision
 
