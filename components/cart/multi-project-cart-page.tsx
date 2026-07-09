@@ -250,6 +250,7 @@ export function MultiProjectCartPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           order_draft_id: syncedDraft.orderDraftId,
+          order_draft: syncedDraft,
           identity_token: identity.identityToken,
         }),
       })

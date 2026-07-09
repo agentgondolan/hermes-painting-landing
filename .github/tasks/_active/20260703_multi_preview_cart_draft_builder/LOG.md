@@ -239,3 +239,33 @@ Blocker:
 
 Next action:
 - Complete Phase 5 verified production smoke on `https://dottingo.sg/checkout` after Matej logs in with the magic link. Stop before live payment unless explicitly approved.
+
+## 2026-07-09 - Codex - Production Payment Smoke Unblocked To Magic-Link Checkpoint
+
+Summary:
+- Added a guarded Stripe checkout fallback for MGE order draft reads: the server still tries `GET /api/v1/order-drafts/{id}/` first, but if MGE returns a 404 for that draft read and the cart supplied the BFF-synced draft payload, Stripe uses that synced draft to build the sandbox Checkout Session.
+- Updated checkout handoff to include the synced draft payload along with `order_draft_id`.
+- Added a temporary Account-panel button, `Send Matej test link`, which requests the real production magic link for `matejgondolan@gmail.com` and does not use the localhost-only dev login bypass.
+- Deployed the updated bundle to Cloudflare Pages and requested a production magic link for `matejgondolan@gmail.com` with `/checkout` as the return path.
+
+Files changed:
+- `components/account/account-panel.tsx`
+- `components/cart/multi-project-cart-page.tsx`
+- `lib/stripe/edge.ts`
+- `tests/account-panel-source.test.ts`
+- `tests/cart-page-source.test.ts`
+- `tests/stripe-edge.test.ts`
+- `.github/tasks/_active/20260703_multi_preview_cart_draft_builder/05_PHASE5_VALIDATION_DEPLOY_AND_SMOKE.md`
+- `.github/tasks/_active/20260703_multi_preview_cart_draft_builder/LOG.md`
+
+Validation:
+- `node --test tests/account-panel-source.test.ts tests/cart-page-source.test.ts tests/stripe-edge.test.ts` passed, 32 tests.
+- `npm run worker:typecheck` passed.
+- `npm run build` passed.
+- `npx wrangler pages deploy .next/prod --project-name hermes-painting-landing --branch main` passed.
+- Cloudflare preview URL: `https://21ab999c.hermes-painting-landing.pages.dev`.
+- Production URL: `https://dottingo.sg/`.
+- Production magic-link request returned accepted for `matejgondolan@gmail.com`; request id `1ad7641c-c9f5-4726-9864-b8f7b11b01da`.
+
+Current checkpoint:
+- Continue at `https://dottingo.sg/checkout` after Matej clicks the magic link and the browser shows the verified account again.

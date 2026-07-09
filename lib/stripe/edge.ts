@@ -379,8 +379,15 @@ async function readCheckoutContext(
   const identity = await verifyIdentitySessionToken(stringValue(source.identity_token), env)
   const token = requireValue(env.MGEVERYDAY_API_TOKEN, 'MGEVERYDAY_API_TOKEN')
 
-  if (orderDraftId && !draftRecord && !source.preview_id && !source.preview_option_id && !source.sku) {
-    return readMgeDraftCheckoutContext(orderDraftId, identity.email, env, token, fetcher)
+  if (orderDraftId && !source.preview_id && !source.preview_option_id && !source.sku) {
+    try {
+      return await readMgeDraftCheckoutContext(orderDraftId, identity.email, env, token, fetcher)
+    } catch (error) {
+      if (!draftRecord || !isMgeOrderDraftNotFoundError(error)) {
+        throw error
+      }
+      return draftToCheckoutContext(orderDraftId, identity.email, draftRecord, env)
+    }
   }
 
   const previewId = stringValue(source.preview_id) || stringValue(draftRecord?.previewId)
@@ -480,6 +487,19 @@ async function readMgeDraftCheckoutContext(
   metadata: Record<string, string>
 }> {
   const draft = await loadMgeOrderDraftForCheckout(orderDraftId, env, token, fetcher)
+  return draftToCheckoutContext(orderDraftId, verifiedEmail, draft, env)
+}
+
+function draftToCheckoutContext(
+  orderDraftId: string,
+  verifiedEmail: string,
+  draft: unknown,
+  env: StripeEnv,
+): {
+  dynamicPrice: boolean
+  lineItems: CheckoutLineItem[]
+  metadata: Record<string, string>
+} {
   const draftLineItems = extractDraftLineItems(draft)
   if (!draftLineItems.length) {
     throw new Error('MGE order draft has no line items')
@@ -522,6 +542,10 @@ async function readMgeDraftCheckoutContext(
       retail_total_amount_sgd: totalAmount,
     }),
   }
+}
+
+function isMgeOrderDraftNotFoundError(error: unknown): boolean {
+  return error instanceof Error && /^MGE order draft fetch failed \(404\):/.test(error.message)
 }
 
 async function loadMgeOrderDraftForCheckout(

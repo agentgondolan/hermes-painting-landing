@@ -38,7 +38,7 @@ test('account panel preserves the current magic-link account MVP scope', () => {
   assert.equal(accountSource.includes('Verified previews'), true)
   assert.equal(accountSource.includes('readAccountPreviews'), true)
   assert.equal(accountSource.includes('Preview list comes next from MGE'), false)
-  assert.equal(accountSource.includes('requestDesignMagicLink(email, previewId, selectedSize?.id ?? null)'), true)
+  assert.equal(accountSource.includes('requestDesignMagicLink(targetEmail, previewId, selectedSize?.id ?? null)'), true)
   assert.equal(accountSource.includes('account_login_magic_link_blocked_without_preview'), false)
 })
 
@@ -50,6 +50,14 @@ test('account panel exposes a returning-user login entrypoint without a current 
   assert.equal(accountSource.includes('Saved-design login needs MGE account-link confirmation before we can send this email.'), false)
   assert.equal(accountSource.includes('Log in by email to load saved designs, or save a ready preview from this device.'), true)
   assert.equal(accountSource.includes('Create a design first, then save it to your email.'), false)
+})
+
+test('account panel exposes a temporary Matej magic-link shortcut without bypassing email verification', () => {
+  assert.equal(accountSource.includes('const TEMP_MAGIC_LINK_EMAIL = "matejgondolan@gmail.com"'), true)
+  assert.equal(accountSource.includes('Send Matej test link'), true)
+  assert.equal(accountSource.includes('handleTemporaryMagicLink'), true)
+  assert.equal(accountSource.includes('requestDesignMagicLink(targetEmail, previewId, selectedSize?.id ?? null)'), true)
+  assert.equal(accountSource.includes('developmentLoginVerifiedIdentity(TEMP_MAGIC_LINK_EMAIL'), false)
 })
 
 test('account panel marks the opened saved project instead of offering to open it again', () => {

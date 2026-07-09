@@ -318,6 +318,70 @@ test('creates a multi-line Stripe Checkout Session from the canonical MGE order 
   assert.equal(body.get('customer_email'), 'multi@example.com')
 })
 
+test('falls back to the synced draft payload when MGE draft read is unavailable', async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = []
+  const fetcher: typeof fetch = async (url, init) => {
+    calls.push({ url: String(url), init: init ?? {} })
+    if (String(url).includes('/api/v1/order-drafts/draft_synced/')) {
+      return new Response('<!doctype html><title>Not Found</title>', {
+        status: 404,
+        headers: { 'Content-Type': 'text/html' },
+      })
+    }
+
+    return new Response(
+      JSON.stringify({
+        id: 'cs_test_synced',
+        url: 'https://checkout.stripe.com/c/pay/cs_test_synced',
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    )
+  }
+
+  const response = await createStripeCheckoutSession(
+    new Request('https://makeyourcraft.com/api/stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_draft_id: 'draft_synced',
+        identity_token: await identityToken('preview_ignored', 'multi@example.com'),
+        order_draft: {
+          orderDraftId: 'draft_synced',
+          product: 'DOT',
+          lineItems: [
+            {
+              previewOptionId: 'option_a',
+              sku: 'DOT/VF/60X80/WO/BLACK/STD',
+              quantity: 1,
+              unitPrice: '10.72',
+              currency: 'EUR',
+              selectedSize: '60x80',
+              label: '60x80 without frame',
+            },
+          ],
+          itemCount: 1,
+        },
+      }),
+    }),
+    env,
+    fetcher,
+  )
+
+  assert.equal(response.status, 200)
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].url, 'https://mge.test/api/v1/order-drafts/draft_synced/')
+  assert.equal(calls[1].url, 'https://api.stripe.com/v1/checkout/sessions')
+  const body = calls[1].init.body as URLSearchParams
+  assert.equal(body.get('line_items[0][price_data][unit_amount]'), '3499')
+  assert.equal(body.get('line_items[0][price_data][product_data][name]'), '60x80 without frame')
+  assert.equal(body.get('metadata[order_draft_id]'), 'draft_synced')
+  assert.equal(body.get('metadata[item_count]'), '1')
+  assert.equal(body.get('metadata[sku]'), 'DOT/VF/60X80/WO/BLACK/STD')
+  assert.equal(body.get('metadata[preview_option_id]'), 'option_a')
+  assert.equal(body.get('metadata[verified_email]'), 'multi@example.com')
+  assert.equal(body.get('metadata[retail_total_amount_sgd]'), '3499')
+})
+
 test('rejects tampered order drafts before creating Stripe sessions', async () => {
   const calls: Array<{ url: string; init: RequestInit }> = []
   const fetcher: typeof fetch = async (url, init) => {

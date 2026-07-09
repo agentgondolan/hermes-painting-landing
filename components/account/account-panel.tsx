@@ -72,6 +72,7 @@ type SavedPreviewGroup = {
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 const DEV_IDENTITY_EMAIL = "matejgondolan@gmail.com"
+const TEMP_MAGIC_LINK_EMAIL = "matejgondolan@gmail.com"
 
 function asString(value: unknown): string {
   return typeof value === "string" || typeof value === "number" ? String(value).trim() : ""
@@ -337,18 +338,19 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
     [safePreviewPage, previewGroupsPerPage, savedPreviewGroups],
   )
 
-  const handleSendMagicLink = async () => {
-    if (!email.trim()) return
+  const sendMagicLinkForEmail = async (targetEmail: string) => {
+    if (!targetEmail.trim()) return
 
     setLoading(true)
     setMagicLinkSent(false)
     setStatus("Sending link…")
 
     try {
-      const result = await requestDesignMagicLink(email, previewId, selectedSize?.id ?? null)
+      const result = await requestDesignMagicLink(targetEmail, previewId, selectedSize?.id ?? null)
       const confirmed = result.delivery === "email_sent"
       setStatus(confirmed ? "Please check your emails to verify." : "Sending link…")
       setMagicLinkSent(confirmed)
+      setEmail(targetEmail)
       setEmailFlowIntent(emailFlowIntent ?? (hasCurrentDesign ? "save" : "login"))
       if (confirmed) setIsChangingEmail(false)
       captureEvent("account_magic_link_requested", {
@@ -455,6 +457,16 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleSendMagicLink = async () => {
+    await sendMagicLinkForEmail(email)
+  }
+
+  const handleTemporaryMagicLink = async () => {
+    setEmailFlowIntent("login")
+    setIsChangingEmail(true)
+    await sendMagicLinkForEmail(TEMP_MAGIC_LINK_EMAIL)
   }
 
   const handleDevelopmentLogin = async () => {
@@ -572,6 +584,17 @@ export function AccountPanel({ selectedPreview, selectedSize = null, verifiedIde
           className="mt-4 w-full rounded-full bg-[#9432c1] px-4 py-2.5 text-xs font-extrabold text-white transition hover:bg-[#7f28aa]"
         >
           Log in to saved designs
+        </button>
+      ) : null}
+
+      {!isVerifiedGlobally ? (
+        <button
+          type="button"
+          onClick={handleTemporaryMagicLink}
+          disabled={loading}
+          className="mt-2 w-full rounded-full border border-[#9432c1]/18 bg-white px-4 py-2 text-xs font-extrabold text-[#9432c1] transition hover:bg-[#9432c1]/6 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Send Matej test link
         </button>
       ) : null}
 

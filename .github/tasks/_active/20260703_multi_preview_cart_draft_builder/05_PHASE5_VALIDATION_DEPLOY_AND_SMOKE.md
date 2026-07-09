@@ -51,7 +51,17 @@ Remaining production smoke blocker:
 
 Live payment/MGE submit:
 
-- Not run. This still requires explicit approval at the moment of the test.
+- Matej explicitly approved moving to the live/sandbox payment smoke.
+- Production checkout exposed an MGE draft-read gap: Stripe handoff could create/update a draft, but `GET /api/v1/order-drafts/{id}/` returned an HTML 404 from MGE. The Stripe handoff now still prefers the MGE draft read, but falls back to the already-synced BFF draft payload only for that specific 404 case.
+- Added a temporary production Account-panel helper, `Send Matej test link`, which requests a real magic link for `matejgondolan@gmail.com` without bypassing email verification.
+- Deployed the updated bundle:
+  - Preview URL: `https://21ab999c.hermes-painting-landing.pages.dev`
+  - Production URL: `https://dottingo.sg/`
+- Requested a production magic link for `matejgondolan@gmail.com` with `continue_path: /checkout`.
+
+Current checkpoint:
+
+- Waiting for Matej to click the production magic link so `https://dottingo.sg/checkout` is verified again. After that, continue the Stripe test payment smoke from `https://dottingo.sg/checkout`.
 
 ## Validation
 

@@ -95,6 +95,7 @@ test('cart page starts Stripe only from the synced MGE draft id', () => {
   assert.equal(cartSource.includes('handleCheckout'), true)
   assert.equal(cartSource.includes('fetch("/api/stripe/checkout"'), true)
   assert.equal(cartSource.includes('order_draft_id: syncedDraft.orderDraftId'), true)
+  assert.equal(cartSource.includes('order_draft: syncedDraft'), true)
   assert.equal(cartSource.includes('identity_token: identity.identityToken'), true)
   assert.equal(cartSource.includes('window.location.assign(payload.url)'), true)
   assert.equal(cartSource.includes('Wait for the MGE draft to finish syncing before payment.'), true)
