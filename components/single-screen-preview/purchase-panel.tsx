@@ -6,6 +6,7 @@ import {
   type BffPurchaseOptionsResult,
 } from "@/lib/mgeveryday/browser-preview"
 import { captureEvent } from "@/lib/analytics/posthog"
+import { DOT_EXPRESS_OPTIONS_ENABLED, DOT_FRAME_OPTIONS_ENABLED } from "@/lib/dottingo/project-settings"
 import type { DotPreviewResult, FrameSizeOption } from "./preview-state"
 import { persistCheckoutSelection, readStoredCheckoutState } from "./checkout-persistence"
 import { type StoredIdentity } from "@/lib/identity/browser"
@@ -118,8 +119,8 @@ export function PurchasePanel({ selectedSize, selectedPreview, verifiedIdentity 
   const visiblePurchaseOptions = useMemo(() => {
     const matchingPreviewOptions = purchaseOptions.filter((option) => !selectedPreviewOptionId || option.previewOptionId === selectedPreviewOptionId)
     const scopedOptions = matchingPreviewOptions.length ? matchingPreviewOptions : purchaseOptions
-    const standardOptions = scopedOptions.filter((option) => !isExpressOption(option))
-    return standardOptions.length ? standardOptions : scopedOptions
+    const configuredOptions = scopedOptions.filter((option) => isEnabledPurchaseOption(option))
+    return configuredOptions.length ? configuredOptions : scopedOptions
   }, [purchaseOptions, selectedPreviewOptionId])
 
   const selectedPurchaseOption = useMemo(() => {
@@ -297,13 +298,52 @@ function optionSku(option: PurchaseOption): string {
   return typeof option.sku === "string" && option.sku ? option.sku : String(option.orderLine?.sku ?? option.purchaseOptionId)
 }
 
+function isEnabledPurchaseOption(option: PurchaseOption): boolean {
+  return isAllowedFramePurchaseOption(option) && (DOT_EXPRESS_OPTIONS_ENABLED || !isExpressOption(option))
+}
+
+function isAllowedFramePurchaseOption(option: PurchaseOption): boolean {
+  const frameCode = optionFrameCode(option)
+  return Boolean(frameCode && DOT_FRAME_OPTIONS_ENABLED.includes(frameCode as (typeof DOT_FRAME_OPTIONS_ENABLED)[number]))
+}
+
 function isExpressOption(option: PurchaseOption): boolean {
-  const speed = `${option.productionSpeedCode ?? ""} ${option.productionSpeedLabel ?? ""} ${option.label ?? ""}`
-  return /express/i.test(speed)
+  const text = `${option.label ?? ""} ${option.description ?? ""} ${option.productionSpeedCode ?? ""} ${option.productionSpeedLabel ?? ""} ${option.sku ?? ""}`
+  return /\b(express|rush|fast)\b/i.test(text)
 }
 
 function modeLabel(option: PurchaseOption): string {
-  return option.productionSpeedLabel || option.productionSpeedCode || option.label?.split("/").at(-1)?.trim() || "Option"
+  const label = `${option.label ?? ""} ${option.description ?? ""} ${option.sku ?? ""}`
+  const skuParts = `${option.sku ?? ""}`.split("/").map((part) => part.trim().toUpperCase()).filter(Boolean)
+  const frameLabel = option.frameLabel?.trim() || frameLabelFromSkuParts(skuParts) || frameLabelFromText(label)
+  const speedLabel = option.productionSpeedLabel?.trim() || option.productionSpeedCode?.trim() || ""
+  if (frameLabel) return [frameLabel, DOT_EXPRESS_OPTIONS_ENABLED ? speedLabel : ""].filter(Boolean).join(" / ")
+
+  return option.label || option.productionSpeedLabel || option.productionSpeedCode || option.sku || "Order option"
+}
+
+function optionFrameCode(option: PurchaseOption): string | null {
+  if (option.frameCode?.trim()) return option.frameCode.trim().toUpperCase()
+  const skuParts = `${option.sku ?? ""}`.split("/").map((part) => part.trim().toUpperCase()).filter(Boolean)
+  return ["WDIYF", "WPM", "WW", "WO", "W"].find((code) => skuParts.includes(code)) ?? null
+}
+
+function frameLabelFromSkuParts(skuParts: string[]): string | null {
+  if (skuParts.includes("WO")) return "Without frame"
+  if (skuParts.includes("WPM")) return "Plastic mount"
+  if (skuParts.includes("WDIYF")) return "DIY wooden frame"
+  if (skuParts.includes("WW")) return "Wrapped wood"
+  if (skuParts.includes("W")) return "With frame"
+  return null
+}
+
+function frameLabelFromText(label: string): string | null {
+  if (/\b(no frame|unframed|without frame)\b/i.test(label)) return "Without frame"
+  if (/\b(plastic mount)\b/i.test(label)) return "Plastic mount"
+  if (/\b(diy wooden frame)\b/i.test(label)) return "DIY wooden frame"
+  if (/\b(wrapped wood)\b/i.test(label)) return "Wrapped wood"
+  if (/\b(frame|framed)\b/i.test(label)) return "With frame"
+  return null
 }
 
 function roundUpToNinetyNineCents(amount: number): number {

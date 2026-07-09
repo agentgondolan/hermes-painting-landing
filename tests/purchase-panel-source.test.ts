@@ -35,8 +35,18 @@ test('checkout accepts a global verified identity and no longer binds verificati
   assert.equal(source.includes('Checkout is not configured yet.'), false)
 })
 
-test('purchase panel hides express options but keeps option filtering available', () => {
+test('purchase panel filters and labels order options with the same project settings as checkout', () => {
+  assert.equal(source.includes('DOT_FRAME_OPTIONS_ENABLED'), true)
+  assert.equal(source.includes('DOT_EXPRESS_OPTIONS_ENABLED'), true)
+  assert.equal(source.includes('isEnabledPurchaseOption(option)'), true)
+  assert.equal(source.includes('isAllowedFramePurchaseOption(option)'), true)
+  assert.equal(source.includes('optionFrameCode(option)'), true)
   assert.equal(source.includes('isExpressOption(option)'), true)
+  assert.equal(source.includes('frameLabelFromSkuParts'), true)
+  assert.equal(source.includes('frameLabelFromText'), true)
+  assert.equal(source.includes('DOT_EXPRESS_OPTIONS_ENABLED ? speedLabel : ""'), true)
+  assert.match(source, /Without frame/)
+  assert.match(source, /With frame/)
   assert.equal(source.includes('visiblePurchaseOptions.length > 1'), true)
   assert.equal(source.includes('Standard'), false)
 })
