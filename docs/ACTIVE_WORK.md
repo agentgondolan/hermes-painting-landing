@@ -10,9 +10,13 @@ Agents were losing time re-discovering repo state and answering process question
 
 Finish the paid MGE checkout bridge.
 
+Current phase ledger:
+
+- `.github/tasks/_active/20260710_paid_mge_checkout_submit_bridge/TASK.md`
+
 ## Immediate next step
 
-1. Add MGE draft validation before Stripe payment: `POST /api/v1/order-drafts/{id}/validate/` must make the draft submit-ready.
+1. Implement Phase 1 in `.github/tasks/_active/20260710_paid_mge_checkout_submit_bridge/01_PHASE1_MGE_DRAFT_VALIDATION_GATE.md`: add MGE draft validation before Stripe payment.
 2. Add durable observability/outbox for Stripe webhook -> MGE draft submit.
 3. Confirm the Stripe webhook reaches Cloudflare and posts to MGE draft submit.
 4. Confirm MGE duplicate-submit behavior with the Stripe idempotency key.
@@ -49,6 +53,8 @@ Use the fastest command that proves the requested work, then climb if the change
 2026-07-09 follow-up: Live MGE schema confirms `POST /api/v1/order-drafts/{id}/submit/` returns final `OrderDetail.id`, while draft detail/list expose `submitted_order_id`. Post-submit status should therefore anchor on the MGE order id. Read-only probes showed the current fallback `previewOptionId:SKU` draft id returns 404 from MGE draft endpoints, so paid checkout must use a real MGE integer draft id before live submit can be reliable. See `docs/payment-webhook-mge-order-status.md`.
 
 2026-07-09 MGE confirmation: successful `POST /api/v1/order-drafts/` must return a real numeric draft `id`; `201 Created` without `id` is an API/integration error. Dottingo now rejects missing, synthetic, or non-numeric draft ids before Stripe payment/webhook submit. Next gap is validation before payment, then durable webhook submit tracking.
+
+2026-07-10 planning: Created `.github/tasks/_active/20260710_paid_mge_checkout_submit_bridge/` to finish the full draft/payment/order-submit flow in five phases: validation gate, durable submit outbox, exactly-once webhook submit, customer status page, and production smoke.
 
 ## Open product decision
 
