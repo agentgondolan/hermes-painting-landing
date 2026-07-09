@@ -85,7 +85,7 @@ The cart page should use MGE previews that are already ready/orderable. The cust
 2. [DONE - Phase 2 - Multi-Project 2D Cart Page UX](02_PHASE2_MULTI_PROJECT_2D_CART_PAGE_UX.md)
 3. [DONE - Phase 3 - MGE Draft Create Update Delete Sync](03_PHASE3_MGE_DRAFT_CREATE_UPDATE_DELETE_SYNC.md)
 4. [DONE - Phase 4 - Multi-Line Checkout Handoff](04_PHASE4_MULTI_LINE_CHECKOUT_HANDOFF.md)
-5. [NOT STARTED - Phase 5 - Validation Deploy And Smoke](05_PHASE5_VALIDATION_DEPLOY_AND_SMOKE.md)
+5. [IN PROGRESS - Phase 5 - Validation Deploy And Smoke](05_PHASE5_VALIDATION_DEPLOY_AND_SMOKE.md)
 
 ## Dependencies
 
@@ -158,4 +158,4 @@ Manual smoke checklist after release:
 
 ## Next Action
 
-Implement Phase 5 only: Validation Deploy And Smoke.
+Complete Phase 5 verified production smoke: log in to `https://dottingo.sg/` with the magic-link account, open `https://dottingo.sg/checkout`, select a ready design, switch W/WO purchase option, confirm the MGE draft syncs, then stop before live payment unless explicitly approved.

@@ -201,3 +201,41 @@ Validation:
 - `npm run build` passed and generated `/admin` plus `/checkout`.
 - Local HTTP smoke passed for `http://127.0.0.1:3206/admin` and `http://127.0.0.1:3206/checkout`.
 - Local BFF probe confirmed the filtered intended standard rows for preview `181fd0fa-1aee-4137-8508-ce30e512a499`: `W` and `WO`.
+
+## 2026-07-09 - Codex - Phase 5 Partial Deploy And Smoke
+
+Summary:
+- Ran the full Phase 5 local verification ladder.
+- Updated one stale source assertion to reflect the current safer image proxy builder shape after account thumbnails were resized through query params.
+- Deployed the current production bundle to Cloudflare Pages.
+- Smoked the cart/draft selection path on the local Wrangler production bundle using the verified `matejgondolan@gmail.com` session.
+- Confirmed production `/checkout` loads, but verified production cart/draft smoke is still blocked until the browser is logged in on `dottingo.sg`.
+
+Files changed:
+- `tests/identity-preview-library-source.test.ts`
+- `.github/tasks/_active/20260703_multi_preview_cart_draft_builder/TASK.md`
+- `.github/tasks/_active/20260703_multi_preview_cart_draft_builder/05_PHASE5_VALIDATION_DEPLOY_AND_SMOKE.md`
+- `.github/tasks/_active/20260703_multi_preview_cart_draft_builder/LOG.md`
+
+Validation:
+- `node --test tests/*.test.ts` passed, 125 tests.
+- `npm run worker:typecheck` passed.
+- `npm run build` passed.
+- `npx wrangler pages deploy .next/prod --project-name hermes-painting-landing --branch main` passed.
+- Cloudflare preview URL: `https://4d542def.hermes-painting-landing.pages.dev`.
+- Production URL: `https://dottingo.sg/`.
+- HTTP smoke passed:
+  - `https://4d542def.hermes-painting-landing.pages.dev/checkout` returned 200.
+  - `https://dottingo.sg/checkout` returned 200.
+- Local verified cart smoke passed at `http://127.0.0.1:3206/checkout`:
+  - saved designs loaded,
+  - selecting one 60x80 design synced `Draft saved · 1 line`,
+  - switching from `With frame` to `Without frame` updated the draft summary and total,
+  - clearing the selected design returned the cart to `SGD 0.00` with the empty-state prompt.
+
+Blocker:
+- Production verified smoke could not be completed because `https://dottingo.sg/checkout` was not verified in the in-app browser and showed the account-required state. Matej needs to complete magic-link login on production, then reopen checkout for the final verified smoke.
+- Live payment/MGE submit was not run and still requires explicit approval.
+
+Next action:
+- Complete Phase 5 verified production smoke on `https://dottingo.sg/checkout` after Matej logs in with the magic link. Stop before live payment unless explicitly approved.
