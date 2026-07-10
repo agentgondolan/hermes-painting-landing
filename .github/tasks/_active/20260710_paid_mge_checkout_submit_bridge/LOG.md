@@ -73,3 +73,108 @@ Validation:
 
 Next action:
 - Implement Phase 3: exactly-once webhook submit through the durable outbox.
+
+## 2026-07-10 - Phase 3 implemented
+
+Author: Codex
+
+Summary:
+- Added an atomic durable claim before MGE draft submit.
+- Concurrent and completed duplicate Stripe deliveries no longer call MGE again.
+- Added retry-state handling for transient MGE failures and manual-review handling for permanent failures.
+- Required the durable outbox for every paid submit and persisted MGE `OrderDetail.id` responses.
+
+Files changed:
+- `lib/stripe/edge.ts`
+- `tests/stripe-edge.test.ts`
+- `docs/payment-webhook-mge-order-status.md`
+- `docs/ACTIVE_WORK.md`
+- `.github/tasks/_active/20260710_paid_mge_checkout_submit_bridge/03_PHASE3_EXACTLY_ONCE_WEBHOOK_SUBMIT.md`
+- `.github/tasks/_active/20260710_paid_mge_checkout_submit_bridge/TASK.md`
+- `.github/tasks/_active/20260710_paid_mge_checkout_submit_bridge/LOG.md`
+- `.github/tasks/_active/20260710_paid_mge_checkout_submit_bridge/DECISIONS.md`
+
+Validation:
+- `node --test tests/stripe-edge.test.ts` passed (27 tests).
+- `node --test tests/*.test.ts` passed (145 tests).
+- `npm run worker:typecheck` passed.
+- `npm run build` passed.
+
+Next action:
+- Implement Phase 4: customer confirmation and checkout status polling.
+
+## 2026-07-10 - Phase 4 implemented
+
+Author: Codex
+
+Summary:
+- Added a Stripe-verified, outbox-backed customer checkout status endpoint.
+- Replaced the bare success page with automatic polling across paid, submitting, submitted, retrying, and manual-review states.
+- Added final MGE order reference display without exposing raw provider data.
+- Persisted checkout selections across Stripe cancellation and clear them after confirmed submission.
+
+Files changed:
+- `lib/stripe/edge.ts`
+- `functions/api/checkout/status.ts`
+- `components/checkout/checkout-success-status.tsx`
+- `app/checkout/success/page.tsx`
+- `app/checkout/cancel/page.tsx`
+- `components/cart/multi-project-cart-page.tsx`
+- `lib/cart/browser-storage.ts`
+- `tests/stripe-edge.test.ts`
+- `tests/checkout-status-source.test.ts`
+- `tests/cart-page-source.test.ts`
+- `docs/payment-webhook-mge-order-status.md`
+- `docs/ACTIVE_WORK.md`
+- Phase task ledger files.
+
+Validation:
+- Focused checkout/Stripe tests passed (45 tests).
+- `node --test tests/*.test.ts` passed (151 tests).
+- `npm run worker:typecheck` passed.
+- `npm run build` passed after rerunning with a longer command timeout.
+- Browser verification passed for local success and cancel pages.
+
+Next action:
+- Implement Phase 5 only with explicit approval: configure production D1, deploy, and run one Stripe test payment that creates a real MGE order record.
+
+## 2026-07-10 - Phase 5 started; Cloudflare re-authentication required
+
+Author: Codex
+
+Summary:
+- Recorded the user's explicit approval for the production Stripe-test/MGE-order smoke.
+- Verified the repo, phase prerequisites, Git remote, and existing uncommitted Phase 3/4 scope.
+- Confirmed the saved Wrangler OAuth token has expired.
+- Started a fresh `wrangler login` flow in the default browser.
+
+External state:
+- No D1 database or binding created yet.
+- No commit, push, or production deployment performed yet.
+- No Stripe payment or MGE order submit performed yet.
+
+Blocker:
+- User must complete the Cloudflare sign-in opened by Wrangler.
+
+Next action:
+- After login, verify the Cloudflare account/project, download the current Pages configuration, create and initialize D1, add the binding, validate, commit/push/deploy, then run the approved smoke.
+
+## 2026-07-10 - Phase 5 infrastructure ready
+
+Author: Codex
+
+Summary:
+- Refreshed Wrangler OAuth and confirmed the `hermes-painting-landing` Pages project.
+- Created APAC D1 database `dottingo-payment-submit-outbox`.
+- Initialized the durable outbox table and indexes from `docs/payment-submit-outbox-d1.sql`.
+- Added the production `PAYMENT_SUBMIT_OUTBOX` binding and `.next/prod` Pages output directory to `wrangler.toml`.
+- Confirmed the required production secret names are configured without reading or exposing their values.
+
+Validation:
+- Remote D1 query confirmed `payment_submit_outbox` and both indexes.
+- `node --test tests/*.test.ts` passed all 151 tests.
+- `npm run worker:typecheck` passed.
+- `npm run build` passed.
+
+Next action:
+- Commit and push the tested revision, deploy it to Cloudflare Pages, then complete the approved Stripe test payment and verify exactly one final MGE order.

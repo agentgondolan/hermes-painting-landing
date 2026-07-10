@@ -1,4 +1,4 @@
-Status: NOT STARTED
+Status: IN PROGRESS
 Required: yes
 Created: 2026-07-10
 Updated: 2026-07-10
@@ -51,3 +51,10 @@ npm run build
 npx wrangler pages deployment list --project-name hermes-painting-landing
 ```
 
+## Current Status
+
+- Cloudflare OAuth was refreshed and the `hermes-painting-landing` Pages project was confirmed.
+- D1 database `dottingo-payment-submit-outbox` was created in APAC and initialized from `docs/payment-submit-outbox-d1.sql`.
+- `wrangler.toml` now binds the database as `PAYMENT_SUBMIT_OUTBOX` and declares `.next/prod` as the Pages output directory.
+- All 151 tests, Worker typecheck, and production build pass.
+- Production deployment, Stripe test payment, MGE order confirmation, and duplicate-delivery proof are still pending.

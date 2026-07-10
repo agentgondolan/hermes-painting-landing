@@ -22,6 +22,13 @@ import {
   TARGET_GROSS_MARGIN,
   isDottingoAdminEmail,
 } from "@/lib/dottingo/project-settings"
+import {
+  clearStoredCartDraftId,
+  readStoredCartDraftId,
+  readStoredCartSelections,
+  writeStoredCartDraftId,
+  writeStoredCartSelections,
+} from "@/lib/cart/browser-storage"
 
 type PurchaseOption = BffPurchaseOptionsResult["purchaseOptions"][number]
 
@@ -36,8 +43,6 @@ type OptionState =
   | { status: "error"; options: PurchaseOption[]; error: string }
 
 const EMPTY_LIBRARY: IdentityPreviewLibrary = { previews: [], projects: [] }
-const CART_DRAFT_STORAGE_KEY = "dottingo_cart_draft_id_v1"
-
 export function MultiProjectCartPage() {
   const [identity, setIdentity] = useState<StoredIdentity | null>(null)
   const [library, setLibrary] = useState<IdentityPreviewLibrary>(EMPTY_LIBRARY)
@@ -53,9 +58,12 @@ export function MultiProjectCartPage() {
   const [checkoutLoading, setCheckoutLoading] = useState(false)
   const [checkoutError, setCheckoutError] = useState<string | null>(null)
   const [previewModal, setPreviewModal] = useState<{ url: string; label: string } | null>(null)
+  const [cartHydrated, setCartHydrated] = useState(false)
 
   useEffect(() => {
     setOrderDraftId(readStoredCartDraftId())
+    setSelections(readStoredCartSelections())
+    setCartHydrated(true)
     const stored = readVerifiedIdentity()
     setIdentity(stored)
     if (!stored) {
@@ -129,14 +137,24 @@ export function MultiProjectCartPage() {
 
   const total = selectedLines.reduce((sum, line) => sum + quoteCents(line.option) * line.quantity, 0)
   const draftLineCount = syncedDraft?.lineItems?.length ?? syncedDraft?.itemCount ?? 0
+  const selectionsReadyForSync = Object.entries(selections).every(([previewId, selection]) => {
+    const state = optionStates[previewId]
+    return state?.status === "ready" && state.options.some((option) => optionIdentity(option) === selection.purchaseOptionId)
+  })
 
   useEffect(() => {
+    if (loading) return
     const validPreviewIds = new Set(readyProjects.flatMap((project) => project.previews.map((preview) => preview.previewId)))
     setSelections((current) => {
       const next = Object.fromEntries(Object.entries(current).filter(([previewId]) => validPreviewIds.has(previewId)))
       return Object.keys(next).length === Object.keys(current).length ? current : next
     })
-  }, [readyProjects])
+  }, [loading, readyProjects])
+
+  useEffect(() => {
+    if (!cartHydrated) return
+    writeStoredCartSelections(selections)
+  }, [cartHydrated, selections])
 
   useEffect(() => {
     setDraftDirty(true)
@@ -225,12 +243,12 @@ export function MultiProjectCartPage() {
   }, [orderDraftId, selectedLines])
 
   useEffect(() => {
-    if (!draftDirty) return
+    if (!draftDirty || !cartHydrated || loading || !selectionsReadyForSync) return
     const timer = window.setTimeout(() => {
       void syncDraft()
     }, 550)
     return () => window.clearTimeout(timer)
-  }, [draftDirty, orderDraftId, selectedLines, syncDraft])
+  }, [cartHydrated, draftDirty, loading, orderDraftId, selectedLines, selectionsReadyForSync, syncDraft])
 
   const handleCheckout = async () => {
     if (!identity) {
@@ -623,20 +641,4 @@ function roundUpToNinetyNineCents(amount: number): number {
   const dollars = Math.floor(cents / 100)
   const ninetyNine = dollars * 100 + 99
   return cents <= ninetyNine ? ninetyNine : (dollars + 1) * 100 + 99
-}
-
-function readStoredCartDraftId(): string | null {
-  if (typeof window === "undefined") return null
-  const value = window.localStorage.getItem(CART_DRAFT_STORAGE_KEY)
-  return value?.trim() || null
-}
-
-function writeStoredCartDraftId(orderDraftId: string) {
-  if (typeof window === "undefined") return
-  window.localStorage.setItem(CART_DRAFT_STORAGE_KEY, orderDraftId)
-}
-
-function clearStoredCartDraftId() {
-  if (typeof window === "undefined") return
-  window.localStorage.removeItem(CART_DRAFT_STORAGE_KEY)
 }

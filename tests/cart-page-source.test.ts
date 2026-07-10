@@ -4,6 +4,7 @@ import test from 'node:test'
 
 const cartSource = readFileSync(new URL('../components/cart/multi-project-cart-page.tsx', import.meta.url), 'utf8')
 const checkoutPageSource = readFileSync(new URL('../app/checkout/page.tsx', import.meta.url), 'utf8')
+const cartStorageSource = readFileSync(new URL('../lib/cart/browser-storage.ts', import.meta.url), 'utf8')
 
 test('checkout route renders the multi-project cart page', () => {
   assert.equal(checkoutPageSource.includes('MultiProjectCartPage'), true)
@@ -133,7 +134,7 @@ test('cart uses styled option pills and hides them when only one purchase option
 })
 
 test('cart page can clear stale lines by syncing an empty selection to an existing draft', () => {
-  assert.equal(cartSource.includes('CART_DRAFT_STORAGE_KEY'), true)
+  assert.equal(cartStorageSource.includes('CART_DRAFT_STORAGE_KEY'), true)
   assert.equal(cartSource.includes('readStoredCartDraftId'), true)
   assert.equal(cartSource.includes('writeStoredCartDraftId'), true)
   assert.equal(cartSource.includes('clearStoredCartDraftId'), true)

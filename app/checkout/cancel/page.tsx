@@ -16,14 +16,14 @@ export default function CheckoutCancelPage() {
           No payment was taken.
         </h1>
         <p className="mt-6 max-w-xl text-base leading-7 text-black/65 md:text-lg">
-          Your preview is still waiting. Go back when you are ready to choose a
-          kit size and complete the order.
+          Your selected designs are still in the checkout. Return when you are
+          ready to complete the order.
         </p>
         <Link
-          href="/"
+          href="/checkout"
           className="mt-8 rounded-full bg-black px-6 py-3 text-sm font-semibold text-white transition hover:bg-black/85"
         >
-          Back to preview
+          Return to checkout
         </Link>
       </section>
     </main>

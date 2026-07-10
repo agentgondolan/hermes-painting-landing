@@ -96,6 +96,10 @@ stripe-checkout:{checkout_session_id}:{mge_order_draft_id}
 
 If MGE returns a duplicate/already-submitted response with a final order id or `submitted_order_id`, treat it as success and store that order id.
 
+The outbox also owns an atomic submit claim. A paid session can move from `paid`, `mge_submit_queued`, or `mge_retrying` to `mge_submitting` only when one webhook delivery acquires that claim. Concurrent or later duplicate Stripe deliveries inspect the existing state and do not call MGE again while the first submit is active or after it has completed.
+
+An abandoned `mge_submitting` claim can be reclaimed after five minutes. Every reclaimed attempt uses the same Stripe-session-derived MGE idempotency key, so recovering from a Worker interruption cannot create a second MGE order.
+
 ## Current implementation status
 
 Implemented on 2026-07-10:
@@ -106,12 +110,17 @@ Implemented on 2026-07-10:
 - Submit success records `mge_submitted` with the final MGE order id when returned.
 - Submit failure records `mge_retrying` with sanitized error text.
 - If a paid webhook cannot be durably recorded, Dottingo returns non-2xx and skips MGE submit so Stripe can retry.
+- Paid webhooks require the `PAYMENT_SUBMIT_OUTBOX` binding; there is no stateless paid-submit fallback.
+- One webhook delivery atomically claims `mge_submitting`; concurrent duplicates return `submit_in_progress` without calling MGE.
+- Later duplicates return `already_submitted` from the stored outbox row and reuse the persisted MGE order id.
+- MGE `408`, `425`, `429`, and `5xx` failures move the row to `mge_retrying`; a Stripe retry can claim it again with the same idempotency key.
+- Permanent MGE submit failures move the row to `mge_failed_manual_review` instead of retrying indefinitely.
+- Successful MGE submit responses persist the final order id from `id`, `order_id`, `submitted_order_id`, `mge_order_id`, or `order.id`.
 
 Still pending:
 
-- Exactly-once locking around MGE submit attempts.
 - Retry worker/polling behavior for `mge_retrying`.
-- Customer-facing status endpoint and success-page polling.
+- Production D1 binding, deployment, and one approved end-to-end payment/order-submit smoke.
 
 ## Customer status endpoint
 
@@ -122,6 +131,14 @@ GET /api/checkout/status?session_id={stripe_checkout_session_id}
 ```
 
 The endpoint should return the Dottingo submission state, Stripe payment state, MGE draft id, and MGE order id when available. Once `mge_order_id` exists, it should use MGE final order status for display.
+
+Implemented on 2026-07-10:
+
+- `GET /api/checkout/status?session_id=...` verifies the session directly with Stripe before reading the outbox.
+- Only sessions carrying Dottingo `source` and `brand_key` metadata are accepted.
+- The response contains only `sessionId`, `paymentState`, `submissionState`, `orderDraftId`, `orderId`, `terminal`, and a safe message.
+- The success page polls until submitted or manual review and never renders raw upstream errors.
+- The cancel path returns to the persisted cart selections at `/checkout`.
 
 ## MGE clarification to request if needed
 

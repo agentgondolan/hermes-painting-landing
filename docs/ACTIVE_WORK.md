@@ -16,10 +16,9 @@ Current phase ledger:
 
 ## Immediate next step
 
-1. Implement Phase 3 in `.github/tasks/_active/20260710_paid_mge_checkout_submit_bridge/03_PHASE3_EXACTLY_ONCE_WEBHOOK_SUBMIT.md`: gate MGE submit through the durable outbox so duplicate/retried Stripe events do not run parallel or repeated submits.
-2. Confirm the Stripe webhook reaches Cloudflare and posts to MGE draft submit through the durable path.
-3. Confirm MGE duplicate-submit behavior with the Stripe idempotency key.
-4. Improve checkout success/cancel pages to show the submitted MGE order status once the live response shape is confirmed.
+1. Commit and deploy the Phase 3-5 revision with the production `PAYMENT_SUBMIT_OUTBOX` D1 binding.
+2. Complete one approved Stripe test payment through webhook, MGE submit, and final order id display.
+3. Confirm a duplicate webhook/session retry does not create a second MGE order.
 
 ## Current known repo state
 
@@ -58,6 +57,12 @@ Use the fastest command that proves the requested work, then climb if the change
 2026-07-10 Phase 1: MGE draft validation gate implemented. Stripe checkout now validates the numeric MGE draft with `POST /api/v1/order-drafts/{id}/validate/` before creating a Checkout Session and blocks payment on unreadable/invalid/unavailable validation responses.
 
 2026-07-10 Phase 2: Durable payment submit outbox implemented in `lib/stripe/edge.ts`. Checkout creation records `checkout_created`, paid Stripe webhooks record `paid` before MGE submit, submit success records `mge_submitted` with the MGE order id, and submit failure records `mge_retrying` with sanitized error text. D1 schema is documented in `docs/payment-submit-outbox-d1.sql`. Next gap is Phase 3 exactly-once submit/retry behavior.
+
+2026-07-10 Phase 3: Exactly-once webhook submit implemented. Paid Stripe webhooks now require the durable outbox, atomically claim one active MGE submit, skip concurrent/completed duplicates, retry transient MGE failures with the same idempotency key, persist final MGE order ids, and route permanent failures to manual review. Next gap is Phase 4 customer status polling. Production still needs the `PAYMENT_SUBMIT_OUTBOX` D1 binding before a paid smoke.
+
+2026-07-10 Phase 4: Customer confirmation and status polling implemented. The new server endpoint verifies Dottingo Stripe sessions and returns only safe durable status fields; the success page polls paid/submitting/submitted/retrying/manual-review states, and cancelled checkout restores persisted selections. Next is the explicitly approved Phase 5 production D1/deploy/payment smoke.
+
+2026-07-10 Phase 5 infrastructure: Cloudflare OAuth refreshed; APAC D1 `dottingo-payment-submit-outbox` created and initialized; `wrangler.toml` binds it as `PAYMENT_SUBMIT_OUTBOX`. All 151 tests, Worker typecheck, and production build pass. Next is commit, deploy, and the approved payment/order-submit smoke.
 
 ## Open product decision
 

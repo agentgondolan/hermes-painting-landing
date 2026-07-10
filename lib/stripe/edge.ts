@@ -50,14 +50,23 @@ export type PaymentSubmitOutboxRecord = {
   lastError?: string | null
 }
 
+export type PaymentSubmitClaimResult = {
+  status: 'acquired' | 'already_submitted' | 'in_progress' | 'manual_review'
+  attemptCount: number
+  mgeOrderId?: string | null
+}
+
 export type PaymentSubmitOutbox = {
   upsert(record: PaymentSubmitOutboxRecord): Promise<void>
+  claimMgeSubmit(record: PaymentSubmitOutboxRecord): Promise<PaymentSubmitClaimResult>
+  getByStripeSessionId(stripeSessionId: string): Promise<PaymentSubmitOutboxRecord | null>
 }
 
 type D1PaymentSubmitOutboxDatabase = {
   prepare(sql: string): {
     bind(...values: unknown[]): {
       run(): Promise<unknown>
+      first<T = Record<string, unknown>>(): Promise<T | null>
     }
   }
 }
@@ -65,6 +74,9 @@ type D1PaymentSubmitOutboxDatabase = {
 type StripeCheckoutSession = {
   id?: string
   url?: string
+  payment_status?: unknown
+  status?: unknown
+  metadata?: Record<string, unknown>
   [key: string]: unknown
 }
 
@@ -138,6 +150,7 @@ const TARGET_GROSS_MARGIN = 0.5
 const SINGAPORE_GST_RATE = 0.09
 const DEFAULT_EUR_TO_SGD_RATE = 1.46
 const DEFAULT_MGEVERYDAY_BASE_URL = 'https://www.mgeveryday.sg'
+const MGE_SUBMIT_CLAIM_TTL_MS = 5 * 60 * 1000
 
 export async function createStripeCheckoutSession(
   request: Request,
@@ -279,16 +292,7 @@ export async function handleStripeWebhookWithFetcher(
       if (email && previewId) {
         magicLinkDelivery = await sendContinuationMagicLink(request, env, { email, previewId })
       }
-      const outbox = paymentSubmitOutbox(env)
-      await recordWebhookPaymentReceived(session ?? {}, event.id, outbox)
-      try {
-        await recordMgeSubmitAttempt(session ?? {}, event.id, outbox)
-        mgeOrderSubmission = await submitMgeOrderFromPaidSession(session ?? {}, event.id, env, fetcher)
-        await recordMgeSubmitResult(session ?? {}, event.id, mgeOrderSubmission, outbox)
-      } catch (error) {
-        await recordMgeSubmitFailure(session ?? {}, event.id, error, outbox)
-        throw error
-      }
+      mgeOrderSubmission = await processPaidMgeOrderSubmission(session ?? {}, event.id, env, fetcher)
     }
 
     return json({ received: true, event: event.type, magicLinkDelivery, mgeOrderSubmission })
@@ -298,10 +302,99 @@ export async function handleStripeWebhookWithFetcher(
   }
 }
 
+export async function getStripeCheckoutStatus(
+  request: Request,
+  env: StripeEnv,
+  fetcher: Fetcher = fetch,
+): Promise<Response> {
+  if (request.method !== 'GET') {
+    return json({ error: 'Method not allowed' }, 405)
+  }
+
+  const sessionId = normalizeStripeCheckoutSessionId(new URL(request.url).searchParams.get('session_id') ?? '')
+  if (!sessionId) {
+    return json({ error: 'A valid Stripe Checkout Session id is required' }, 400)
+  }
+
+  try {
+    const secretKey = requireSandboxSecretKey(env)
+    const stripeResponse = await fetcher(`${STRIPE_API_BASE}/checkout/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'GET',
+      headers: new Headers({ Authorization: `Bearer ${secretKey}` }),
+    })
+    const stripeText = await stripeResponse.text()
+    const stripeSession = parseJson(stripeText) as StripeCheckoutSession | null
+
+    if (!stripeResponse.ok || !stripeSession) {
+      return json(
+        { error: stripeResponse.status === 404 ? 'Checkout Session was not found' : 'Checkout status is temporarily unavailable' },
+        stripeResponse.status === 404 ? 404 : 502,
+      )
+    }
+
+    const metadata = asRecord(stripeSession.metadata) ?? {}
+    if (stringValue(metadata.source) !== 'dottingo_landing' || stringValue(metadata.brand_key) !== 'dottingo') {
+      return json({ error: 'Checkout Session was not found' }, 404)
+    }
+
+    const outbox = paymentSubmitOutbox(env)
+    if (!outbox) {
+      return json({ error: 'Checkout status is temporarily unavailable' }, 503)
+    }
+
+    const record = await outbox.getByStripeSessionId(sessionId)
+    const paymentState = normalizeStripePaymentState(stripeSession.payment_status)
+    const submissionState = customerSubmissionState(paymentState, record?.state)
+    const orderDraftId = record?.mgeOrderDraftId
+      || normalizeMgeId(stringValue(metadata.order_draft_id))
+      || null
+    const orderId = record?.mgeOrderId || null
+    const payload: CheckoutStatusPayload = {
+      sessionId,
+      paymentState,
+      submissionState,
+      orderDraftId,
+      orderId,
+      terminal: submissionState === 'submitted' || submissionState === 'manual_review',
+      message: checkoutStatusMessage(submissionState),
+    }
+
+    return json(payload)
+  } catch {
+    return json({ error: 'Checkout status is temporarily unavailable' }, 503)
+  }
+}
+
 type MgeOrderSubmissionResult = {
-  status: 'not_applicable' | 'not_paid' | 'submitted' | 'already_submitted'
+  status:
+    | 'not_applicable'
+    | 'not_paid'
+    | 'submitted'
+    | 'already_submitted'
+    | 'submit_in_progress'
+    | 'manual_review'
   orderDraftId?: string
   orderId?: string
+}
+
+export type CheckoutStatusPayload = {
+  sessionId: string
+  paymentState: 'paid' | 'unpaid' | 'no_payment_required' | 'unknown'
+  submissionState: 'awaiting_payment' | 'paid' | 'submitting' | 'submitted' | 'retrying' | 'manual_review'
+  orderDraftId: string | null
+  orderId: string | null
+  terminal: boolean
+  message: string
+}
+
+class MgeOrderSubmitHttpError extends Error {
+  readonly retryable: boolean
+
+  constructor(message: string, retryable: boolean) {
+    super(message)
+    this.name = 'MgeOrderSubmitHttpError'
+    this.retryable = retryable
+  }
 }
 
 class D1PaymentSubmitOutbox implements PaymentSubmitOutbox {
@@ -329,12 +422,43 @@ class D1PaymentSubmitOutbox implements PaymentSubmitOutbox {
       ON CONFLICT(stripe_session_id) DO UPDATE SET
         stripe_event_id = COALESCE(excluded.stripe_event_id, payment_submit_outbox.stripe_event_id),
         verified_email = COALESCE(excluded.verified_email, payment_submit_outbox.verified_email),
-        mge_order_draft_id = COALESCE(excluded.mge_order_draft_id, payment_submit_outbox.mge_order_draft_id),
+        mge_order_draft_id = COALESCE(payment_submit_outbox.mge_order_draft_id, excluded.mge_order_draft_id),
         mge_order_id = COALESCE(excluded.mge_order_id, payment_submit_outbox.mge_order_id),
-        state = excluded.state,
+        state = CASE
+          WHEN payment_submit_outbox.state = 'mge_submitted' THEN payment_submit_outbox.state
+          WHEN excluded.state = 'mge_submitted' THEN excluded.state
+          WHEN excluded.state = 'mge_failed_manual_review' THEN excluded.state
+          WHEN excluded.state = 'mge_retrying'
+            AND payment_submit_outbox.state IN ('mge_submitting', 'mge_retrying') THEN excluded.state
+          WHEN excluded.state = 'mge_submit_queued'
+            AND payment_submit_outbox.state IN ('checkout_created', 'paid', 'mge_submit_queued') THEN excluded.state
+          WHEN excluded.state = 'paid'
+            AND payment_submit_outbox.state IN ('checkout_created', 'paid') THEN excluded.state
+          WHEN excluded.state = 'checkout_created'
+            AND payment_submit_outbox.state = 'checkout_created' THEN excluded.state
+          ELSE payment_submit_outbox.state
+        END,
         attempt_count = MAX(payment_submit_outbox.attempt_count, excluded.attempt_count),
-        last_error = excluded.last_error,
-        updated_at = excluded.updated_at
+        last_error = CASE
+          WHEN excluded.state = 'mge_submitted' THEN NULL
+          WHEN excluded.state IN ('mge_retrying', 'mge_failed_manual_review') THEN excluded.last_error
+          ELSE payment_submit_outbox.last_error
+        END,
+        updated_at = CASE
+          WHEN payment_submit_outbox.state = 'mge_submitted'
+            AND excluded.state <> 'mge_submitted' THEN payment_submit_outbox.updated_at
+          WHEN excluded.state = 'mge_failed_manual_review'
+            AND payment_submit_outbox.state = 'mge_submitted' THEN payment_submit_outbox.updated_at
+          WHEN excluded.state = 'mge_retrying'
+            AND payment_submit_outbox.state NOT IN ('mge_submitting', 'mge_retrying') THEN payment_submit_outbox.updated_at
+          WHEN excluded.state = 'mge_submit_queued'
+            AND payment_submit_outbox.state NOT IN ('checkout_created', 'paid', 'mge_submit_queued') THEN payment_submit_outbox.updated_at
+          WHEN excluded.state = 'paid'
+            AND payment_submit_outbox.state NOT IN ('checkout_created', 'paid') THEN payment_submit_outbox.updated_at
+          WHEN excluded.state = 'checkout_created'
+            AND payment_submit_outbox.state <> 'checkout_created' THEN payment_submit_outbox.updated_at
+          ELSE excluded.updated_at
+        END
     `).bind(
       record.stripeSessionId,
       record.stripeEventId ?? null,
@@ -348,6 +472,122 @@ class D1PaymentSubmitOutbox implements PaymentSubmitOutbox {
       now,
     ).run()
   }
+
+  async claimMgeSubmit(record: PaymentSubmitOutboxRecord): Promise<PaymentSubmitClaimResult> {
+    const now = new Date()
+    const nowIso = now.toISOString()
+    const staleBeforeIso = new Date(now.getTime() - MGE_SUBMIT_CLAIM_TTL_MS).toISOString()
+    const updateResult = await this.db.prepare(`
+      UPDATE payment_submit_outbox
+      SET
+        stripe_event_id = COALESCE(?, stripe_event_id),
+        state = 'mge_submitting',
+        attempt_count = attempt_count + 1,
+        last_error = NULL,
+        updated_at = ?
+      WHERE stripe_session_id = ?
+        AND mge_order_draft_id = ?
+        AND (
+          state IN ('paid', 'mge_submit_queued', 'mge_retrying')
+          OR (state = 'mge_submitting' AND updated_at < ?)
+        )
+    `).bind(
+      record.stripeEventId ?? null,
+      nowIso,
+      record.stripeSessionId,
+      record.mgeOrderDraftId ?? null,
+      staleBeforeIso,
+    ).run()
+
+    const changes = d1WriteChanges(updateResult)
+    if (changes === null) {
+      throw new Error('PAYMENT_SUBMIT_OUTBOX did not report atomic claim changes')
+    }
+
+    const current = await this.db.prepare(`
+      SELECT state, attempt_count, mge_order_id, mge_order_draft_id
+      FROM payment_submit_outbox
+      WHERE stripe_session_id = ?
+    `).bind(record.stripeSessionId).first<{
+      state?: unknown
+      attempt_count?: unknown
+      mge_order_id?: unknown
+      mge_order_draft_id?: unknown
+    }>()
+
+    if (!current) {
+      throw new Error('PAYMENT_SUBMIT_OUTBOX claim row was not found')
+    }
+
+    const storedDraftId = stringValue(current.mge_order_draft_id)
+    if (!storedDraftId || storedDraftId !== record.mgeOrderDraftId) {
+      throw new Error('PAYMENT_SUBMIT_OUTBOX draft id does not match the paid session')
+    }
+
+    const attemptCount = Math.max(0, Number(current.attempt_count) || 0)
+    if (changes > 0) {
+      return { status: 'acquired', attemptCount }
+    }
+
+    const state = stringValue(current.state)
+    if (state === 'mge_submitted') {
+      return {
+        status: 'already_submitted',
+        attemptCount,
+        mgeOrderId: stringValue(current.mge_order_id) || null,
+      }
+    }
+    if (state === 'mge_submitting') {
+      return { status: 'in_progress', attemptCount }
+    }
+    if (state === 'mge_failed_manual_review') {
+      return { status: 'manual_review', attemptCount }
+    }
+
+    throw new Error(`PAYMENT_SUBMIT_OUTBOX could not claim state ${state || 'unknown'}`)
+  }
+
+  async getByStripeSessionId(stripeSessionId: string): Promise<PaymentSubmitOutboxRecord | null> {
+    const row = await this.db.prepare(`
+      SELECT
+        stripe_session_id,
+        stripe_event_id,
+        verified_email,
+        mge_order_draft_id,
+        mge_order_id,
+        state,
+        attempt_count,
+        last_error
+      FROM payment_submit_outbox
+      WHERE stripe_session_id = ?
+    `).bind(stripeSessionId).first<{
+      stripe_session_id?: unknown
+      stripe_event_id?: unknown
+      verified_email?: unknown
+      mge_order_draft_id?: unknown
+      mge_order_id?: unknown
+      state?: unknown
+      attempt_count?: unknown
+      last_error?: unknown
+    }>()
+
+    if (!row) return null
+    const state = normalizePaymentSubmitState(row.state)
+    if (!state) {
+      throw new Error('PAYMENT_SUBMIT_OUTBOX contains an unknown state')
+    }
+
+    return {
+      stripeSessionId: stringValue(row.stripe_session_id),
+      stripeEventId: stringValue(row.stripe_event_id) || null,
+      verifiedEmail: stringValue(row.verified_email) || null,
+      mgeOrderDraftId: stringValue(row.mge_order_draft_id) || null,
+      mgeOrderId: stringValue(row.mge_order_id) || null,
+      state,
+      attemptCount: Math.max(0, Number(row.attempt_count) || 0),
+      lastError: stringValue(row.last_error) || null,
+    }
+  }
 }
 
 function paymentSubmitOutbox(env: StripeEnv): PaymentSubmitOutbox | null {
@@ -359,11 +599,26 @@ function paymentSubmitOutbox(env: StripeEnv): PaymentSubmitOutbox | null {
 }
 
 function isPaymentSubmitOutbox(value: unknown): value is PaymentSubmitOutbox {
-  return Boolean(value && typeof value === 'object' && 'upsert' in value && typeof (value as { upsert?: unknown }).upsert === 'function')
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && 'upsert' in value
+    && typeof (value as { upsert?: unknown }).upsert === 'function'
+    && 'claimMgeSubmit' in value
+    && typeof (value as { claimMgeSubmit?: unknown }).claimMgeSubmit === 'function'
+    && 'getByStripeSessionId' in value
+    && typeof (value as { getByStripeSessionId?: unknown }).getByStripeSessionId === 'function',
+  )
 }
 
 function isD1PaymentSubmitOutboxDatabase(value: unknown): value is D1PaymentSubmitOutboxDatabase {
   return Boolean(value && typeof value === 'object' && 'prepare' in value && typeof (value as { prepare?: unknown }).prepare === 'function')
+}
+
+function d1WriteChanges(result: unknown): number | null {
+  const meta = asRecord(asRecord(result)?.meta)
+  const changes = Number(meta?.changes)
+  return Number.isFinite(changes) ? changes : null
 }
 
 async function recordCheckoutCreated(
@@ -392,20 +647,53 @@ async function recordWebhookPaymentReceived(
   outbox: PaymentSubmitOutbox | null,
 ): Promise<void> {
   if (!isPaidCheckoutSession(session)) return
-  const record = paymentSubmitRecordFromSession(session, eventId, 'paid')
-  if (!outbox || !record) return
+  const record = requirePaymentSubmitRecordFromSession(session, eventId, 'paid')
+  if (!outbox) {
+    throw new Error('PAYMENT_SUBMIT_OUTBOX is required before paid order submission')
+  }
   await outbox.upsert(record)
 }
 
-async function recordMgeSubmitAttempt(
+async function processPaidMgeOrderSubmission(
   session: StripeWebhookSession,
   eventId: string | undefined,
-  outbox: PaymentSubmitOutbox | null,
-): Promise<void> {
-  if (!isPaidCheckoutSession(session)) return
-  const record = paymentSubmitRecordFromSession(session, eventId, 'mge_submitting', { attemptCount: 1 })
-  if (!outbox || !record) return
-  await outbox.upsert(record)
+  env: StripeEnv,
+  fetcher: Fetcher,
+): Promise<MgeOrderSubmissionResult> {
+  if (!isPaidCheckoutSession(session)) {
+    return submitMgeOrderFromPaidSession(session, eventId, env, fetcher)
+  }
+
+  const outbox = paymentSubmitOutbox(env)
+  await recordWebhookPaymentReceived(session, eventId, outbox)
+  const claimRecord = requirePaymentSubmitRecordFromSession(session, eventId, 'mge_submitting')
+  const claim = await outbox!.claimMgeSubmit(claimRecord)
+  const orderDraftId = claimRecord.mgeOrderDraftId!
+
+  if (claim.status === 'already_submitted') {
+    return {
+      status: 'already_submitted',
+      orderDraftId,
+      orderId: claim.mgeOrderId || undefined,
+    }
+  }
+  if (claim.status === 'in_progress') {
+    return { status: 'submit_in_progress', orderDraftId }
+  }
+  if (claim.status === 'manual_review') {
+    return { status: 'manual_review', orderDraftId }
+  }
+
+  try {
+    const result = await submitMgeOrderFromPaidSession(session, eventId, env, fetcher)
+    await recordMgeSubmitResult(session, eventId, result, outbox, claim.attemptCount)
+    return result
+  } catch (error) {
+    const retryable = isRetryableMgeSubmitError(error)
+    await recordMgeSubmitFailure(session, eventId, error, outbox, claim.attemptCount, retryable)
+    if (retryable) throw error
+    return { status: 'manual_review', orderDraftId }
+  }
 }
 
 async function recordMgeSubmitResult(
@@ -413,11 +701,12 @@ async function recordMgeSubmitResult(
   eventId: string | undefined,
   result: MgeOrderSubmissionResult,
   outbox: PaymentSubmitOutbox | null,
+  attemptCount: number,
 ): Promise<void> {
   if (!outbox || result.status !== 'submitted' && result.status !== 'already_submitted') return
   const record = paymentSubmitRecordFromSession(session, eventId, 'mge_submitted', {
     mgeOrderId: result.orderId ?? null,
-    attemptCount: 1,
+    attemptCount,
     lastError: null,
   })
   if (!record) return
@@ -429,15 +718,45 @@ async function recordMgeSubmitFailure(
   eventId: string | undefined,
   error: unknown,
   outbox: PaymentSubmitOutbox | null,
+  attemptCount: number,
+  retryable: boolean,
 ): Promise<void> {
   if (!isPaidCheckoutSession(session)) return
   if (!outbox) return
-  const record = paymentSubmitRecordFromSession(session, eventId, 'mge_retrying', {
-    attemptCount: 1,
-    lastError: sanitizeOutboxError(error),
-  })
+  const record = paymentSubmitRecordFromSession(
+    session,
+    eventId,
+    retryable ? 'mge_retrying' : 'mge_failed_manual_review',
+    {
+      attemptCount,
+      lastError: sanitizeOutboxError(error),
+    },
+  )
   if (!record) return
   await outbox.upsert(record)
+}
+
+function requirePaymentSubmitRecordFromSession(
+  session: StripeWebhookSession,
+  eventId: string | undefined,
+  state: PaymentSubmitState,
+): PaymentSubmitOutboxRecord {
+  const metadata = session.metadata ?? {}
+  const stripeSessionId = stringValue(session.id)
+  if (!stripeSessionId) {
+    throw new Error('Paid Stripe Checkout Session is missing its session id')
+  }
+
+  const rawOrderDraftId = stringValue(metadata.order_draft_id)
+  const orderDraftId = normalizeMgeId(rawOrderDraftId)
+  if (rawOrderDraftId && !orderDraftId) {
+    throw new Error('MGE order draft id must be a real numeric id before submit')
+  }
+  if (!orderDraftId) {
+    throw new Error('Paid Stripe Checkout Session is missing MGE order draft id metadata')
+  }
+
+  return paymentSubmitRecordFromSession(session, eventId, state)!
 }
 
 function paymentSubmitRecordFromSession(
@@ -481,6 +800,62 @@ function isPaidCheckoutSession(session: StripeWebhookSession): boolean {
   return paymentStatus === 'paid' || paymentStatus === 'no_payment_required'
 }
 
+function normalizeStripeCheckoutSessionId(value: string): string {
+  const sessionId = value.trim()
+  return /^cs_(?:test|live)_[A-Za-z0-9_]+$/.test(sessionId) ? sessionId : ''
+}
+
+function normalizeStripePaymentState(value: unknown): CheckoutStatusPayload['paymentState'] {
+  const state = stringValue(value).toLowerCase()
+  return state === 'paid' || state === 'unpaid' || state === 'no_payment_required' ? state : 'unknown'
+}
+
+function normalizePaymentSubmitState(value: unknown): PaymentSubmitState | null {
+  const state = stringValue(value) as PaymentSubmitState
+  return [
+    'checkout_created',
+    'paid',
+    'mge_submit_queued',
+    'mge_submitting',
+    'mge_submitted',
+    'mge_retrying',
+    'mge_failed_manual_review',
+  ].includes(state) ? state : null
+}
+
+function customerSubmissionState(
+  paymentState: CheckoutStatusPayload['paymentState'],
+  outboxState: PaymentSubmitState | undefined,
+): CheckoutStatusPayload['submissionState'] {
+  if (outboxState === 'mge_submitted') return 'submitted'
+  if (outboxState === 'mge_failed_manual_review') return 'manual_review'
+  if (outboxState === 'mge_retrying') return 'retrying'
+  if (outboxState === 'mge_submitting') return 'submitting'
+  if (outboxState === 'paid' || outboxState === 'mge_submit_queued') return 'paid'
+  if (paymentState === 'paid' || paymentState === 'no_payment_required') return 'paid'
+  return 'awaiting_payment'
+}
+
+function checkoutStatusMessage(state: CheckoutStatusPayload['submissionState']): string {
+  if (state === 'submitted') return 'Your order is confirmed.'
+  if (state === 'manual_review') return 'Payment was received. Our team will finish checking your order.'
+  if (state === 'retrying') return 'Payment was received. Your order is safe and is still being finalized.'
+  if (state === 'submitting') return 'Payment was received. We are creating your order.'
+  if (state === 'paid') return 'Payment was received. Your order is waiting to be finalized.'
+  return 'We are checking your payment.'
+}
+
+function isRetryableMgeSubmitError(error: unknown): boolean {
+  if (error instanceof MgeOrderSubmitHttpError) return error.retryable
+  const message = error instanceof Error ? error.message : String(error || '')
+  if (/is not configured|must be a real numeric id|missing MGE order draft id/i.test(message)) return false
+  return true
+}
+
+function isTransientMgeSubmitStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500
+}
+
 async function submitMgeOrderFromPaidSession(
   session: StripeWebhookSession,
   eventId: string | undefined,
@@ -514,10 +889,14 @@ async function submitMgeOrderFromPaidSession(
   const raw = parseJson(text)
 
   if (upstream.ok) {
+    const orderId = extractMgeOrderId(raw)
+    if (!orderId) {
+      throw new MgeOrderSubmitHttpError('MGE order submit response did not include a final order id', true)
+    }
     return {
       status: 'submitted',
       orderDraftId,
-      orderId: extractMgeOrderId(raw),
+      orderId,
     }
   }
 
@@ -529,7 +908,10 @@ async function submitMgeOrderFromPaidSession(
     }
   }
 
-  throw new Error(`MGE order submit failed (${upstream.status}): ${summarizeMgeSubmitError(raw, text, token)}`)
+  throw new MgeOrderSubmitHttpError(
+    `MGE order submit failed (${upstream.status}): ${summarizeMgeSubmitError(raw, text, token)}`,
+    isTransientMgeSubmitStatus(upstream.status),
+  )
 }
 
 export async function signStripeWebhookPayloadForTest(
@@ -1046,7 +1428,8 @@ function parseJson(text: string): unknown {
 function extractMgeOrderId(raw: unknown): string | undefined {
   const obj = asRecord(raw) ?? {}
   const nestedOrder = asRecord(obj.order)
-  return stringValue(obj.order_id)
+  return stringValue(obj.id)
+    || stringValue(obj.order_id)
     || stringValue(obj.submitted_order_id)
     || stringValue(obj.mge_order_id)
     || stringValue(nestedOrder?.id)
@@ -1056,9 +1439,10 @@ function extractMgeOrderId(raw: unknown): string | undefined {
 function looksAlreadySubmitted(raw: unknown, text: string): boolean {
   const obj = asRecord(raw) ?? {}
   const status = stringValue(obj.status).toLowerCase()
-  if (['submitted', 'ordered', 'completed'].includes(status)) return true
-  if (extractMgeOrderId(raw)) return true
-  return /already\s+submitted|duplicate|already\s+converted/i.test(text)
+  const hasSubmittedStatus = ['submitted', 'ordered', 'completed'].includes(status)
+  const hasFinalOrderId = Boolean(extractMgeOrderId(raw))
+  const hasDuplicateSignal = /already\s+submitted|duplicate|already\s+converted/i.test(text)
+  return (hasFinalOrderId || hasSubmittedStatus) && (hasDuplicateSignal || hasSubmittedStatus)
 }
 
 function summarizeMgeSubmitError(raw: unknown, text: string, token: string): string {

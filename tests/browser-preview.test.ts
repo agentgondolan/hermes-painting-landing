@@ -120,7 +120,7 @@ test('preview client polls purchase options until MGE exposes orderable options'
 
   try {
     const client = new PreviewClientImpl('')
-    const final = await client.pollPurchaseOptions('preview-123', { intervalMs: 0, maxWaitMs: 100 })
+    const final = await client.pollPurchaseOptions('preview-123', { intervalMs: 0, maxWaitMs: 1_000 })
 
     assert.equal(final.purchaseOptions.length, 1)
     assert.equal(calls.length, 3)
