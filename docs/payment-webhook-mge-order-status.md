@@ -65,6 +65,8 @@ Add a durable payment/submission store, preferably Cloudflare D1 plus a retry qu
 
 The current D1 schema is in `docs/payment-submit-outbox-d1.sql`. The Cloudflare binding expected by the Stripe edge code is `PAYMENT_SUBMIT_OUTBOX`.
 
+For real MGE drafts, stored `line_items[]` contain the canonical SKU, quantity, and `preview_option_id`, but do not contain price. Before Stripe session creation, Dottingo calls the draft validation endpoint and uses each validation line's canonical `unit_price` and `currency` together with the stored draft quantity. Browser-supplied prices are never trusted.
+
 Suggested states:
 
 - `checkout_created`

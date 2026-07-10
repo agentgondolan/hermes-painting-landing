@@ -178,3 +178,22 @@ Validation:
 
 Next action:
 - Commit and push the tested revision, deploy it to Cloudflare Pages, then complete the approved Stripe test payment and verify exactly one final MGE order.
+
+## 2026-07-10 - Phase 5 live contract reconciliation
+
+Author: Codex
+
+Summary:
+- Created live MGE draft `173` from one saved 60x80 W/STD purchase option without creating a payment or final order.
+- Confirmed MGE draft validation requires shipping method and address; attached clearly marked test shipping data and validated the draft successfully.
+- Confirmed stored draft lines intentionally omit price while validation lines return canonical `unit_price` and `currency`.
+- Updated Stripe checkout to merge validation pricing with stored draft quantities instead of trusting browser prices or requiring price on draft detail.
+
+Validation:
+- `node --test tests/stripe-edge.test.ts` passed all 30 tests.
+- `node --test tests/*.test.ts` passed all 151 tests.
+- `npm run worker:typecheck` passed.
+- `npm run build` passed.
+
+Next action:
+- Commit, push, and deploy the validation-pricing fix, then resume the approved Stripe test payment for draft `173`.

@@ -56,6 +56,7 @@ MGE confirmed on 2026-07-09:
 - The outbox atomically claims one active submit per Stripe session and stores the final MGE order id.
 - `GET /api/checkout/status` verifies the Stripe session and returns a safe customer-facing projection of durable submission state.
 - The success page polls through submitted/retrying/manual-review states, while cancelled checkout restores locally persisted selections.
+- Stripe checkout prices real MGE drafts from the canonical validation response because stored draft lines intentionally omit price fields.
 - `docs/payment-submit-outbox-d1.sql` defines the D1 table expected for durable production storage.
 - `docs/payment-webhook-mge-order-status.md` documents the webhook/order status architecture.
 - `docs/ACTIVE_WORK.md` names draft validation and durable webhook submit tracking as the immediate next gaps.
@@ -115,4 +116,4 @@ npx wrangler pages deployment list --project-name hermes-painting-landing
 
 ## Next Action
 
-Complete Phase 5: commit and deploy the tested D1-bound revision, then run the explicitly approved Stripe test payment and confirm one final MGE order exactly once.
+Complete Phase 5: deploy the validation-pricing fix, then pay validated test draft `173` and confirm one final MGE order exactly once.

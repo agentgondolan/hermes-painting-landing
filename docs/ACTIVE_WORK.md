@@ -64,6 +64,8 @@ Use the fastest command that proves the requested work, then climb if the change
 
 2026-07-10 Phase 5 infrastructure: Cloudflare OAuth refreshed; APAC D1 `dottingo-payment-submit-outbox` created and initialized; `wrangler.toml` binds it as `PAYMENT_SUBMIT_OUTBOX`. All 151 tests, Worker typecheck, and production build pass. Next is commit, deploy, and the approved payment/order-submit smoke.
 
+2026-07-10 Phase 5 live contract: MGE draft `173` returns canonical SKU/quantity without price, while `POST /api/v1/order-drafts/173/validate/` returns canonical `unit_price` and `currency`. Stripe checkout now prices from validation output. The draft validates after test shipping is attached; no Stripe payment or MGE order exists yet.
+
 ## Open product decision
 
 The MGE previewless returning-account identity contract is now confirmed from the internal schema and testing endpoint. Next product priority remains the paid checkout bridge smoke: real order draft, Stripe test payment, webhook, and exactly-once MGE submit.

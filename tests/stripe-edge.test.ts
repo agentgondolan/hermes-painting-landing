@@ -315,7 +315,28 @@ test('creates a multi-line Stripe Checkout Session from the canonical MGE order 
     calls.push({ url: String(url), init: init ?? {} })
     if (String(url).includes('/api/v1/order-drafts/234/')) {
       if (String(url).endsWith('/validate/')) {
-        return new Response(JSON.stringify({ status: 'READY', valid: true }), {
+        return new Response(JSON.stringify({
+          status: 'READY',
+          valid: true,
+          line_items: [
+            {
+              index: 0,
+              preview_option_id: 'option_a',
+              sku: 'DOT/VF/40X50/W/BLACK/STD',
+              unit_price: '10.72',
+              currency: 'EUR',
+              errors: [],
+            },
+            {
+              index: 1,
+              preview_option_id: 'option_b',
+              sku: 'DOT/VF/60X80/W/BLACK/FRAME/STD',
+              unit_price: '18.25',
+              currency: 'EUR',
+              errors: [],
+            },
+          ],
+        }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         })
@@ -329,8 +350,6 @@ test('creates a multi-line Stripe Checkout Session from the canonical MGE order 
             preview_option_id: 'option_a',
             sku: 'DOT/VF/40X50/W/BLACK/STD',
             quantity: 2,
-            unit_price: '10.72',
-            currency: 'EUR',
             selected_size: '40x50',
             label: '40x50 without frame',
           },
@@ -338,8 +357,6 @@ test('creates a multi-line Stripe Checkout Session from the canonical MGE order 
             preview_option_id: 'option_b',
             sku: 'DOT/VF/60X80/W/BLACK/FRAME/STD',
             quantity: 1,
-            unit_price: '18.25',
-            currency: 'EUR',
             selected_size: '60x80',
             label: '60x80 with frame',
           },

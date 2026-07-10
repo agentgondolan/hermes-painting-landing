@@ -1090,14 +1090,15 @@ async function readMgeDraftCheckoutContext(
   metadata: Record<string, string>
 }> {
   const draft = await loadMgeOrderDraftForCheckout(orderDraftId, env, token, fetcher)
-  await validateMgeOrderDraftForCheckout(orderDraftId, env, token, fetcher)
-  return draftToCheckoutContext(orderDraftId, verifiedEmail, draft, env)
+  const validation = await validateMgeOrderDraftForCheckout(orderDraftId, env, token, fetcher)
+  return draftToCheckoutContext(orderDraftId, verifiedEmail, draft, validation, env)
 }
 
 function draftToCheckoutContext(
   orderDraftId: string,
   verifiedEmail: string,
   draft: unknown,
+  validation: unknown,
   env: StripeEnv,
 ): {
   dynamicPrice: boolean
@@ -1111,12 +1112,24 @@ function draftToCheckoutContext(
 
   const exchangeRate = parseOptionalPositiveNumber(env.EUR_TO_SGD_RATE, DEFAULT_EUR_TO_SGD_RATE)
   const draftRecord = asRecord(draft) ?? {}
+  const validationLineItems = extractDraftLineItems(validation)
   const lineItems = draftLineItems.map((line, index) => {
-    const unitPrice = stringValue(line.unit_price)
+    const validatedLine = validationLineItems.find((candidate) => Number(candidate.index) === index)
+      ?? validationLineItems.find((candidate) => {
+        const skuMatches = stringValue(candidate.sku) === stringValue(line.sku)
+        const previewOptionMatches = stringValue(candidate.preview_option_id) === stringValue(line.preview_option_id)
+        return skuMatches && (!stringValue(line.preview_option_id) || previewOptionMatches)
+      })
+      ?? (validationLineItems.length === draftLineItems.length ? validationLineItems[index] : null)
+    const unitPrice = stringValue(validatedLine?.unit_price)
+      || stringValue(validatedLine?.unitPrice)
+      || stringValue(validatedLine?.price)
+      || stringValue(line.unit_price)
       || stringValue(line.unitPrice)
       || stringValue(line.price)
       || (draftLineItems.length === 1 ? stringValue(draftRecord.unitPrice) || stringValue(draftRecord.unit_price) : '')
-    const currency = stringValue(line.currency)
+    const currency = stringValue(validatedLine?.currency)
+      || stringValue(line.currency)
       || (draftLineItems.length === 1 ? stringValue(draftRecord.currency) : '')
       || 'EUR'
     const quantity = normalizePositiveInteger(line.quantity, 1)
