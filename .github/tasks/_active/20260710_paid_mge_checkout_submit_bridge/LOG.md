@@ -197,3 +197,33 @@ Validation:
 
 Next action:
 - Commit, push, and deploy the validation-pricing fix, then resume the approved Stripe test payment for draft `173`.
+
+## 2026-07-10 - Phase 5 paid smoke reached safe manual review
+
+Author: Codex
+
+Summary:
+- Deployed commit `fed3118` with the production D1 outbox and Stripe/MGE submit path.
+- Created Stripe destination `Dottingo checkout webhook` for `checkout.session.completed`, rotated its signing secret, and configured the rotated value in Cloudflare without committing it.
+- Deployed `https://17baddc6.hermes-painting-landing.pages.dev` to production.
+- Completed Stripe test payment for numeric MGE draft `173`.
+- Sent one correctly signed production webhook replay for the paid Checkout Session because the Stripe destination was created after the original event.
+- Confirmed the webhook recorded one durable submit attempt and did not create a duplicate order.
+- Replayed the same signed event a second time and confirmed D1 remained at attempt count `1` with no MGE order id.
+- MGE rejected submit with `400`: `preview_option_id has expired; create a fresh preview before ordering.`
+- Confirmed direct MGE validation returns the same error; draft `173` is `DRAFT` with no submitted order.
+- Dottingo correctly exposed `paid + manual_review` on the safe checkout-status endpoint and retained no MGE order id.
+
+Production evidence:
+- Outbox before webhook: `checkout_created`, attempt count `0`.
+- Outbox after webhook: `mge_failed_manual_review`, attempt count `1`, MGE order id `null`.
+- Stripe payment state: `paid`.
+- Customer submission state: `manual_review`.
+- MGE draft: `173`, status `DRAFT`, `submitted_order_id = null`.
+
+Blocker:
+- MGE does not currently guarantee that a validated READY draft remains orderable through the Stripe checkout window.
+- See `05A_BLOCKED_MGE_READY_DRAFT_PREVIEW_VALIDITY_CONTRACT.md` and `TROUBLESHOOTING.md`.
+
+Next action:
+- Ask MGE to preserve READY-draft preview validity or provide a safe idempotent paid-draft refresh/rebind contract, then repeat the smoke with a fresh preview/draft only after the contract is confirmed.

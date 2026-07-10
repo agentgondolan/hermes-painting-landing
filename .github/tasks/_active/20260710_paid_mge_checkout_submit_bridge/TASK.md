@@ -67,7 +67,8 @@ MGE confirmed on 2026-07-09:
 2. [DONE - Phase 2 - Durable Payment Submit Outbox](02_PHASE2_DURABLE_PAYMENT_SUBMIT_OUTBOX.md)
 3. [DONE - Phase 3 - Exactly Once Webhook Submit](03_PHASE3_EXACTLY_ONCE_WEBHOOK_SUBMIT.md)
 4. [DONE - Phase 4 - Customer Confirmation And Status Polling](04_PHASE4_CUSTOMER_CONFIRMATION_AND_STATUS_POLLING.md)
-5. [IN PROGRESS - Phase 5 - Production Payment Order Submit Smoke](05_PHASE5_PRODUCTION_PAYMENT_ORDER_SUBMIT_SMOKE.md)
+5. [BLOCKED - Phase 5 - Production Payment Order Submit Smoke](05_PHASE5_PRODUCTION_PAYMENT_ORDER_SUBMIT_SMOKE.md)
+5A. [BLOCKED - Phase 5A - MGE Ready-Draft Preview Validity Contract](05A_BLOCKED_MGE_READY_DRAFT_PREVIEW_VALIDITY_CONTRACT.md)
 
 ## Dependencies
 
@@ -116,4 +117,4 @@ npx wrangler pages deployment list --project-name hermes-painting-landing
 
 ## Next Action
 
-Complete Phase 5: deploy the validation-pricing fix, then pay validated test draft `173` and confirm one final MGE order exactly once.
+Send the Phase 5A contract request to MGE. Resume the production smoke only after MGE guarantees READY-draft preview validity through payment or provides a safe paid-draft refresh/rebind endpoint. Do not create another payment or mutate paid draft `173` as a workaround.

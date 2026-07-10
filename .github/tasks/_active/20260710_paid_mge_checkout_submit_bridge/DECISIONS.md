@@ -35,3 +35,7 @@ The customer status endpoint treats the Stripe Checkout Session id as a bearer-l
 ## 2026-07-10 - Persist cart selections through Stripe navigation
 
 Selected preview purchase options and quantities are stored in browser local storage so cancellation can return to `/checkout` without losing the cart. The stored cart and draft id are cleared only after durable status reaches `mge_submitted`.
+
+## 2026-07-10 - Do not substitute preview options after payment
+
+The production smoke proved that an MGE preview option can expire after draft validation but before webhook submit. Dottingo will preserve the paid session and original draft in manual review rather than silently regenerating a preview, changing the draft, or submitting a different SKU/price/output. MGE must preserve READY-draft validity or provide an explicit idempotent paid-draft recovery contract.

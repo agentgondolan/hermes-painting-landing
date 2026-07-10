@@ -16,9 +16,9 @@ Current phase ledger:
 
 ## Immediate next step
 
-1. Commit and deploy the Phase 3-5 revision with the production `PAYMENT_SUBMIT_OUTBOX` D1 binding.
-2. Complete one approved Stripe test payment through webhook, MGE submit, and final order id display.
-3. Confirm a duplicate webhook/session retry does not create a second MGE order.
+1. Send MGE the READY-draft preview-validity contract request documented in Phase 5A.
+2. Keep paid draft `173` in manual review; do not silently replace its preview option or draft after payment.
+3. Resume the final production smoke only after MGE preserves preview validity through checkout or provides a safe paid-draft refresh/rebind endpoint.
 
 ## Current known repo state
 
@@ -65,6 +65,8 @@ Use the fastest command that proves the requested work, then climb if the change
 2026-07-10 Phase 5 infrastructure: Cloudflare OAuth refreshed; APAC D1 `dottingo-payment-submit-outbox` created and initialized; `wrangler.toml` binds it as `PAYMENT_SUBMIT_OUTBOX`. All 151 tests, Worker typecheck, and production build pass. Next is commit, deploy, and the approved payment/order-submit smoke.
 
 2026-07-10 Phase 5 live contract: MGE draft `173` returns canonical SKU/quantity without price, while `POST /api/v1/order-drafts/173/validate/` returns canonical `unit_price` and `currency`. Stripe checkout now prices from validation output. The draft validates after test shipping is attached; no Stripe payment or MGE order exists yet.
+
+2026-07-10 Phase 5 paid smoke: Stripe test payment completed and the signed production webhook reached the D1-backed submit path exactly once. MGE rejected draft `173` because its previously valid `preview_option_id` expired before submit. Dottingo correctly retained the paid session in `mge_failed_manual_review` with one attempt and no final order id. Phase 5 is blocked on the MGE READY-draft preview-validity contract in `05A_BLOCKED_MGE_READY_DRAFT_PREVIEW_VALIDITY_CONTRACT.md`.
 
 ## Open product decision
 
