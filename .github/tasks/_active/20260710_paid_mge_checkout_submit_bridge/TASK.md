@@ -119,4 +119,4 @@ npx wrangler pages deployment list --project-name hermes-painting-landing
 
 ## Next Action
 
-Align the active Stripe `checkout.session.completed` destination with the same Stripe sandbox account used by production `STRIPE_SECRET_KEY`, rotate `STRIPE_WEBHOOK_SECRET` to that destination, and verify one Stripe-origin delivery. The payment, D1, and MGE path is otherwise proven by draft `184` / order `MGE0980926F`; keep draft `173` unchanged as historical manual-review evidence.
+The production Stripe key and webhook secret are now paired to the `Dottingo.sg sandbox` account, whose enabled Dottingo destination listens for `checkout.session.completed`. Obtain fresh approval for exactly one test payment, then verify automatic Stripe-origin delivery, one D1 submit attempt, and the final MGE order id. Keep draft `173` unchanged as historical manual-review evidence.

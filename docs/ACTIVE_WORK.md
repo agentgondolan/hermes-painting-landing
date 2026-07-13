@@ -16,9 +16,9 @@ Current phase ledger:
 
 ## Immediate next step
 
-1. Align Stripe's `checkout.session.completed` destination with the same sandbox account used by production `STRIPE_SECRET_KEY`.
-2. Rotate production `STRIPE_WEBHOOK_SECRET` to that account's destination.
-3. Verify one Stripe-origin webhook delivery; do not create another test payment without fresh approval.
+1. Obtain fresh approval for exactly one Stripe test payment.
+2. Complete payment at `https://dottingo.sg/checkout` and verify Stripe-origin `checkout.session.completed` delivery.
+3. Confirm D1 reaches `mge_submitted` with one attempt and MGE returns the final order id.
 4. Keep paid draft `173` in manual review as historical failure evidence.
 
 ## Current known repo state
@@ -72,6 +72,8 @@ Use the fastest command that proves the requested work, then climb if the change
 2026-07-13 Phase 5A resumed: MGE now freezes preview-backed line items in READY drafts and returns `checkout.ready_until` plus `checkout.max_payment_session_seconds`. Dottingo requires that window and sets Stripe `expires_at` to the earliest MGE/Stripe cap; payment is blocked for missing or sub-30-minute windows. All 154 tests, Worker typecheck, and production build pass. Next is deploy plus one fresh paid smoke.
 
 2026-07-13 Phase 5A verified: production draft `184` validated with one frozen preview reservation and the MGE checkout window, Stripe test payment completed, and the signed production webhook submitted final order `MGE0980926F`. D1 is `mge_submitted` with one attempt; duplicate replay returned the same order without another submit. The success page displayed the final order. Remaining gate: the automatic Stripe destination is configured under a different sandbox account than production `STRIPE_SECRET_KEY`, so it recorded zero deliveries and the smoke required a signed replay. Deployment: `https://df7dde82.hermes-painting-landing.pages.dev`.
+
+2026-07-13 Stripe account pairing fixed: production `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` were rotated from the local secret handoff into Cloudflare Pages. The API key resolves to `Dottingo.sg sandbox`, and that account has one enabled `https://dottingo.sg/api/stripe/webhook` destination subscribed to `checkout.session.completed`. The clean `main` build was deployed at `https://c378f48f.hermes-painting-landing.pages.dev`; both deployment and custom-domain checkout return `200`, while browser `GET` to the webhook returns the expected `405`. No payment was made. Remaining gate: one freshly approved Stripe-origin paid smoke.
 
 ## Open product decision
 

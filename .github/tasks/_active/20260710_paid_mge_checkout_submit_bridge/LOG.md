@@ -273,3 +273,19 @@ Validation:
 Remaining gate:
 - Stripe's active `Dottingo checkout webhook` destination is configured under the `MG Everyday data science pte. lte.` sandbox, but the paid Checkout Session is absent from that account and the destination recorded zero deliveries.
 - Align the destination and production `STRIPE_WEBHOOK_SECRET` with the Stripe sandbox account used by production `STRIPE_SECRET_KEY`, then verify one Stripe-origin delivery without making another payment unless separately approved.
+
+## 2026-07-13 - Stripe sandbox and production webhook secrets aligned
+
+Author: Codex
+
+Summary:
+- Read the Stripe test API key and webhook signing secret from the user-provided local handoff without logging or committing their values.
+- Rotated Cloudflare Pages production `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` for `hermes-painting-landing`.
+- Verified the API key resolves to the `Dottingo.sg sandbox` Stripe account.
+- Verified the same account contains one enabled `https://dottingo.sg/api/stripe/webhook` endpoint subscribed to `checkout.session.completed`.
+- Built clean `main` and deployed `https://c378f48f.hermes-painting-landing.pages.dev`.
+- Confirmed the deployment checkout and `https://dottingo.sg/checkout` return `200`; webhook browser `GET` returns the expected `405`.
+- Did not make a Stripe payment.
+
+Next action:
+- After fresh explicit approval, complete exactly one Stripe test payment and verify automatic Stripe-origin delivery, one D1 submit attempt, and the final MGE order id.
