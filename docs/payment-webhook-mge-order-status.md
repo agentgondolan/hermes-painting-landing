@@ -67,6 +67,21 @@ The current D1 schema is in `docs/payment-submit-outbox-d1.sql`. The Cloudflare 
 
 For real MGE drafts, stored `line_items[]` contain the canonical SKU, quantity, and `preview_option_id`, but do not contain price. Before Stripe session creation, Dottingo calls the draft validation endpoint and uses each validation line's canonical `unit_price` and `currency` together with the stored draft quantity. Browser-supplied prices are never trusted.
 
+Successful validation must also return the MGE READY checkout window:
+
+```json
+{
+  "valid": true,
+  "checkout": {
+    "ready_until": "2026-07-13T10:30:00Z",
+    "max_payment_session_seconds": 3600
+  },
+  "preview_reservations": []
+}
+```
+
+Dottingo creates Stripe Checkout with `expires_at` no later than `ready_until` and no later than `max_payment_session_seconds` from validation. Missing, malformed, expired, or sub-30-minute windows block payment before Stripe is called. MGE submits the frozen READY snapshot after payment, so temporary preview TTL no longer controls the paid webhook.
+
 Suggested states:
 
 - `checkout_created`

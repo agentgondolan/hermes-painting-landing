@@ -39,3 +39,7 @@ Selected preview purchase options and quantities are stored in browser local sto
 ## 2026-07-10 - Do not substitute preview options after payment
 
 The production smoke proved that an MGE preview option can expire after draft validation but before webhook submit. Dottingo will preserve the paid session and original draft in manual review rather than silently regenerating a preview, changing the draft, or submitting a different SKU/price/output. MGE must preserve READY-draft validity or provide an explicit idempotent paid-draft recovery contract.
+
+## 2026-07-13 - Bind Stripe expiry to the MGE READY checkout window
+
+For real MGE drafts, Dottingo requires `checkout.ready_until` and `checkout.max_payment_session_seconds` from successful validation. Stripe `expires_at` is the earliest MGE/Stripe cap, and payment is blocked if fewer than Stripe's minimum 30 minutes remain. This makes the MGE READY snapshot the payment validity boundary instead of Stripe's default 24-hour session.

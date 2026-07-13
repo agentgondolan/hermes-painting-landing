@@ -151,6 +151,8 @@ const SINGAPORE_GST_RATE = 0.09
 const DEFAULT_EUR_TO_SGD_RATE = 1.46
 const DEFAULT_MGEVERYDAY_BASE_URL = 'https://www.mgeveryday.sg'
 const MGE_SUBMIT_CLAIM_TTL_MS = 5 * 60 * 1000
+const STRIPE_CHECKOUT_MIN_DURATION_SECONDS = 30 * 60
+const STRIPE_CHECKOUT_MAX_DURATION_SECONDS = 24 * 60 * 60
 
 export async function createStripeCheckoutSession(
   request: Request,
@@ -179,6 +181,9 @@ export async function createStripeCheckoutSession(
     body.set('shipping_address_collection[allowed_countries][0]', 'SG')
     body.set('billing_address_collection', 'required')
     body.set('phone_number_collection[enabled]', 'true')
+    if (checkoutContext.stripeExpiresAt) {
+      body.set('expires_at', String(checkoutContext.stripeExpiresAt))
+    }
     if (checkoutContext.metadata.verified_email) {
       body.set('customer_email', checkoutContext.metadata.verified_email)
     }
@@ -962,6 +967,7 @@ async function readCheckoutContext(
   dynamicPrice: boolean
   lineItems: CheckoutLineItem[]
   metadata: Record<string, string>
+  stripeExpiresAt?: number
 }> {
   const contentType = request.headers.get('Content-Type') || ''
   if (!contentType.toLowerCase().includes('application/json')) {
@@ -1088,6 +1094,7 @@ async function readMgeDraftCheckoutContext(
   dynamicPrice: boolean
   lineItems: CheckoutLineItem[]
   metadata: Record<string, string>
+  stripeExpiresAt: number
 }> {
   const draft = await loadMgeOrderDraftForCheckout(orderDraftId, env, token, fetcher)
   const validation = await validateMgeOrderDraftForCheckout(orderDraftId, env, token, fetcher)
@@ -1104,6 +1111,7 @@ function draftToCheckoutContext(
   dynamicPrice: boolean
   lineItems: CheckoutLineItem[]
   metadata: Record<string, string>
+  stripeExpiresAt: number
 } {
   const draftLineItems = extractDraftLineItems(draft)
   if (!draftLineItems.length) {
@@ -1151,10 +1159,12 @@ function draftToCheckoutContext(
   const totalAmount = lineItems.reduce((sum, item) => sum + item.quote.unitAmount * item.quantity, 0)
   const skus = draftLineItems.map((line) => stringValue(line.sku)).filter(Boolean)
   const previewOptionIds = draftLineItems.map((line) => stringValue(line.preview_option_id) || stringValue(line.previewOptionId)).filter(Boolean)
+  const checkoutWindow = mgeCheckoutWindow(validation)
 
   return {
     dynamicPrice: true,
     lineItems,
+    stripeExpiresAt: checkoutWindow.expiresAt,
     metadata: compactMetadata({
       order_draft_id: orderDraftId,
       verified_email: verifiedEmail,
@@ -1165,7 +1175,46 @@ function draftToCheckoutContext(
       source_currency: lineItems[0]?.quote.sourceCurrency,
       eur_to_sgd_rate: exchangeRate.toFixed(4),
       retail_total_amount_sgd: totalAmount,
+      mge_ready_until: checkoutWindow.readyUntil,
+      mge_max_payment_session_seconds: checkoutWindow.maxPaymentSessionSeconds,
     }),
+  }
+}
+
+function mgeCheckoutWindow(validation: unknown): {
+  readyUntil: string
+  maxPaymentSessionSeconds: number
+  expiresAt: number
+} {
+  const validationRecord = asRecord(validation) ?? {}
+  const checkout = asRecord(validationRecord.checkout)
+  const readyUntil = stringValue(checkout?.ready_until) || stringValue(checkout?.readyUntil)
+  const readyUntilMs = Date.parse(readyUntil)
+  const maxPaymentSessionSeconds = Number(checkout?.max_payment_session_seconds ?? checkout?.maxPaymentSessionSeconds)
+
+  if (!readyUntil || !Number.isFinite(readyUntilMs)) {
+    throw new Error('MGE READY draft validation did not include a valid checkout.ready_until')
+  }
+  if (!Number.isInteger(maxPaymentSessionSeconds) || maxPaymentSessionSeconds <= 0) {
+    throw new Error('MGE READY draft validation did not include a valid checkout.max_payment_session_seconds')
+  }
+
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  const readyUntilSeconds = Math.floor(readyUntilMs / 1000)
+  const expiresAt = Math.min(
+    readyUntilSeconds,
+    nowSeconds + maxPaymentSessionSeconds,
+    nowSeconds + STRIPE_CHECKOUT_MAX_DURATION_SECONDS,
+  )
+
+  if (expiresAt - nowSeconds < STRIPE_CHECKOUT_MIN_DURATION_SECONDS) {
+    throw new Error('MGE READY draft checkout window is too short for Stripe Checkout; revalidate the draft')
+  }
+
+  return {
+    readyUntil,
+    maxPaymentSessionSeconds,
+    expiresAt,
   }
 }
 
@@ -1294,6 +1343,7 @@ function fallbackCheckoutContext(): {
   dynamicPrice: boolean
   lineItems: CheckoutLineItem[]
   metadata: Record<string, string>
+  stripeExpiresAt?: number
 } {
   return {
     dynamicPrice: false,

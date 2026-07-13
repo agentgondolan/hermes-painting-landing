@@ -1,4 +1,4 @@
-Status: BLOCKED
+Status: IN PROGRESS
 Required: yes
 Created: 2026-07-10
 Updated: 2026-07-10
@@ -70,4 +70,4 @@ npx wrangler pages deployment list --project-name hermes-painting-landing
 
 ## Blocker
 
-MGE must preserve preview-option validity for the READY/Stripe checkout window or provide a safe paid-draft refresh/rebind contract. Dottingo will not silently substitute a new preview option after payment.
+The MGE READY-draft preview-validity blocker was resolved on 2026-07-13. Dottingo now caps Stripe Checkout to the returned MGE checkout window. A fresh production Stripe-test/MGE-order smoke is pending; paid draft `173` remains unchanged in manual review as historical failure evidence.

@@ -227,3 +227,23 @@ Blocker:
 
 Next action:
 - Ask MGE to preserve READY-draft preview validity or provide a safe idempotent paid-draft refresh/rebind contract, then repeat the smoke with a fresh preview/draft only after the contract is confirmed.
+
+## 2026-07-13 - Phase 5A contract implemented locally
+
+Author: Codex
+
+Summary:
+- Recorded MGE's new READY-draft snapshot and checkout-window contract.
+- Real MGE draft checkout now requires `checkout.ready_until` and `checkout.max_payment_session_seconds` from validation.
+- Stripe `expires_at` is capped by the MGE ready timestamp, the MGE duration cap, and Stripe's 24-hour maximum.
+- Checkout is blocked before Stripe when the MGE window is missing, malformed, expired, or shorter than Stripe's 30-minute minimum.
+- Paid draft `173` remains unchanged as historical manual-review evidence.
+
+Validation:
+- `node --test tests/stripe-edge.test.ts` passed all 33 tests.
+- `node --test tests/*.test.ts` passed all 154 tests.
+- `npm run worker:typecheck` passed.
+- `npm run build` passed.
+
+Next action:
+- Commit, push, deploy, and run one fresh production Stripe-test/MGE-order smoke. Verify the final MGE order id and duplicate-webhook idempotency before marking Phase 5/5A done.

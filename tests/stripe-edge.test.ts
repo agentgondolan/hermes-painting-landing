@@ -71,6 +71,13 @@ function orderDraft(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function readyCheckoutWindow(options: { readyInSeconds?: number; maxPaymentSessionSeconds?: number } = {}) {
+  return {
+    ready_until: new Date(Date.now() + (options.readyInSeconds ?? 7200) * 1000).toISOString(),
+    max_payment_session_seconds: options.maxPaymentSessionSeconds ?? 3600,
+  }
+}
+
 function memoryPaymentSubmitOutbox(options: { failOnState?: string } = {}) {
   const rows = new Map<string, PaymentSubmitOutboxRecord>()
   const writes: PaymentSubmitOutboxRecord[] = []
@@ -318,6 +325,7 @@ test('creates a multi-line Stripe Checkout Session from the canonical MGE order 
         return new Response(JSON.stringify({
           status: 'READY',
           valid: true,
+          checkout: readyCheckoutWindow(),
           line_items: [
             {
               index: 0,
@@ -421,6 +429,11 @@ test('creates a multi-line Stripe Checkout Session from the canonical MGE order 
   assert.equal(body.get('metadata[verified_email]'), 'multi@example.com')
   assert.equal(body.get('metadata[retail_total_amount_sgd]'), '12897')
   assert.equal(body.get('customer_email'), 'multi@example.com')
+  const expiresAt = Number(body.get('expires_at'))
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  assert.ok(expiresAt >= nowSeconds + 3599)
+  assert.ok(expiresAt <= nowSeconds + 3600)
+  assert.equal(body.get('metadata[mge_max_payment_session_seconds]'), '3600')
 })
 
 test('records checkout_created in the payment submit outbox after Stripe creates a session', async () => {
@@ -428,7 +441,11 @@ test('records checkout_created in the payment submit outbox after Stripe creates
   const fetcher: typeof fetch = async (url) => {
     if (String(url).includes('/api/v1/order-drafts/234/')) {
       if (String(url).endsWith('/validate/')) {
-        return new Response(JSON.stringify({ status: 'READY', valid: true }), {
+        return new Response(JSON.stringify({
+          status: 'READY',
+          valid: true,
+          checkout: readyCheckoutWindow(),
+        }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         })
@@ -483,6 +500,164 @@ test('records checkout_created in the payment submit outbox after Stripe creates
     attemptCount: 0,
     lastError: null,
   })
+})
+
+test('caps Stripe Checkout expiry at the MGE ready_until timestamp', async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = []
+  const readyUntil = new Date(Date.now() + 45 * 60 * 1000).toISOString()
+  const fetcher: typeof fetch = async (url, init) => {
+    calls.push({ url: String(url), init: init ?? {} })
+    if (String(url).endsWith('/api/v1/order-drafts/234/validate/')) {
+      return new Response(JSON.stringify({
+        status: 'READY',
+        valid: true,
+        checkout: {
+          ready_until: readyUntil,
+          max_payment_session_seconds: 3600,
+        },
+        line_items: [{
+          index: 0,
+          preview_option_id: 'option_a',
+          sku: 'DOT/VF/40X50/W/BLACK/STD',
+          unit_price: '10.72',
+          currency: 'EUR',
+        }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    if (String(url).includes('/api/v1/order-drafts/234/')) {
+      return new Response(JSON.stringify({
+        id: 234,
+        product: 'DOT',
+        status: 'DRAFT',
+        line_items: [{
+          preview_option_id: 'option_a',
+          sku: 'DOT/VF/40X50/W/BLACK/STD',
+          quantity: 1,
+        }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({
+      id: 'cs_test_ready_until',
+      url: 'https://checkout.stripe.com/c/pay/cs_test_ready_until',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }
+
+  const response = await createStripeCheckoutSession(
+    new Request('https://makeyourcraft.com/api/stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_draft_id: '234',
+        identity_token: await identityToken('preview_ignored', 'multi@example.com'),
+      }),
+    }),
+    env,
+    fetcher,
+  )
+
+  assert.equal(response.status, 200)
+  const stripeBody = calls[2].init.body as URLSearchParams
+  assert.equal(stripeBody.get('expires_at'), String(Math.floor(Date.parse(readyUntil) / 1000)))
+  assert.equal(stripeBody.get('metadata[mge_ready_until]'), readyUntil)
+})
+
+test('rejects payment when an MGE READY response omits the checkout window', async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = []
+  const fetcher: typeof fetch = async (url, init) => {
+    calls.push({ url: String(url), init: init ?? {} })
+    if (String(url).endsWith('/api/v1/order-drafts/234/validate/')) {
+      return new Response(JSON.stringify({
+        status: 'READY',
+        valid: true,
+        line_items: [{
+          preview_option_id: 'option_a',
+          sku: 'DOT/VF/40X50/W/BLACK/STD',
+          unit_price: '10.72',
+          currency: 'EUR',
+        }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    if (String(url).includes('/api/v1/order-drafts/234/')) {
+      return new Response(JSON.stringify({
+        id: 234,
+        product: 'DOT',
+        status: 'DRAFT',
+        line_items: [{
+          preview_option_id: 'option_a',
+          sku: 'DOT/VF/40X50/W/BLACK/STD',
+          quantity: 1,
+        }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    throw new Error('Stripe should not be called without an MGE checkout window')
+  }
+
+  const response = await createStripeCheckoutSession(
+    new Request('https://makeyourcraft.com/api/stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_draft_id: '234',
+        identity_token: await identityToken('preview_ignored', 'multi@example.com'),
+      }),
+    }),
+    env,
+    fetcher,
+  )
+
+  assert.equal(response.status, 500)
+  assert.match(await response.text(), /checkout\.ready_until/)
+  assert.equal(calls.length, 2)
+})
+
+test('rejects payment when the MGE READY window is shorter than Stripe minimum', async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = []
+  const fetcher: typeof fetch = async (url, init) => {
+    calls.push({ url: String(url), init: init ?? {} })
+    if (String(url).endsWith('/api/v1/order-drafts/234/validate/')) {
+      return new Response(JSON.stringify({
+        status: 'READY',
+        valid: true,
+        checkout: readyCheckoutWindow({ readyInSeconds: 20 * 60, maxPaymentSessionSeconds: 20 * 60 }),
+        line_items: [{
+          preview_option_id: 'option_a',
+          sku: 'DOT/VF/40X50/W/BLACK/STD',
+          unit_price: '10.72',
+          currency: 'EUR',
+        }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    if (String(url).includes('/api/v1/order-drafts/234/')) {
+      return new Response(JSON.stringify({
+        id: 234,
+        product: 'DOT',
+        status: 'DRAFT',
+        line_items: [{
+          preview_option_id: 'option_a',
+          sku: 'DOT/VF/40X50/W/BLACK/STD',
+          quantity: 1,
+        }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    throw new Error('Stripe should not be called for a short MGE checkout window')
+  }
+
+  const response = await createStripeCheckoutSession(
+    new Request('https://makeyourcraft.com/api/stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_draft_id: '234',
+        identity_token: await identityToken('preview_ignored', 'multi@example.com'),
+      }),
+    }),
+    env,
+    fetcher,
+  )
+
+  assert.equal(response.status, 500)
+  assert.match(await response.text(), /too short for Stripe Checkout/)
+  assert.equal(calls.length, 2)
 })
 
 test('rejects checkout when MGE draft validation returns invalid response', async () => {

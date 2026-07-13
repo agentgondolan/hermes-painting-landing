@@ -67,8 +67,8 @@ MGE confirmed on 2026-07-09:
 2. [DONE - Phase 2 - Durable Payment Submit Outbox](02_PHASE2_DURABLE_PAYMENT_SUBMIT_OUTBOX.md)
 3. [DONE - Phase 3 - Exactly Once Webhook Submit](03_PHASE3_EXACTLY_ONCE_WEBHOOK_SUBMIT.md)
 4. [DONE - Phase 4 - Customer Confirmation And Status Polling](04_PHASE4_CUSTOMER_CONFIRMATION_AND_STATUS_POLLING.md)
-5. [BLOCKED - Phase 5 - Production Payment Order Submit Smoke](05_PHASE5_PRODUCTION_PAYMENT_ORDER_SUBMIT_SMOKE.md)
-5A. [BLOCKED - Phase 5A - MGE Ready-Draft Preview Validity Contract](05A_BLOCKED_MGE_READY_DRAFT_PREVIEW_VALIDITY_CONTRACT.md)
+5. [IN PROGRESS - Phase 5 - Production Payment Order Submit Smoke](05_PHASE5_PRODUCTION_PAYMENT_ORDER_SUBMIT_SMOKE.md)
+5A. [IN PROGRESS - Phase 5A - MGE Ready-Draft Preview Validity Contract](05A_BLOCKED_MGE_READY_DRAFT_PREVIEW_VALIDITY_CONTRACT.md)
 
 ## Dependencies
 
@@ -117,4 +117,4 @@ npx wrangler pages deployment list --project-name hermes-painting-landing
 
 ## Next Action
 
-Send the Phase 5A contract request to MGE. Resume the production smoke only after MGE guarantees READY-draft preview validity through payment or provides a safe paid-draft refresh/rebind endpoint. Do not create another payment or mutate paid draft `173` as a workaround.
+Deploy the READY-window Stripe expiry enforcement, then run one fresh production Stripe-test/MGE-order smoke. Confirm the new MGE validation response includes the checkout window, Stripe expires no later than that window, submit returns one final order id, and a duplicate webhook returns the same order without another submit attempt. Keep paid draft `173` unchanged as historical manual-review evidence.

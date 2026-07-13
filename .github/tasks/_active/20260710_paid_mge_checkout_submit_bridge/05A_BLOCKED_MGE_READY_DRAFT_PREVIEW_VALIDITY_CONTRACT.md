@@ -1,4 +1,4 @@
-Status: BLOCKED
+Status: IN PROGRESS
 Required: yes
 Created: 2026-07-10
 Updated: 2026-07-10
@@ -52,3 +52,21 @@ Dottingo must not silently swap a preview option or draft after payment. Until M
 - Replaying the same paid Stripe event does not create a second MGE order.
 - The success page reaches `submitted` and displays the final MGE order id.
 - The recovery contract does not change SKU, price, crop/output, or source project after payment.
+
+## MGE Resolution Received 2026-07-13
+
+MGE now freezes preview-backed line items in the READY draft snapshot and returns:
+
+- `checkout.ready_until`
+- `checkout.max_payment_session_seconds`
+- `preview_reservations[]`
+
+MGE confirmed that a payment completed within `checkout.ready_until` can submit the saved READY snapshot even if the original temporary preview/session TTL has elapsed. Duplicate submit calls return the existing submitted order.
+
+Dottingo now requires this checkout window for real MGE drafts and sets Stripe `expires_at` to the earliest of:
+
+- MGE `checkout.ready_until`,
+- the MGE `max_payment_session_seconds` cap, and
+- Stripe's 24-hour maximum.
+
+Dottingo blocks payment when the MGE window is absent, malformed, or shorter than Stripe's 30-minute minimum. Final completion still requires the Phase 5 production payment/order-submit smoke.

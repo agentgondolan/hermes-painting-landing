@@ -16,9 +16,10 @@ Current phase ledger:
 
 ## Immediate next step
 
-1. Send MGE the READY-draft preview-validity contract request documented in Phase 5A.
-2. Keep paid draft `173` in manual review; do not silently replace its preview option or draft after payment.
-3. Resume the final production smoke only after MGE preserves preview validity through checkout or provides a safe paid-draft refresh/rebind endpoint.
+1. Deploy the MGE READY checkout-window enforcement.
+2. Run one fresh Stripe-test/MGE-order smoke and confirm one final MGE order id.
+3. Replay the paid webhook once and prove MGE/Dottingo idempotency returns the same order without another submit attempt.
+4. Keep paid draft `173` in manual review as historical failure evidence.
 
 ## Current known repo state
 
@@ -67,6 +68,8 @@ Use the fastest command that proves the requested work, then climb if the change
 2026-07-10 Phase 5 live contract: MGE draft `173` returns canonical SKU/quantity without price, while `POST /api/v1/order-drafts/173/validate/` returns canonical `unit_price` and `currency`. Stripe checkout now prices from validation output. The draft validates after test shipping is attached; no Stripe payment or MGE order exists yet.
 
 2026-07-10 Phase 5 paid smoke: Stripe test payment completed and the signed production webhook reached the D1-backed submit path exactly once. MGE rejected draft `173` because its previously valid `preview_option_id` expired before submit. Dottingo correctly retained the paid session in `mge_failed_manual_review` with one attempt and no final order id. Phase 5 is blocked on the MGE READY-draft preview-validity contract in `05A_BLOCKED_MGE_READY_DRAFT_PREVIEW_VALIDITY_CONTRACT.md`.
+
+2026-07-13 Phase 5A resumed: MGE now freezes preview-backed line items in READY drafts and returns `checkout.ready_until` plus `checkout.max_payment_session_seconds`. Dottingo requires that window and sets Stripe `expires_at` to the earliest MGE/Stripe cap; payment is blocked for missing or sub-30-minute windows. All 154 tests, Worker typecheck, and production build pass. Next is deploy plus one fresh paid smoke.
 
 ## Open product decision
 
