@@ -1,6 +1,6 @@
 # Payment webhook to MGE order status
 
-Last updated: 2026-07-10
+Last updated: 2026-07-13
 
 ## Decision
 
@@ -82,6 +82,8 @@ Successful validation must also return the MGE READY checkout window:
 
 Dottingo creates Stripe Checkout with `expires_at` no later than `ready_until` and no later than `max_payment_session_seconds` from validation. Missing, malformed, expired, or sub-30-minute windows block payment before Stripe is called. MGE submits the frozen READY snapshot after payment, so temporary preview TTL no longer controls the paid webhook.
 
+MGE draft ids are integers in the canonical API response. Dottingo normalizes safe positive JSON numbers and numeric strings to the same internal string representation before validation and payment.
+
 Suggested states:
 
 - `checkout_created`
@@ -134,10 +136,28 @@ Implemented on 2026-07-10:
 - Permanent MGE submit failures move the row to `mge_failed_manual_review` instead of retrying indefinitely.
 - Successful MGE submit responses persist the final order id from `id`, `order_id`, `submitted_order_id`, `mge_order_id`, or `order.id`.
 
+Production evidence from 2026-07-13:
+
+- MGE draft `184` validated with one frozen preview reservation and a one-hour checkout window.
+- Stripe test payment completed inside that window.
+- The D1-backed production webhook submitted final order `MGE0980926F`.
+- D1 retained one submit attempt, and a duplicate signed event returned the existing order without another MGE call.
+- The production success page displayed the final order reference.
+
 Still pending:
 
 - Retry worker/polling behavior for `mge_retrying`.
-- Production D1 binding, deployment, and one approved end-to-end payment/order-submit smoke.
+- Align the Stripe webhook destination with the same sandbox account that owns production `STRIPE_SECRET_KEY`; the current destination is under a different account and receives zero automatic deliveries.
+
+## Stripe account pairing
+
+`STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are an account-paired configuration. The Checkout Session is created in the account that owns `STRIPE_SECRET_KEY`, while Stripe signs deliveries with the destination secret from that same account. A destination created under another Stripe account will not receive the session event, even if the URL is correct.
+
+Before rollout, confirm in Stripe Dashboard that:
+
+1. The paid test Checkout Session is visible in the selected sandbox account.
+2. That account contains the active `checkout.session.completed` destination for `https://dottingo.sg/api/stripe/webhook`.
+3. Cloudflare `STRIPE_WEBHOOK_SECRET` is the signing secret for that exact destination.
 
 ## Customer status endpoint
 

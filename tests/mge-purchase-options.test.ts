@@ -323,7 +323,7 @@ test('order-draft BFF posts to documented plural MGE order-drafts endpoint', asy
 
     return new Response(
       JSON.stringify({
-        id: '123',
+        id: 123,
         preview_id: 'preview-123',
         status: 'DRAFT',
       }),
@@ -356,6 +356,8 @@ test('order-draft BFF posts to documented plural MGE order-drafts endpoint', asy
     )
 
     assert.equal(response.status, 201)
+    const responsePayload = await response.json() as { orderDraftId?: string }
+    assert.equal(responsePayload.orderDraftId, '123')
     assert.equal(calls.length, 2)
     assert.equal(calls[0].url, 'https://mge.example.test/api/v1/preview/preview-123/purchase-options/')
     assert.equal(calls[1].url, 'https://mge.example.test/api/v1/order-drafts/')

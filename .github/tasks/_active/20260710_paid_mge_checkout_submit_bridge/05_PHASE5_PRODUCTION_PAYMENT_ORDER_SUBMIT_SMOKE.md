@@ -1,7 +1,7 @@
 Status: IN PROGRESS
 Required: yes
 Created: 2026-07-10
-Updated: 2026-07-10
+Updated: 2026-07-13
 Depends on: 04_PHASE4_CUSTOMER_CONFIRMATION_AND_STATUS_POLLING.md
 Supersedes: none
 
@@ -67,7 +67,16 @@ npx wrangler pages deployment list --project-name hermes-painting-landing
 - MGE rejected submit with `400` because the validated draft's `preview_option_id` expired before submit. Dottingo correctly stored `mge_failed_manual_review`, attempt count `1`, and no MGE order id.
 - Direct MGE validation now returns the same expiry error; draft `173` is `DRAFT` with no submitted order.
 - Phase 5 is blocked by [Phase 5A - MGE Ready-Draft Preview Validity Contract](05A_BLOCKED_MGE_READY_DRAFT_PREVIEW_VALIDITY_CONTRACT.md).
+- MGE's READY snapshot fix was verified with fresh draft `184`: validation returned one preview reservation and a one-hour checkout window.
+- Dottingo normalized MGE's numeric JSON `id` correctly after fixing the draft normalizer, then created a Stripe Checkout Session bounded by the READY window.
+- Stripe test payment completed for SGD 54.99 and returned to the production success page.
+- A correctly signed production webhook submitted draft `184` as final MGE order `MGE0980926F`.
+- Remote D1 reports `mge_submitted`, attempt count `1`, final order `MGE0980926F`, and no error.
+- Replaying the same signed event returned `already_submitted` with the same order id and left D1 at one attempt.
+- The production success page reached `Order confirmed` and displayed `MGE0980926F`.
 
-## Blocker
+## Remaining Gate
 
-The MGE READY-draft preview-validity blocker was resolved on 2026-07-13. Dottingo now caps Stripe Checkout to the returned MGE checkout window. A fresh production Stripe-test/MGE-order smoke is pending; paid draft `173` remains unchanged in manual review as historical failure evidence.
+The MGE READY-draft preview-validity blocker is resolved. The remaining production gate is Stripe account alignment: the active `Dottingo checkout webhook` destination currently lives under the `MG Everyday data science pte. lte.` sandbox, while the production `STRIPE_SECRET_KEY` created a paid session that is not present in that account. The destination therefore recorded zero automatic deliveries. This smoke used a correctly signed replay of the already-paid event to prove the production webhook, D1, and MGE submit path without a second payment.
+
+Before declaring the full customer path production-ready, create or move the `checkout.session.completed` destination into the same Stripe sandbox account used by production `STRIPE_SECRET_KEY`, rotate `STRIPE_WEBHOOK_SECRET` to that destination, and verify one Stripe-origin delivery. Paid draft `173` remains unchanged in manual review as historical failure evidence.

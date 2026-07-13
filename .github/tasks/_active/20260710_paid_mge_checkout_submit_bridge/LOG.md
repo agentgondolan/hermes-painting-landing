@@ -247,3 +247,29 @@ Validation:
 
 Next action:
 - Commit, push, deploy, and run one fresh production Stripe-test/MGE-order smoke. Verify the final MGE order id and duplicate-webhook idempotency before marking Phase 5/5A done.
+
+## 2026-07-13 - Phase 5A production retry succeeded
+
+Author: Codex
+
+Summary:
+- Generated fresh orderable preview `35b01849-9904-443b-9633-04cb3122bb33` and created persistent MGE draft `184`.
+- Diagnosed Dottingo's draft-sync failure: MGE correctly returned numeric JSON `id = 184`, while `normalizeOrderDraft()` accepted strings only.
+- Updated the BFF to normalize safe positive integer ids to strings and added a regression test with MGE's numeric response shape.
+- Deployed the fix to `https://df7dde82.hermes-painting-landing.pages.dev`.
+- Patched draft `184` with clearly marked test shipping details and validated it successfully.
+- MGE returned one preview reservation, `checkout.ready_until`, and `max_payment_session_seconds = 3600`.
+- Completed one approved Stripe test payment for SGD 54.99 inside the READY window.
+- Sent one correctly signed production webhook replay for the already-paid session; MGE submitted draft `184` as order `MGE0980926F`.
+- Replayed the same signed event once; Dottingo returned `already_submitted` with the same order and did not make another MGE attempt.
+- Confirmed MGE draft `184` is `SUBMITTED` and the production success page displays order `MGE0980926F`.
+
+Validation:
+- Focused MGE BFF tests passed all 17 tests.
+- Worker typecheck passed.
+- Production build passed.
+- Remote D1 reports `mge_submitted`, attempt count `1`, MGE order `MGE0980926F`, and no error.
+
+Remaining gate:
+- Stripe's active `Dottingo checkout webhook` destination is configured under the `MG Everyday data science pte. lte.` sandbox, but the paid Checkout Session is absent from that account and the destination recorded zero deliveries.
+- Align the destination and production `STRIPE_WEBHOOK_SECRET` with the Stripe sandbox account used by production `STRIPE_SECRET_KEY`, then verify one Stripe-origin delivery without making another payment unless separately approved.

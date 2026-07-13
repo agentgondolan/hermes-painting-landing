@@ -480,11 +480,13 @@ async function normalizeMgeOrderDraftResponse(
 
   const normalized = normalizeOrderDraft(raw, canonical)
   if (!isSubmitReadyMgeDraftId(normalized.orderDraftId)) {
+    const responseKeys = Object.keys(asRecord(raw)).slice(0, 30)
+    const responseShape = responseKeys.length ? responseKeys.join(', ') : 'no JSON object keys'
     return json(
       {
         error: 'MGEeveryday order draft response is missing a submit-ready draft id',
         status: response.status,
-        detail: 'POST /api/v1/order-drafts/ must return a real numeric id before Dottingo can continue to payment.',
+        detail: `POST /api/v1/order-drafts/ must return a real numeric id before Dottingo can continue to payment. MGE response shape: ${responseShape}; body length: ${text.length}.`,
       },
       502,
     )
@@ -499,7 +501,7 @@ export function normalizeOrderDraft(raw: unknown, canonical: NormalizedPurchaseO
   const orderLine = asNullableRecord(obj.order_line) ?? lineItems.at(-1) ?? canonical.orderLine
   const previewOptionId = pickFirstString([obj.preview_option_id, canonical.previewOptionId]) ?? canonical.previewOptionId
   return {
-    orderDraftId: pickFirstString([obj.order_draft_id, obj.draft_id, obj.id]) ?? '',
+    orderDraftId: pickFirstIdentifier([obj.order_draft_id, obj.draft_id, obj.id]) ?? '',
     previewId: pickFirstString([obj.preview_id]) ?? '',
     previewOptionId,
     purchaseOptionId: pickFirstString([obj.purchase_option_id, canonical.purchaseOptionId]) ?? canonical.purchaseOptionId,
@@ -847,6 +849,14 @@ function redactSecret(value: string, secretToRedact?: string): string {
 function pickFirstString(values: unknown[]): string | null {
   for (const value of values) {
     if (typeof value === 'string' && value.trim()) return value
+  }
+  return null
+}
+
+function pickFirstIdentifier(values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value
+    if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return String(value)
   }
   return null
 }

@@ -1,6 +1,6 @@
 Status: IN PROGRESS
 Created: 2026-07-10
-Updated: 2026-07-10
+Updated: 2026-07-13
 Owner: Codex
 Proposed branch: codex/paid-mge-checkout-submit-bridge
 
@@ -59,6 +59,8 @@ MGE confirmed on 2026-07-09:
 - Stripe checkout prices real MGE drafts from the canonical validation response because stored draft lines intentionally omit price fields.
 - `docs/payment-submit-outbox-d1.sql` defines the D1 table expected for durable production storage.
 - `docs/payment-webhook-mge-order-status.md` documents the webhook/order status architecture.
+- MGE numeric draft ids are normalized from either JSON numbers or numeric strings before the payment gate.
+- Production smoke draft `184` validated with one frozen preview reservation, completed Stripe test payment, and submitted as MGE order `MGE0980926F` with one durable attempt.
 - `docs/ACTIVE_WORK.md` names draft validation and durable webhook submit tracking as the immediate next gaps.
 
 ## Phase Index
@@ -68,7 +70,7 @@ MGE confirmed on 2026-07-09:
 3. [DONE - Phase 3 - Exactly Once Webhook Submit](03_PHASE3_EXACTLY_ONCE_WEBHOOK_SUBMIT.md)
 4. [DONE - Phase 4 - Customer Confirmation And Status Polling](04_PHASE4_CUSTOMER_CONFIRMATION_AND_STATUS_POLLING.md)
 5. [IN PROGRESS - Phase 5 - Production Payment Order Submit Smoke](05_PHASE5_PRODUCTION_PAYMENT_ORDER_SUBMIT_SMOKE.md)
-5A. [IN PROGRESS - Phase 5A - MGE Ready-Draft Preview Validity Contract](05A_BLOCKED_MGE_READY_DRAFT_PREVIEW_VALIDITY_CONTRACT.md)
+5A. [DONE - Phase 5A - MGE Ready-Draft Preview Validity Contract](05A_BLOCKED_MGE_READY_DRAFT_PREVIEW_VALIDITY_CONTRACT.md)
 
 ## Dependencies
 
@@ -117,4 +119,4 @@ npx wrangler pages deployment list --project-name hermes-painting-landing
 
 ## Next Action
 
-Deploy the READY-window Stripe expiry enforcement, then run one fresh production Stripe-test/MGE-order smoke. Confirm the new MGE validation response includes the checkout window, Stripe expires no later than that window, submit returns one final order id, and a duplicate webhook returns the same order without another submit attempt. Keep paid draft `173` unchanged as historical manual-review evidence.
+Align the active Stripe `checkout.session.completed` destination with the same Stripe sandbox account used by production `STRIPE_SECRET_KEY`, rotate `STRIPE_WEBHOOK_SECRET` to that destination, and verify one Stripe-origin delivery. The payment, D1, and MGE path is otherwise proven by draft `184` / order `MGE0980926F`; keep draft `173` unchanged as historical manual-review evidence.

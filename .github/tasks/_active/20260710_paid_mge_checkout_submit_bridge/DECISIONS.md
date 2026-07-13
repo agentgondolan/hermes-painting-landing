@@ -43,3 +43,7 @@ The production smoke proved that an MGE preview option can expire after draft va
 ## 2026-07-13 - Bind Stripe expiry to the MGE READY checkout window
 
 For real MGE drafts, Dottingo requires `checkout.ready_until` and `checkout.max_payment_session_seconds` from successful validation. Stripe `expires_at` is the earliest MGE/Stripe cap, and payment is blocked if fewer than Stripe's minimum 30 minutes remain. This makes the MGE READY snapshot the payment validity boundary instead of Stripe's default 24-hour session.
+
+## 2026-07-13 - Stripe secret and webhook destination must share one account
+
+The Stripe `checkout.session.completed` destination must be created in the same Stripe sandbox account that owns production `STRIPE_SECRET_KEY`. A destination under another account receives no events even when its endpoint and signing secret are otherwise valid. Production rollout is not complete until the account pairing is verified and `STRIPE_WEBHOOK_SECRET` is rotated to the matching destination.

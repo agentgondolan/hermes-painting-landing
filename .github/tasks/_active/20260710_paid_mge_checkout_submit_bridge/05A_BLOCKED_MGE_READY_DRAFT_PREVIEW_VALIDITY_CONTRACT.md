@@ -1,7 +1,7 @@
-Status: IN PROGRESS
+Status: DONE
 Required: yes
 Created: 2026-07-10
-Updated: 2026-07-10
+Updated: 2026-07-13
 Depends on: 01_PHASE1_MGE_DRAFT_VALIDATION_GATE.md
 Blocks: 05_PHASE5_PRODUCTION_PAYMENT_ORDER_SUBMIT_SMOKE.md
 
@@ -69,4 +69,15 @@ Dottingo now requires this checkout window for real MGE drafts and sets Stripe `
 - the MGE `max_payment_session_seconds` cap, and
 - Stripe's 24-hour maximum.
 
-Dottingo blocks payment when the MGE window is absent, malformed, or shorter than Stripe's 30-minute minimum. Final completion still requires the Phase 5 production payment/order-submit smoke.
+Dottingo blocks payment when the MGE window is absent, malformed, or shorter than Stripe's 30-minute minimum.
+
+## Completion Evidence - 2026-07-13
+
+- MGE draft `184` validated with `valid = true`, one `preview_reservations[]` entry, `checkout.ready_until`, and `max_payment_session_seconds = 3600`.
+- Stripe test payment completed inside the returned READY window.
+- The signed production webhook submitted the frozen draft successfully as order `MGE0980926F`.
+- MGE draft detail reports `status = SUBMITTED` and `submitted_order_id = MGE0980926F`.
+- D1 reports `mge_submitted`, attempt count `1`, and no error.
+- Replaying the same signed event returned `already_submitted` with the same order id and did not increment the attempt count.
+
+The MGE preview-validity blocker is closed. Stripe automatic event delivery account alignment remains a separate Phase 5 production configuration gate.

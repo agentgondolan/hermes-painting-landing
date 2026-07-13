@@ -22,3 +22,24 @@ Safe response:
 - Do not replay repeatedly; completed/manual-review claims intentionally suppress another MGE submit.
 - Do not replace the draft, preview option, SKU, or price after payment without an explicit MGE recovery contract and reconciliation approval.
 - Ask MGE to preserve READY-draft preview validity or provide an idempotent paid-draft refresh/rebind endpoint.
+
+## Paid checkout stays queued and Stripe shows zero deliveries
+
+Symptoms:
+
+- Stripe payment completes and Dottingo records `checkout_created`.
+- The success page remains in the queued/paid state.
+- The configured Stripe destination reports zero event deliveries.
+- The paid Checkout Session is not visible in the Stripe account containing that destination.
+
+Cause:
+
+- Production `STRIPE_SECRET_KEY` and the configured webhook destination belong to different Stripe sandbox accounts.
+
+Safe response:
+
+1. Identify the Stripe sandbox account where the paid Checkout Session is visible.
+2. Create the `checkout.session.completed` destination in that account.
+3. Rotate Cloudflare `STRIPE_WEBHOOK_SECRET` to the new destination secret.
+4. Verify a Stripe-origin delivery before enabling real payments.
+5. Do not create another test payment unless it is separately approved; use the existing paid smoke evidence while fixing account configuration.

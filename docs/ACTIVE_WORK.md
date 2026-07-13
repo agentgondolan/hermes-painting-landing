@@ -1,6 +1,6 @@
 # Active Work Ledger
 
-Last updated: 2026-06-25
+Last updated: 2026-07-13
 
 ## Why this exists
 
@@ -16,9 +16,9 @@ Current phase ledger:
 
 ## Immediate next step
 
-1. Deploy the MGE READY checkout-window enforcement.
-2. Run one fresh Stripe-test/MGE-order smoke and confirm one final MGE order id.
-3. Replay the paid webhook once and prove MGE/Dottingo idempotency returns the same order without another submit attempt.
+1. Align Stripe's `checkout.session.completed` destination with the same sandbox account used by production `STRIPE_SECRET_KEY`.
+2. Rotate production `STRIPE_WEBHOOK_SECRET` to that account's destination.
+3. Verify one Stripe-origin webhook delivery; do not create another test payment without fresh approval.
 4. Keep paid draft `173` in manual review as historical failure evidence.
 
 ## Current known repo state
@@ -71,6 +71,8 @@ Use the fastest command that proves the requested work, then climb if the change
 
 2026-07-13 Phase 5A resumed: MGE now freezes preview-backed line items in READY drafts and returns `checkout.ready_until` plus `checkout.max_payment_session_seconds`. Dottingo requires that window and sets Stripe `expires_at` to the earliest MGE/Stripe cap; payment is blocked for missing or sub-30-minute windows. All 154 tests, Worker typecheck, and production build pass. Next is deploy plus one fresh paid smoke.
 
+2026-07-13 Phase 5A verified: production draft `184` validated with one frozen preview reservation and the MGE checkout window, Stripe test payment completed, and the signed production webhook submitted final order `MGE0980926F`. D1 is `mge_submitted` with one attempt; duplicate replay returned the same order without another submit. The success page displayed the final order. Remaining gate: the automatic Stripe destination is configured under a different sandbox account than production `STRIPE_SECRET_KEY`, so it recorded zero deliveries and the smoke required a signed replay. Deployment: `https://df7dde82.hermes-painting-landing.pages.dev`.
+
 ## Open product decision
 
-The MGE previewless returning-account identity contract is now confirmed from the internal schema and testing endpoint. Next product priority remains the paid checkout bridge smoke: real order draft, Stripe test payment, webhook, and exactly-once MGE submit.
+The MGE previewless returning-account identity contract is confirmed. The MGE paid checkout bridge is proven through final order creation; the next production priority is aligning the Stripe webhook destination account so normal Stripe-origin delivery reaches the already-proven submit path automatically.
