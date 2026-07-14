@@ -47,3 +47,7 @@ For real MGE drafts, Dottingo requires `checkout.ready_until` and `checkout.max_
 ## 2026-07-13 - Stripe secret and webhook destination must share one account
 
 The Stripe `checkout.session.completed` destination must be created in the same Stripe sandbox account that owns production `STRIPE_SECRET_KEY`. A destination under another account receives no events even when its endpoint and signing secret are otherwise valid. Production rollout is not complete until the account pairing is verified and `STRIPE_WEBHOOK_SECRET` is rotated to the matching destination.
+
+## 2026-07-14 - Prove Checkout Session ownership before smoke payment
+
+For payment smoke tests after a Stripe credential rotation, create the Checkout Session but query it with the intended account's secret key before clicking Pay. A `404` means the deployed runtime still uses another account and payment must remain blocked. Proceed only after the intended account returns the open unpaid Session.

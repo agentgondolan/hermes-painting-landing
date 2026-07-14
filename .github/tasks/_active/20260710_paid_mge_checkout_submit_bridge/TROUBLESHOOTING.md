@@ -43,3 +43,44 @@ Safe response:
 3. Rotate Cloudflare `STRIPE_WEBHOOK_SECRET` to the new destination secret.
 4. Verify a Stripe-origin delivery before enabling real payments.
 5. Do not create another test payment unless it is separately approved; use the existing paid smoke evidence while fixing account configuration.
+
+## Checkout Session is absent after rotating the Stripe secret
+
+Symptoms:
+
+- Cloudflare lists `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` as configured.
+- Dottingo successfully creates a Stripe Checkout page.
+- `GET /v1/checkout/sessions/{session_id}` with the intended account key returns `404`.
+- The intended Stripe account's session list is empty.
+
+Cause:
+
+- The active Pages deployment still uses the previous Stripe account configuration even though the secret names exist. Cloudflare's encrypted secret list cannot prove the active value or account ownership.
+
+Safe response:
+
+1. Re-upload both account-paired secrets without printing their values.
+2. Run `npm run build` to successful completion.
+3. Deploy the completed `.next/prod` output to the production branch.
+4. Create a new unpaid Checkout Session.
+5. Query that Session with the intended Stripe account key before clicking Pay.
+6. Continue only when the intended account returns the open unpaid Session.
+
+## Deployment URL returns 404 after an interrupted build
+
+Symptoms:
+
+- `npm run build` was interrupted or timed out.
+- `.next/prod` exists, so a subsequent Pages deploy appears to succeed.
+- The new deployment URL returns `404` for `/checkout` or `/checkout/success`.
+
+Cause:
+
+- An incomplete `.next/prod` output was deployed.
+
+Safe response:
+
+1. Do not trust the existence or timestamp of `.next/prod` after an interrupted build.
+2. Rerun `npm run build` and require exit code `0` plus the expected route table.
+3. Deploy only that completed output.
+4. Verify `/checkout` and `/checkout/success` return `200` on the immutable deployment URL and custom domain.

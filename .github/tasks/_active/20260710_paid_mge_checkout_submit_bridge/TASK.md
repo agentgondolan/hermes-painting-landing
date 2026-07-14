@@ -1,4 +1,4 @@
-Status: IN PROGRESS
+Status: DONE
 Created: 2026-07-10
 Updated: 2026-07-13
 Owner: Codex
@@ -69,7 +69,7 @@ MGE confirmed on 2026-07-09:
 2. [DONE - Phase 2 - Durable Payment Submit Outbox](02_PHASE2_DURABLE_PAYMENT_SUBMIT_OUTBOX.md)
 3. [DONE - Phase 3 - Exactly Once Webhook Submit](03_PHASE3_EXACTLY_ONCE_WEBHOOK_SUBMIT.md)
 4. [DONE - Phase 4 - Customer Confirmation And Status Polling](04_PHASE4_CUSTOMER_CONFIRMATION_AND_STATUS_POLLING.md)
-5. [IN PROGRESS - Phase 5 - Production Payment Order Submit Smoke](05_PHASE5_PRODUCTION_PAYMENT_ORDER_SUBMIT_SMOKE.md)
+5. [DONE - Phase 5 - Production Payment Order Submit Smoke](05_PHASE5_PRODUCTION_PAYMENT_ORDER_SUBMIT_SMOKE.md)
 5A. [DONE - Phase 5A - MGE Ready-Draft Preview Validity Contract](05A_BLOCKED_MGE_READY_DRAFT_PREVIEW_VALIDITY_CONTRACT.md)
 
 ## Dependencies
@@ -119,4 +119,8 @@ npx wrangler pages deployment list --project-name hermes-painting-landing
 
 ## Next Action
 
-The production Stripe key and webhook secret are now paired to the `Dottingo.sg sandbox` account, whose enabled Dottingo destination listens for `checkout.session.completed`. Obtain fresh approval for exactly one test payment, then verify automatic Stripe-origin delivery, one D1 submit attempt, and the final MGE order id. Keep draft `173` unchanged as historical manual-review evidence.
+This task is complete. Keep Stripe in sandbox mode until a separate go-live task confirms live-account credentials, live webhook pairing, shipping/reference collection, support ownership, and paid-order reconciliation. Keep draft `173` unchanged as historical manual-review evidence.
+
+## Business Summary
+
+Customers can now pay for saved Dottingo designs through Stripe and have the paid MGE draft submitted exactly once, with the final MGE order reference shown on the confirmation page. Temporary MGE downtime and webhook retries are represented durably instead of risking lost or duplicate orders.

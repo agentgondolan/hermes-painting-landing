@@ -8,7 +8,7 @@ Agents were losing time re-discovering repo state and answering process question
 
 ## Active objective
 
-Finish the paid MGE checkout bridge.
+The paid MGE checkout bridge is complete in Stripe sandbox mode.
 
 Current phase ledger:
 
@@ -16,9 +16,9 @@ Current phase ledger:
 
 ## Immediate next step
 
-1. Obtain fresh approval for exactly one Stripe test payment.
-2. Complete payment at `https://dottingo.sg/checkout` and verify Stripe-origin `checkout.session.completed` delivery.
-3. Confirm D1 reaches `mge_submitted` with one attempt and MGE returns the final order id.
+1. Keep Stripe in sandbox mode.
+2. Create a separate live-payment go-live task before rotating to live Stripe credentials.
+3. Include live webhook pairing, shipping/reference collection, reconciliation, and support ownership in that task.
 4. Keep paid draft `173` in manual review as historical failure evidence.
 
 ## Current known repo state
@@ -75,6 +75,8 @@ Use the fastest command that proves the requested work, then climb if the change
 
 2026-07-13 Stripe account pairing fixed: production `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` were rotated from the local secret handoff into Cloudflare Pages. The API key resolves to `Dottingo.sg sandbox`, and that account has one enabled `https://dottingo.sg/api/stripe/webhook` destination subscribed to `checkout.session.completed`. The clean `main` build was deployed at `https://c378f48f.hermes-painting-landing.pages.dev`; both deployment and custom-domain checkout return `200`, while browser `GET` to the webhook returns the expected `405`. No payment was made. Remaining gate: one freshly approved Stripe-origin paid smoke.
 
+2026-07-14 Phase 5 completed: fresh MGE draft `188` validated READY with one frozen preview reservation. One approved SGD 54.99 Stripe sandbox payment completed in the account-paired `Dottingo.sg sandbox`; Stripe recorded `checkout.session.completed` with zero pending webhooks. The automatic webhook, without manual replay, moved remote D1 to `mge_submitted` with one attempt and final order `MGEA581C67A`. MGE draft `188` is `SUBMITTED`, the order is `processing`, and the live success page displays `Order confirmed` plus that order reference. Completed deployment: `https://07528cb2.hermes-painting-landing.pages.dev`.
+
 ## Open product decision
 
-The MGE previewless returning-account identity contract is confirmed. The MGE paid checkout bridge is proven through final order creation; the next production priority is aligning the Stripe webhook destination account so normal Stripe-origin delivery reaches the already-proven submit path automatically.
+The MGE previewless returning-account identity contract and Stripe sandbox paid checkout are confirmed. The next product decision is whether to plan live-payment launch readiness now or continue product/cart work while Stripe remains sandbox-only.

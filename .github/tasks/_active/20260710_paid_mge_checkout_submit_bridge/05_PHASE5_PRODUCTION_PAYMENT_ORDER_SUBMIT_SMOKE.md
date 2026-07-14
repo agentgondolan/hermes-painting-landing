@@ -1,7 +1,7 @@
-Status: IN PROGRESS
+Status: DONE
 Required: yes
 Created: 2026-07-10
-Updated: 2026-07-13
+Updated: 2026-07-14
 Depends on: 04_PHASE4_CUSTOMER_CONFIRMATION_AND_STATUS_POLLING.md
 Supersedes: none
 
@@ -74,9 +74,18 @@ npx wrangler pages deployment list --project-name hermes-painting-landing
 - Remote D1 reports `mge_submitted`, attempt count `1`, final order `MGE0980926F`, and no error.
 - Replaying the same signed event returned `already_submitted` with the same order id and left D1 at one attempt.
 - The production success page reached `Order confirmed` and displayed `MGE0980926F`.
+- Production Stripe credentials were rotated to the `Dottingo.sg sandbox` account and the matching `checkout.session.completed` destination.
+- Fresh draft `188` validated with one frozen preview reservation and a one-hour READY checkout window.
+- One approved SGD 54.99 Stripe sandbox payment completed from the account-paired deployment.
+- Stripe recorded the automatic `checkout.session.completed` event with zero pending webhooks; no signed replay was used.
+- Remote D1 recorded `mge_submitted`, attempt count `1`, no error, and final order `MGEA581C67A`.
+- MGE draft `188` is `SUBMITTED`; final order `MGEA581C67A` is readable and currently `processing`.
+- The customer success page reached `Order confirmed` and displayed `MGEA581C67A` after the completed production build was deployed at `https://07528cb2.hermes-painting-landing.pages.dev`.
 
-## Remaining Gate
+## Outcome
 
-The MGE READY-draft preview-validity blocker is resolved. The remaining production gate is Stripe account alignment: the active `Dottingo checkout webhook` destination currently lives under the `MG Everyday data science pte. lte.` sandbox, while the production `STRIPE_SECRET_KEY` created a paid session that is not present in that account. The destination therefore recorded zero automatic deliveries. This smoke used a correctly signed replay of the already-paid event to prove the production webhook, D1, and MGE submit path without a second payment.
+The full Stripe sandbox customer path is proven without manual replay:
 
-Before declaring the full customer path production-ready, create or move the `checkout.session.completed` destination into the same Stripe sandbox account used by production `STRIPE_SECRET_KEY`, rotate `STRIPE_WEBHOOK_SECRET` to that destination, and verify one Stripe-origin delivery. Paid draft `173` remains unchanged in manual review as historical failure evidence.
+`saved preview -> MGE READY draft -> Stripe sandbox payment -> automatic signed webhook -> one durable MGE submit -> final order confirmation`
+
+Paid draft `173` remains unchanged in manual review as historical failure evidence. An earlier unpaid Checkout Session for draft `188` was created before the account-paired deployment and remains harmless `checkout_created` evidence; the paid account-paired Session is the row that reached `mge_submitted`.

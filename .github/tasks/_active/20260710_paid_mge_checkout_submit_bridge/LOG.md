@@ -289,3 +289,32 @@ Summary:
 
 Next action:
 - After fresh explicit approval, complete exactly one Stripe test payment and verify automatic Stripe-origin delivery, one D1 submit attempt, and the final MGE order id.
+
+## 2026-07-14 - Phase 5 automatic Stripe-origin smoke completed
+
+Author: Codex
+
+Summary:
+- Used the token-gated production test login for `matejgondolan@gmail.com` and selected one existing 60x80 W preview.
+- Created numeric MGE draft `188`, attached clearly marked test shipping data plus unique reference `DOTTINGO-SMOKE-20260714-188`, and validated it READY with one frozen preview reservation.
+- Detected that the first unpaid Checkout Session was not readable from `Dottingo.sg sandbox`, so payment remained blocked.
+- Re-uploaded the account-paired Stripe secrets and deployed a completed production build.
+- Verified the replacement draft `188` Session was open, unpaid, SGD 54.99, and readable from `Dottingo.sg sandbox` before payment.
+- Completed exactly one approved Stripe sandbox payment using Stripe's standard test card and synthetic Singapore shipping data.
+- Stripe recorded `checkout.session.completed` with zero pending webhooks.
+- The automatic signed webhook, without manual replay, moved D1 to `mge_submitted`, attempt count `1`, no error, and final order `MGEA581C67A`.
+- MGE draft `188` is `SUBMITTED`; `GET /api/v1/orders/MGEA581C67A/` returns `200` with status `processing`.
+- Rebuilt after an interrupted output caused route `404`s, deployed `https://07528cb2.hermes-painting-landing.pages.dev`, and confirmed both `/checkout` and `/checkout/success` return `200` on the deployment and custom domain.
+- The customer confirmation page displays `Order confirmed` and order reference `MGEA581C67A`.
+
+Validation:
+- Stripe Session: `complete`, `paid`, SGD 54.99, sandbox.
+- Stripe event: `checkout.session.completed`, `pending_webhooks = 0`, `livemode = false`.
+- Remote D1: `mge_submitted`, attempt count `1`, no error, final order `MGEA581C67A`.
+- MGE draft `188`: `SUBMITTED`, submitted order `MGEA581C67A`.
+- Final MGE order: fetch `200`, status `processing`.
+- `npm run build` passed with all expected routes.
+- Production deployment and custom-domain checkout/success routes return `200`.
+
+Next action:
+- Keep Stripe sandbox-only and create a separate live-payment go-live task before enabling live credentials.
